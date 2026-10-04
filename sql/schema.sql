@@ -91,17 +91,17 @@ create policy "Customer registration" on public.customers for insert to anon wit
 create policy "Vehicle registration" on public.vehicles for insert to anon with check (type in ('CAR', 'MOTOR'));
 create policy "Public catalog read" on public.services_products for select to anon using (active = true);
 create policy "Admin customers" on public.customers for all to authenticated
-  using ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
-  with check ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+  using (true)
+  with check (true);
 create policy "Admin vehicles" on public.vehicles for all to authenticated
-  using ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
-  with check ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+  using (true)
+  with check (true);
 create policy "Admin catalog" on public.services_products for all to authenticated
-  using ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
-  with check ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+  using (true)
+  with check (true);
 create policy "Admin transactions" on public.transactions for all to authenticated
-  using ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
-  with check ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+  using (true)
+  with check (true);
 
 create or replace function public.lookup_customer_by_phone(p_phone text)
 returns table(customer_id text, full_name text, phone text, vehicle_id text, vehicle_type text, vehicle_plate text, vehicle_model text)

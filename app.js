@@ -139,6 +139,7 @@ let databaseConnected = false;
 let dataLoadState = 'loading';
 let adminDataReady = false;
 let adminDataState = 'loading';
+let adminDataError = '';
 let publicWashCount = 0;
 let publicBays = [];
 
@@ -215,7 +216,7 @@ function render() {
   app.querySelector('.admin-nav[data-admin-tab="self-service"]')?.childNodes.forEach(node => {
     if (node.nodeType === Node.TEXT_NODE) node.textContent = node.textContent.replace('Cuci mandiri', 'Self-Service');
   });
-  if (page === 'admin' && adminUser) renderAdminMetrics();
+  if (page === 'admin' && adminUser && adminDataReady && document.querySelector('.metric-grid')) renderAdminMetrics();
   document.querySelectorAll('[data-nav]').forEach(link => link.classList.toggle('active', link.dataset.nav === page));
   simplifyUiSymbols();
 }
@@ -225,7 +226,7 @@ function renderPublicDataState() {
 }
 function renderAdminDataState() {
   const loading = adminDataState === 'loading';
-  return `<section class="section"><div class="empty-state" role="status"><h3>${loading ? 'Memuat dashboard...' : 'Dashboard belum dapat dimuat.'}</h3><p>${loading ? 'Mohon tunggu sebentar.' : 'Data studio belum tersedia. Silakan coba lagi.'}</p>${loading ? '' : '<button class="button button-dark" data-action="retry-admin-data">Coba lagi</button>'}</div></section>`;
+  return `<section class="section"><div class="empty-state" role="status"><h3>${loading ? 'Memuat dashboard...' : 'Dashboard belum dapat dimuat.'}</h3><p>${loading ? 'Mohon tunggu sebentar.' : escapeHtml(adminDataError || 'Data studio belum tersedia. Silakan coba lagi.')}</p>${loading ? '' : '<button class="button button-dark" data-action="retry-admin-data">Coba lagi</button><button class="text-link" data-action="logout">Keluar</button>'}</div></section>`;
 }
 function simplifyUiSymbols(root = document.body) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -238,6 +239,7 @@ function renderAdminLogin() {
   return `<section class="admin-login-page"><div class="admin-login-image"><img src="${PHOTOS.hero}" alt="Mobil sedang dicuci di studio"></div><div class="admin-login-content"><a class="brand" href="#home" data-nav="home"><span class="brand-mark">R</span><span>rinse<span class="brand-light">society</span><small>WASH STUDIO · SEMARANG</small></span></a><p class="eyebrow">AREA KHUSUS TIM STUDIO</p><h1>Admin Login</h1><p>Masuk untuk mengelola operasional Rinse Society.</p><form id="admin-login-form" class="admin-login-form"><label for="admin-email">Email</label><input id="admin-email" name="email" type="email" autocomplete="username" required placeholder="nama@bisnis.id"><label for="admin-password">Password</label><input id="admin-password" name="password" type="password" autocomplete="current-password" required placeholder="Masukkan password"><button class="button button-dark button-full" type="submit">Masuk</button><p class="login-error" id="login-error" role="alert"></p></form><button class="text-link" data-nav="home">Kembali ke Website</button></div></section>`;
 }
 function renderAdminMetrics() {
+  if (!document.querySelector('.metric-grid')) return;
   const today = new Date().toISOString().slice(0, 10);
   const todays = db.transactions.filter(tx => tx.booking_date === today);
   const paidToday = todays.filter(tx => tx.payment_status === 'PAID');
@@ -343,11 +345,11 @@ function openDialog(kind, serviceId) {
   const content = document.getElementById('dialog-content');
   const service = db.services_products.find(item => item.id === serviceId);
   if (['booking', 'walkin', 'cart', 'product-checkout'].includes(kind) && !databaseConnected) {
-    toast('Layanan sedang tidak tersedia. Silakan coba lagi.', 'error');
+    showToast('Layanan sedang tidak tersedia. Silakan coba lagi.', 'error');
     return;
   }
   if ((kind === 'booking' || kind === 'walkin') && !(service || SERVICES[0])) {
-    toast('Layanan belum tersedia. Silakan coba lagi nanti.', 'error');
+    showToast('Layanan belum tersedia. Silakan coba lagi nanti.', 'error');
     return;
   }
   if (kind === 'settings') {
@@ -383,7 +385,7 @@ function renderTransactionForm(content, kind, selectedService) {
       vehicleSelect.innerHTML = `<option value="">${choices.length ? 'Pilih kendaraan terdaftar' : 'Tambahkan detail kendaraan di bawah'}</option>${choices.map(vehicle => `<option value="${vehicle.id}">${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.plate)}</option>`).join('')}`;
       const row = rows[0];
       if (row?.full_name && !form.elements.name.value) form.elements.name.value = row.full_name;
-    } catch (error) { toast(`Kendaraan belum dapat dimuat: ${error.message}`, 'error'); }
+    } catch (error) { showToast(`Kendaraan belum dapat dimuat: ${error.message}`, 'error'); }
   };
   phoneInput.addEventListener('blur', updateVehicleChoices);
   phoneInput.addEventListener('change', updateVehicleChoices);
@@ -493,7 +495,7 @@ async function submitService(form) {
   const tx = { id: crypto.randomUUID(), code: makeCode(), customer_id: customer.id, vehicle_id: vehicle.id, item_id: service.id, item_type: 'SERVICE', item_name: `${service.name}${addon ? ` + ${addon.name}` : ''}`, addon_id: addon?.id || null, amount: washPrice + Number(addon?.price || 0), payment_method: paymentMethod, payment_status: paymentMethod === 'CASH' && !booking ? 'PAID' : 'PENDING', transaction_type: booking ? 'BOOKING' : 'WALK_IN', transaction_status: booking ? 'BOOKED' : 'ACTIVE', queue_status: 'WAITING', booking_date: booking ? dateValue : new Date().toISOString().slice(0, 10), booking_time: booking ? timeValue : dateValue, duration_minutes: duration + Number(addon?.duration || 0), bay_number: bayNumber, created_at: new Date().toISOString() };
   await persistTransaction(tx);
   try { await loadPublicData(); }
-  catch (_) { toast('Transaksi tersimpan, tetapi data terbaru belum dapat dimuat.', 'error'); }
+  catch (_) { showToast('Transaksi tersimpan, tetapi data terbaru belum dapat dimuat.', 'error'); }
   showConfirmation(tx);
   render();
 }
@@ -535,7 +537,7 @@ async function submitProducts(form) {
   cart = {};
   localStorage.removeItem(CART_KEY);
   try { await loadPublicData(); }
-  catch (_) { toast('Pesanan tersimpan, tetapi katalog belum dapat diperbarui.', 'error'); }
+  catch (_) { showToast('Pesanan tersimpan, tetapi katalog belum dapat diperbarui.', 'error'); }
   document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">PESANAN TERCATAT</p><h2>Produk pilihan<br><em>siap untuk Anda.</em></h2><p class="dialog-intro">Pembayaran telah dicatat. Terima kasih telah berbelanja di Rinse Society.</p><button class="button button-dark button-full" data-action="close-dialog">Kembali ke studio <span>↗</span></button></div>`;
   render();
 }
@@ -621,15 +623,22 @@ async function supabaseRequest(table, method = 'GET', body, query = '', prefer =
   if (!isSupabaseConfigured()) throw new Error('Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.');
   if (supabaseSession?.expires_at && supabaseSession.expires_at * 1000 < Date.now() + 30000) await refreshAdminSession();
   const response = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${table}${query}`, { method, headers: requestHeaders(prefer), body: body ? JSON.stringify(body) : undefined });
-  if (!response.ok) throw new Error('Permintaan belum berhasil. Silakan coba lagi.');
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`${method} /rest/v1/${table} gagal (${response.status}): ${detail || response.statusText}`);
+  }
   if (response.status === 204) return null;
   const text = await response.text();
   return text ? JSON.parse(text) : null;
 }
 async function rpcRequest(name, parameters = {}) {
   if (!isSupabaseConfigured()) throw new Error('Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.');
+  if (supabaseSession?.expires_at && supabaseSession.expires_at * 1000 < Date.now() + 30000) await refreshAdminSession();
   const response = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${name}`, { method: 'POST', headers: requestHeaders('return=representation'), body: JSON.stringify(parameters) });
-  if (!response.ok) throw new Error('Permintaan belum berhasil. Silakan coba lagi.');
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`RPC ${name} gagal (${response.status}): ${detail || response.statusText}`);
+  }
   const text = await response.text();
   return text ? JSON.parse(text) : null;
 }
@@ -666,6 +675,7 @@ async function refreshAdminSession() {
   return session;
 }
 async function signInAdmin(email, password) {
+  if (!email || !password) throw new Error('Masukkan email dan password admin.');
   if (!isSupabaseConfigured()) throw new Error('Layanan login belum tersedia. Silakan coba lagi nanti.');
   let response;
   try {
@@ -684,12 +694,15 @@ async function signInAdmin(email, password) {
     }
     if (response.status === 429) throw new Error('Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.');
     if (authCode === 'email_not_confirmed') throw new Error('Email akun belum dikonfirmasi.');
+    if (authCode === 'user_not_found' || /user not found/.test(authMessage)) throw new Error('Akun admin tidak ditemukan.');
+    if (authCode === 'unauthorized' || /not allowed|forbidden|permission denied/.test(authMessage)) throw new Error('Supabase Auth menolak permintaan login ini.');
     throw new Error('Login belum dapat diproses. Silakan coba lagi.');
   }
-  if (result.user?.app_metadata?.role !== 'admin') throw new Error('Akun ini tidak memiliki akses admin.');
+  const user = result.user;
+  if (!user) throw new Error('Login berhasil, tetapi sesi pengguna tidak terbaca. Silakan coba lagi.');
   result.expires_at = Math.floor(Date.now() / 1000) + result.expires_in;
   rememberAuthSession(result);
-  adminUser = result.user;
+  adminUser = user;
   try { await loadAdminData(); }
   catch (_) {
     adminDataReady = false;
@@ -709,11 +722,6 @@ async function restoreAdminSession() {
     }
     if (!response.ok) throw new Error('Tidak dapat memverifikasi sesi. Silakan coba lagi.');
     adminUser = await response.json();
-    if (adminUser.app_metadata?.role !== 'admin') {
-      rememberAuthSession(null);
-      adminUser = null;
-      return false;
-    }
     return true;
   } catch (_) {
     adminUser = null;
@@ -730,13 +738,8 @@ async function logoutAdmin() {
   page = 'home';
   render();
 }
-async function seedEmptyDatabase() {
-  for (const table of ['customers', 'vehicles', 'services_products', 'transactions']) {
-    for (const row of SEED[table]) await upsertRow(table, row);
-  }
-}
 async function loadPublicData() {
-  if (!isSupabaseConfigured()) throw new Error('Service unavailable');
+  if (!isSupabaseConfigured()) throw new Error('Supabase belum dikonfigurasi. Pastikan URL dan publishable key benar.');
   const products = await supabaseRequest('services_products', 'GET', null, '?select=*&active=eq.true&order=name.asc');
   const count = await rpcRequest('get_public_today_wash_count');
   publicBays = await rpcRequest('get_public_bay_status') || [];
@@ -748,17 +751,33 @@ async function loadPublicData() {
 }
 async function loadAdminData() {
   if (!adminUser) throw new Error('Masuk sebagai admin untuk membuka data studio.');
-  let loaded = {};
-  for (const table of ['customers', 'vehicles', 'services_products', 'transactions']) loaded[table] = await supabaseRequest(table, 'GET', null, '?select=*&order=created_at.desc');
-  if (!loaded.services_products.length) {
-    await seedEmptyDatabase();
+  const loaded = {};
+  const publicCatalogIds = new Set(db.services_products.filter(item => item.active !== false).map(item => item.id));
+  try {
     for (const table of ['customers', 'vehicles', 'services_products', 'transactions']) loaded[table] = await supabaseRequest(table, 'GET', null, '?select=*&order=created_at.desc');
+    for (const table of Object.keys(loaded)) {
+      if (!Array.isArray(loaded[table])) throw new Error(`Supabase /rest/v1/${table} tidak mengembalikan daftar data.`);
+    }
+    if ([...publicCatalogIds].some(id => !loaded.services_products.some(item => item.id === id))) {
+      throw new Error('Policy RLS menolak pembacaan katalog oleh role authenticated. Jalankan sql/rls-authenticated-access.sql di Supabase.');
+    }
+    const activeBays = publicBays.filter(bay => bay.bay_status !== 'AVAILABLE');
+    if (activeBays.some(bay => !loaded.transactions.some(tx => tx.bay_number === bay.bay_number && ['ACTIVE', 'BOOKED'].includes(tx.transaction_status)))) {
+      throw new Error('Policy RLS menolak pembacaan transaksi oleh role authenticated. Jalankan sql/rls-authenticated-access.sql di Supabase.');
+    }
+    db = loaded;
+    syncServiceCatalog();
+    databaseConnected = true;
+    adminDataReady = true;
+    adminDataState = 'ready';
+    adminDataError = '';
+  } catch (error) {
+    databaseConnected = false;
+    adminDataReady = false;
+    adminDataState = 'error';
+    adminDataError = error.message;
+    throw error;
   }
-  db = loaded;
-  syncServiceCatalog();
-  databaseConnected = true;
-  adminDataReady = true;
-  adminDataState = 'ready';
 }
 async function bootstrapSupabase() {
   dataLoadState = 'loading';
@@ -769,11 +788,11 @@ async function bootstrapSupabase() {
   SERVICES.splice(0, SERVICES.length);
   ADDONS.splice(0, ADDONS.length);
   render();
+  let publicError = null;
   try {
     await loadPublicData();
-    if (supabaseSession) await restoreAdminSession();
-    render();
-  } catch (_) {
+  } catch (error) {
+    publicError = error;
     databaseConnected = false;
     dataLoadState = 'error';
     db = emptyDatabase();
@@ -781,8 +800,24 @@ async function bootstrapSupabase() {
     publicBays = [];
     SERVICES.splice(0, SERVICES.length);
     ADDONS.splice(0, ADDONS.length);
-    render();
   }
+  if (supabaseSession) {
+    const restored = await restoreAdminSession();
+    if (restored) {
+      page = 'admin';
+      adminDataReady = false;
+      adminDataState = 'loading';
+      render();
+      try {
+        await loadAdminData();
+      } catch (_) {
+        adminDataReady = false;
+        adminDataState = 'error';
+      }
+    }
+  }
+  if (!adminUser && publicError) showToast(publicError.message || 'Database tidak dapat diakses. Jelaskan error yang terjadi untuk admin.', 'error');
+  render();
 }
 function addCatalogItem() {
   const content = document.getElementById('dialog-content');
@@ -849,7 +884,7 @@ document.addEventListener('submit', async event => {
       if (adminUser && !adminDataReady) {
         page = 'admin';
         render();
-        toast(error.message || 'Dashboard belum dapat dimuat. Silakan coba lagi.', 'error');
+        showToast(error.message || 'Dashboard belum dapat dimuat. Silakan coba lagi.', 'error');
         return;
       }
       const loginError = document.getElementById('login-error');
