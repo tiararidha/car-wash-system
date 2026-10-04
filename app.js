@@ -201,6 +201,7 @@ function render() {
   const app = document.getElementById('app');
   if (page === 'admin') app.innerHTML = !adminUser ? renderAdminLogin() : adminDataReady ? renderAdmin() : renderAdminDataState();
   else app.innerHTML = databaseConnected ? (views[page] || renderHome)() : renderPublicDataState();
+  if (page === 'admin' && adminUser && adminDataReady) setAdminDescription('overview');
   app.querySelectorAll('.connection-indicator, .database-notice').forEach(element => element.remove());
   const settingsButton = app.querySelector('.admin-sidebar [data-action="settings"]');
   if (settingsButton) settingsButton.setAttribute('aria-label', 'Pengaturan studio');
@@ -244,6 +245,39 @@ function simplifyUiSymbols(root = document.body) {
 function renderAdminLogin() {
   return `<section class="admin-login-page"><div class="admin-login-image"><img src="${PHOTOS.hero}" alt="Mobil sedang dicuci di studio"></div><div class="admin-login-content"><a class="brand" href="#home" data-nav="home"><span class="brand-mark">R</span><span>rinse<span class="brand-light">society</span><small>WASH STUDIO · SEMARANG</small></span></a><p class="eyebrow">AREA KHUSUS TIM STUDIO</p><h1>Admin Login</h1><p>Masuk untuk mengelola operasional Rinse Society.</p><form id="admin-login-form" class="admin-login-form"><label for="admin-email">Email</label><input id="admin-email" name="email" type="email" autocomplete="username" required placeholder="nama@bisnis.id"><label for="admin-password">Password</label><input id="admin-password" name="password" type="password" autocomplete="current-password" required placeholder="Masukkan password"><button class="button button-dark button-full" type="submit">Masuk</button><p class="login-error" id="login-error" role="alert"></p></form><button class="text-link" data-nav="home">Kembali ke Website</button></div></section>`;
 }
+function dailyPaidRevenue(transactions, dayCount = 7) {
+  const today = new Date();
+  return Array.from({ length: dayCount }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (dayCount - index - 1));
+    const key = date.toISOString().slice(0, 10);
+    return {
+      key,
+      label: date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+      amount: transactions.filter(tx => tx.payment_status === 'PAID' && tx.booking_date === key).reduce((sum, tx) => sum + Number(tx.amount), 0)
+    };
+  });
+}
+function renderRevenueLineChart(rows, className = '') {
+  const width = 760, height = 250;
+  const pad = { top: 18, right: 16, bottom: 38, left: 76 };
+  const max = Math.max(1, ...rows.map(row => row.amount));
+  const plotWidth = width - pad.left - pad.right;
+  const plotHeight = height - pad.top - pad.bottom;
+  const points = rows.map((row, index) => ({
+    ...row,
+    x: pad.left + (rows.length < 2 ? plotWidth / 2 : index * plotWidth / (rows.length - 1)),
+    y: pad.top + plotHeight - row.amount / max * plotHeight
+  }));
+  const path = points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+  const guides = [0, .5, 1].map(fraction => {
+    const y = pad.top + plotHeight * fraction;
+    const value = max * (1 - fraction);
+    return `<g class="chart-guide"><line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}"/><text x="${pad.left - 10}" y="${y + 4}" text-anchor="end">${escapeHtml(money(value))}</text></g>`;
+  }).join('');
+  const dots = points.map(point => `<circle class="chart-point" cx="${point.x}" cy="${point.y}" r="4"><title>${escapeHtml(point.label)}: ${escapeHtml(money(point.amount))}</title></circle><text class="chart-date" x="${point.x}" y="${height - 10}" text-anchor="middle">${escapeHtml(point.label)}</text>`).join('');
+  return `<svg class="revenue-line-chart ${className}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Tren pendapatan harian tujuh hari terakhir">${guides}<path class="chart-area" d="${path} L${points.at(-1)?.x || pad.left},${pad.top + plotHeight} L${points[0]?.x || pad.left},${pad.top + plotHeight} Z"/><path class="chart-line" d="${path}"/>${dots}</svg>`;
+}
 function renderAdminMetrics() {
   if (!document.querySelector('.metric-grid')) return;
   const today = new Date().toISOString().slice(0, 10);
@@ -253,24 +287,27 @@ function renderAdminMetrics() {
   const washed = todays.filter(tx => tx.item_type !== 'PRODUCT' && tx.transaction_status === 'COMPLETED').length;
   const bookings = todays.filter(tx => tx.transaction_type === 'BOOKING').length;
   const selfService = todays.filter(tx => tx.item_type !== 'PRODUCT' && db.services_products.find(item => item.id === tx.item_id)?.category === 'SELF_SERVICE').length;
-  const metrics = [
-    ['PENDAPATAN HARI INI', money(paidToday.reduce((sum, tx) => sum + Number(tx.amount), 0)), `${paidToday.length} transaksi lunas`, 'primary'],
-    ['TOTAL TRANSAKSI', db.transactions.length.toString().padStart(2, '0'), `${db.transactions.filter(tx => tx.transaction_type === 'BOOKING').length} booking tercatat`],
-    ['KENDARAAN DICUCI', String(washed).padStart(2, '0'), 'Transaksi selesai hari ini'],
-    ['BOOKING HARI INI', String(bookings).padStart(2, '0'), 'Jadwal kunjungan'],
-    ['PEMAKAIAN BAY', String(selfService).padStart(2, '0'), 'Sesi cuci mandiri hari ini'],
-    ['PENDAPATAN JASA', money(db.transactions.filter(tx => tx.item_type !== 'PRODUCT' && tx.payment_status === 'PAID').reduce((sum, tx) => sum + Number(tx.amount), 0)), 'Cuci kendaraan dan add-on'],
-    ['PENDAPATAN PRODUK', money(db.transactions.filter(tx => tx.item_type === 'PRODUCT' && tx.payment_status === 'PAID').reduce((sum, tx) => sum + Number(tx.amount), 0)), 'Penjualan perawatan kendaraan'],
-    ['STOK MENIPIS', String(lowStock).padStart(2, '0'), 'Produk perlu ditambah']
-  ];
-  document.querySelector('.metric-grid').innerHTML = metrics.map(([label, value, note, primary]) => `<article class="metric-card ${primary ? 'metric-primary' : ''}"><span>${label}</span><strong>${value}</strong><small>${note}</small>${primary ? '<i>↗</i>' : ''}</article>`).join('');
-
   const paid = db.transactions.filter(tx => tx.payment_status === 'PAID');
   const serviceRevenue = paid.filter(tx => tx.item_type !== 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
   const productRevenue = paid.filter(tx => tx.item_type === 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const metrics = [
+    ['PENDAPATAN HARI INI', money(paidToday.reduce((sum, tx) => sum + Number(tx.amount), 0)), `${paidToday.length} transaksi lunas`, 'primary'],
+    ['TRANSAKSI', db.transactions.length.toString().padStart(2, '0'), `${db.transactions.filter(tx => tx.transaction_type === 'BOOKING').length} booking tercatat`, 'primary'],
+    ['KENDARAAN DICUCI', String(washed).padStart(2, '0'), 'Transaksi selesai hari ini', 'primary'],
+    ['BOOKING HARI INI', String(bookings).padStart(2, '0'), 'Jadwal kunjungan', 'primary']
+  ];
+  document.querySelector('.metric-grid').innerHTML = metrics.map(([label, value, note, primary]) => `<article class="metric-card ${primary ? 'metric-primary' : ''}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join('');
+  const secondaryMetrics = `<div class="metric-secondary-grid"><div><span>PEMAKAIAN BAY</span><strong>${String(selfService).padStart(2, '0')}</strong><small>Sesi mandiri hari ini</small></div><div><span>PENDAPATAN JASA</span><strong>${money(serviceRevenue)}</strong><small>Transaksi lunas</small></div><div><span>PENDAPATAN PRODUK</span><strong>${money(productRevenue)}</strong><small>Transaksi lunas</small></div><div><span>STOK MENIPIS</span><strong>${String(lowStock).padStart(2, '0')}</strong><small>Produk di bawah minimum</small></div></div>`;
+  let secondaryGrid = document.querySelector('.metric-secondary-grid');
+  if (!secondaryGrid) {
+    document.querySelector('.metric-grid').insertAdjacentHTML('afterend', secondaryMetrics);
+  } else {
+    secondaryGrid.outerHTML = secondaryMetrics;
+  }
+
   const totalRevenue = serviceRevenue + productRevenue;
   const revenuePanel = document.querySelector('.revenue-panel');
-  if (revenuePanel) revenuePanel.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">TRANSAKSI LUNAS</p><h2>Pendapatan studio</h2></div><span class="panel-period">SEMUA WAKTU</span></div><div class="revenue-total">${money(totalRevenue)}<span>Total pemasukan</span></div><div class="revenue-bars"><div class="revenue-bar-row"><span>Pendapatan jasa</span><div><i style="width:${totalRevenue ? serviceRevenue / totalRevenue * 100 : 0}%"></i></div><strong>${money(serviceRevenue)}</strong></div><div class="revenue-bar-row"><span>Pendapatan produk</span><div><i class="bar-green" style="width:${totalRevenue ? productRevenue / totalRevenue * 100 : 0}%"></i></div><strong>${money(productRevenue)}</strong></div></div><div class="chart-footnote"><span>Pendapatan jasa</span><span>Pendapatan produk</span></div>`;
+  if (revenuePanel) revenuePanel.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">TREN PENDAPATAN</p><h2>Pendapatan studio</h2></div><strong class="dashboard-revenue-total">${money(totalRevenue)}</strong></div><p class="dashboard-chart-context">Transaksi lunas · tujuh hari terakhir</p>${renderRevenueLineChart(dailyPaidRevenue(db.transactions))}<div class="dashboard-revenue-split"><div><span>Jasa</span><strong>${money(serviceRevenue)}</strong></div><div><span>Produk</span><strong>${money(productRevenue)}</strong></div></div>`;
 
   const lowStockItems = db.services_products.filter(item => item.item_type === 'PRODUCT' && item.stock <= item.min_stock);
   const lowStockPanel = document.querySelector('.low-stock-panel');
@@ -278,6 +315,15 @@ function renderAdminMetrics() {
 
   const queuePreview = document.querySelector('.queue-preview');
   if (queuePreview) queuePreview.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">KONDISI AREA CUCI</p><h2>Antrean saat ini</h2></div><button class="text-link" data-admin-tab="queue">Lihat antrean</button></div>${renderQueueColumns(false)}`;
+
+  const activityGrid = document.querySelector('.admin-content-grid');
+  if (activityGrid) {
+    const recent = [...db.transactions].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 4);
+    const activity = `<section class="admin-panel activity-panel"><div class="panel-heading"><div><p class="eyebrow">AKTIVITAS TERBARU</p><h2>Transaksi terbaru</h2></div><span>${db.transactions.length} total</span></div><div class="activity-list">${recent.map(tx => `<div class="activity-row"><div><strong>${escapeHtml(tx.code)}</strong><span>${escapeHtml(tx.item_name)}</span></div><div><strong>${money(tx.amount)}</strong><span>${escapeHtml(statusLabel(tx.payment_status))} · ${escapeHtml(tx.booking_date)}</span></div></div>`).join('') || '<p class="report-empty">Belum ada transaksi.</p>'}</div></section>`;
+    let activityPanel = activityGrid.querySelector('.activity-panel');
+    if (activityPanel) activityPanel.outerHTML = activity;
+    else activityGrid.insertAdjacentHTML('beforeend', activity);
+  }
 }
 function serviceCard(service) {
   const item = catalogItem(service);
@@ -557,17 +603,48 @@ function renderReportsLegacy() {
 }
 function renderReports() {
   const paid = db.transactions.filter(tx => tx.payment_status === 'PAID');
+  const pending = db.transactions.filter(tx => tx.payment_status === 'PENDING');
   const services = paid.filter(tx => tx.item_type !== 'PRODUCT');
   const products = paid.filter(tx => tx.item_type === 'PRODUCT');
   const serviceRevenue = services.reduce((sum, tx) => sum + Number(tx.amount), 0);
   const productRevenue = products.reduce((sum, tx) => sum + Number(tx.amount), 0);
   const totalRevenue = serviceRevenue + productRevenue;
-  const bookingCount = db.transactions.filter(tx => tx.transaction_type === 'BOOKING').length;
-  const walkInCount = db.transactions.filter(tx => tx.transaction_type === 'WALK_IN').length;
-  return `<header class="reports-heading"><div><p class="eyebrow">LAPORAN KEUANGAN</p><h2>Pendapatan studio</h2><p>Ringkasan transaksi lunas dan aktivitas operasional dari database.</p></div><span class="report-period">${db.transactions.length} transaksi · semua periode</span></header><div class="report-grid report-summary-grid"><article class="report-card report-card-primary"><span>TOTAL PENDAPATAN LUNAS</span><strong>${money(totalRevenue)}</strong><small>${paid.length} transaksi telah dibayar</small></article><article class="report-card"><span>PENDAPATAN JASA</span><strong>${money(serviceRevenue)}</strong><small>${services.length} transaksi jasa</small></article><article class="report-card"><span>PENDAPATAN PRODUK</span><strong>${money(productRevenue)}</strong><small>${products.length} baris penjualan</small></article><article class="report-card"><span>JUMLAH TRANSAKSI</span><strong>${db.transactions.length}</strong><small>${bookingCount} booking · ${walkInCount} walk-in</small></article></div>`;
+  return `<header class="reports-heading"><div><p class="eyebrow">LAPORAN KEUANGAN</p><h2>Pendapatan studio</h2><p>Ringkasan transaksi berdasarkan catatan operasional Supabase.</p></div><span class="report-period">${db.transactions.length} transaksi · seluruh tanggal</span></header><div class="report-grid report-summary-grid"><article class="report-card report-card-primary"><span>TOTAL PENDAPATAN</span><strong>${money(totalRevenue)}</strong><small>Transaksi lunas · semua metode</small></article><article class="report-card"><span>PENDAPATAN JASA</span><strong>${money(serviceRevenue)}</strong><small>${services.length} transaksi lunas</small></article><article class="report-card"><span>PENDAPATAN PRODUK</span><strong>${money(productRevenue)}</strong><small>${products.length} baris penjualan lunas</small></article><article class="report-card"><span>TRANSAKSI TERCATAT</span><strong>${db.transactions.length}</strong><small>Semua status</small></article><article class="report-card report-card-quiet"><span>TRANSAKSI LUNAS</span><strong>${paid.length}</strong><small>PAID</small></article><article class="report-card report-card-quiet"><span>MENUNGGU PEMBAYARAN</span><strong>${pending.length}</strong><small>PENDING</small></article></div>`;
 }
 function renderAdminTransactionList(records, title, eyebrow) {
-  return `<div class="catalog-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2></div><span class="shop-count">${records.length} transaksi</span></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>PELANGGAN / KENDARAAN</span><span>ITEM</span><span>PEMBAYARAN</span><span>TOTAL</span></div>${records.length ? records.map(tx => { const customer = getCustomer(tx), vehicle = getVehicle(tx); return `<div class="catalog-row"><span class="catalog-name"><strong>${escapeHtml(tx.code)}<small>${escapeHtml(tx.booking_date)} · ${escapeHtml(tx.booking_time)}</small></strong></span><span>${escapeHtml(customer?.full_name || 'Pelanggan')}<small>${escapeHtml(vehicle?.plate || 'Pembelian produk')}</small></span><span>${escapeHtml(tx.item_name)}</span><span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span></span></span><span>${money(tx.amount)}</span></div>`; }).join('') : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
+  const paidCount = records.filter(tx => tx.payment_status === 'PAID').length;
+  const pendingCount = records.filter(tx => tx.payment_status === 'PENDING').length;
+  return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Urut berdasarkan aktivitas terbaru dari catatan Supabase.</p></div><div class="transaction-summary"><strong>${records.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} pending</span></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span></div>${records.length ? records.map(tx => { const customer = getCustomer(tx), vehicle = getVehicle(tx); return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small></span><span class="transaction-item">${escapeHtml(tx.item_name)}</span><span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span></span></span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${statusLabel(tx.transaction_status)}</span><span class="transaction-amount">${money(tx.amount)}</span></div>`; }).join('') : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
+}
+function renderAdminBookings() {
+  const bookings = db.transactions.filter(tx => tx.transaction_type === 'BOOKING').sort((a, b) => `${a.booking_date} ${a.booking_time}`.localeCompare(`${b.booking_date} ${b.booking_time}`));
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = bookings.filter(tx => tx.booking_date >= today);
+  const rows = upcoming.length ? upcoming : bookings;
+  return `<div class="booking-board"><div class="booking-summary"><div><span>BOOKING MENDATANG</span><strong>${upcoming.length}</strong></div><div><span>MENUNGGU PEMBAYARAN</span><strong>${bookings.filter(tx => tx.payment_status === 'PENDING').length}</strong></div><div><span>BOOKING HARI INI</span><strong>${bookings.filter(tx => tx.booking_date === today).length}</strong></div></div><div class="booking-board-heading"><div><p class="eyebrow">JADWAL KUNJUNGAN</p><h2>${upcoming.length ? 'Booking berikutnya' : 'Riwayat booking'}</h2></div><span>${rows.length} jadwal</span></div><div class="booking-list">${rows.length ? rows.map(tx => { const customer = getCustomer(tx), vehicle = getVehicle(tx); const date = new Date(`${tx.booking_date}T12:00:00`); return `<article class="booking-row"><div class="booking-date"><strong>${date.toLocaleDateString('id-ID', { day: '2-digit' })}</strong><span>${date.toLocaleDateString('id-ID', { month: 'short' })}</span></div><div class="booking-main"><strong>${escapeHtml(tx.item_name)}</strong><span>${escapeHtml(customer?.full_name || 'Pelanggan')} · ${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</span><small>${escapeHtml(tx.code)}</small></div><div class="booking-time"><strong>${escapeHtml(tx.booking_time)}</strong><span>${tx.duration_minutes} menit</span></div><div class="booking-status"><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${statusLabel(tx.transaction_status)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span></div><strong class="booking-amount">${money(tx.amount)}</strong></article>`; }).join('') : '<p class="report-empty">Belum ada booking tercatat.</p>'}</div></div>`;
+}
+function renderAdminCustomers() {
+  return `<div class="customer-toolbar"><div><p class="eyebrow">PROFIL PELANGGAN</p><h2>Pelanggan dan kendaraan</h2><p>Ringkasan kunjungan dan kendaraan terdaftar.</p></div><span>${db.customers.length} pelanggan · ${db.vehicles.length} kendaraan</span></div><div class="customer-grid">${db.customers.map(customer => {
+    const vehicles = db.vehicles.filter(vehicle => vehicle.customer_id === customer.id);
+    const transactions = db.transactions.filter(tx => tx.customer_id === customer.id);
+    const initials = customer.full_name.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase();
+    return `<article class="customer-card"><div class="customer-card-heading"><span class="customer-avatar">${escapeHtml(initials)}</span><div><h3>${escapeHtml(customer.full_name)}</h3><p>${escapeHtml(customer.phone)}</p></div></div><div class="customer-stats"><span><strong>${transactions.length}</strong> transaksi</span><span><strong>${vehicles.length}</strong> kendaraan</span></div><div class="customer-vehicles">${vehicles.map(vehicle => `<div class="customer-vehicle"><span class="vehicle-type">${vehicle.type === 'MOTOR' ? 'Motor' : 'Mobil'}</span><strong>${escapeHtml(vehicle.plate)}</strong><small>${escapeHtml(vehicle.model)}</small></div>`).join('') || '<span class="report-empty">Belum ada kendaraan terdaftar.</span>'}</div></article>`;
+  }).join('')}</div>`;
+}
+function adminDescription(tab) {
+  return ({ overview: 'Pantau pendapatan, aktivitas studio, dan kebutuhan operasional.', transactions: 'Kelola pembayaran dan aktivitas transaksi dari semua kanal.', bookings: 'Tinjau jadwal kunjungan mendatang, pelanggan, dan status pembayaran.', queue: 'Pantau kendaraan yang menunggu, dicuci, dan siap diserahkan.', 'self-service': 'Pantau status empat bay dan sesi yang sedang berjalan.', customers: 'Lihat pelanggan, kendaraan, dan frekuensi kunjungan.', catalog: 'Kelola layanan, produk, harga, dan persediaan studio.', reports: 'Analisis pendapatan, metode pembayaran, layanan, dan penjualan produk.' })[tab] || '';
+}
+function setAdminDescription(tab) {
+  const heading = document.getElementById('admin-heading');
+  if (!heading) return;
+  let description = document.getElementById('admin-description');
+  if (!description) {
+    description = document.createElement('p');
+    description.id = 'admin-description';
+    heading.insertAdjacentElement('afterend', description);
+  }
+  description.className = 'admin-page-description';
+  description.textContent = adminDescription(tab);
 }
 function renderAdminBays() {
   const bays = [1, 2, 3, 4].map(number => {
@@ -591,11 +668,10 @@ function renderReportDetailsLegacy() {
 }
 function renderReportDetails() {
   const paid = db.transactions.filter(tx => tx.payment_status === 'PAID');
-  const days = [...new Set(paid.map(tx => tx.booking_date))].sort().slice(-7);
-  const daily = days.map(day => ({ label: new Date(`${day}T12:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }), amount: paid.filter(tx => tx.booking_date === day).reduce((sum, tx) => sum + Number(tx.amount), 0) }));
-  const renderBars = (rows, formatValue = money) => {
+  const daily = dailyPaidRevenue(db.transactions);
+  const renderBars = (rows, formatValue = money, valueKey = 'amount') => {
     const maximum = Math.max(1, ...rows.map(row => row.amount));
-    return `<div class="report-bars">${rows.map(row => `<div class="report-bar-row"><span>${escapeHtml(row.label)}</span><div class="report-bar-track"><i style="width:${row.amount / maximum * 100}%"></i></div><strong>${formatValue(row.amount, row)}</strong></div>`).join('') || '<p class="report-empty">Belum ada transaksi lunas.</p>'}</div>`;
+    return `<div class="report-bars">${rows.map(row => `<div class="report-bar-row"><span>${escapeHtml(row.label)}</span><div class="report-bar-track"><i style="width:${row.amount / maximum * 100}%"></i></div><strong>${formatValue(row[valueKey], row)}</strong></div>`).join('') || '<p class="report-empty">Belum ada transaksi.</p>'}</div>`;
   };
   const serviceRevenue = paid.filter(tx => tx.item_type !== 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
   const productRevenue = paid.filter(tx => tx.item_type === 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
@@ -608,10 +684,35 @@ function renderReportDetails() {
     const rows = paid.filter(tx => tx.payment_method === method);
     return { label: statusLabel(method), amount: rows.reduce((sum, tx) => sum + Number(tx.amount), 0), count: rows.length };
   });
-  const byVehicle = ['CAR', 'MOTOR'].map(type => ({ label: type === 'CAR' ? 'Mobil' : 'Sepeda motor', amount: paid.filter(tx => getVehicle(tx)?.type === type).reduce((sum, tx) => sum + Number(tx.amount), 0) }));
-  const popular = SERVICES.map(service => ({ label: service.name, amount: paid.filter(tx => tx.item_id === service.id).reduce((sum, tx) => sum + Number(tx.amount), 0) })).sort((a, b) => b.amount - a.amount);
-  const productSales = db.services_products.filter(item => item.item_type === 'PRODUCT').map(product => ({ label: product.name, amount: paid.filter(tx => tx.item_id === product.id).reduce((sum, tx) => sum + Number(tx.quantity || 1), 0) }));
-  return `<div class="report-visual-grid"><section class="admin-panel report-trend"><div class="panel-heading"><div><p class="eyebrow">TREN PENDAPATAN</p><h2>Tujuh hari terakhir</h2></div><strong>${money(totalRevenue)}</strong></div>${renderBars(daily)}</section><section class="admin-panel report-split"><div class="panel-heading"><div><p class="eyebrow">KOMPOSISI PENDAPATAN</p><h2>Jasa dan produk</h2></div></div>${renderBars(revenueSplit)}</section><section class="admin-panel report-payments"><div class="panel-heading"><div><p class="eyebrow">METODE PEMBAYARAN</p><h2>Transaksi lunas</h2></div></div>${paymentMix.map(row => `<div class="report-payment-row"><span>${escapeHtml(row.label)}</span><strong>${money(row.amount)}</strong><small>${row.count} transaksi</small></div>`).join('')}</section></div><section class="admin-panel report-breakdown"><div class="panel-heading"><div><p class="eyebrow">RINCIAN OPERASIONAL</p><h2>Pendapatan dan penjualan</h2></div></div><div class="report-breakdown-grid"><div><h3>Menurut kendaraan</h3>${renderBars(byVehicle)}</div><div><h3>Layanan</h3>${renderBars(popular)}</div><div><h3>Produk terjual</h3>${renderBars(productSales, row => `${row.amount} unit`)}</div></div></section>`;
+  const byVehicle = ['CAR', 'MOTOR'].map(type => {
+    const rows = paid.filter(tx => getVehicle(tx)?.type === type);
+    return { label: type === 'CAR' ? 'Mobil' : 'Sepeda motor', amount: rows.reduce((sum, tx) => sum + Number(tx.amount), 0), count: rows.length };
+  });
+  const serviceItems = db.services_products.filter(item => item.item_type === 'SERVICE').map(service => {
+    const rows = paid.filter(tx => tx.item_id === service.id);
+    return { label: catalogItem(service).name, amount: rows.reduce((sum, tx) => sum + Number(tx.amount), 0), count: rows.length };
+  }).sort((a, b) => b.count - a.count || b.amount - a.amount);
+  const vehicleItems = ['CAR', 'MOTOR'].map(type => {
+    const rows = paid.filter(tx => getVehicle(tx)?.type === type);
+    return { label: type === 'CAR' ? 'Mobil' : 'Sepeda motor', amount: rows.reduce((sum, tx) => sum + Number(tx.amount), 0), count: rows.length };
+  });
+  const productItems = db.services_products.filter(item => item.item_type === 'PRODUCT').map(product => {
+    const rows = paid.filter(tx => tx.item_id === product.id);
+    return { label: catalogItem(product).name, amount: rows.reduce((sum, tx) => sum + Number(tx.quantity || 1), 0), revenue: rows.reduce((sum, tx) => sum + Number(tx.amount), 0), stock: Number(product.stock) || 0, minStock: Number(product.min_stock) || 0 };
+  }).sort((a, b) => b.amount - a.amount || b.revenue - a.revenue);
+  const servicePerformance = `<div class="performance-list">${serviceItems.map((row, index) => `<div class="performance-row"><span class="performance-rank">${String(index + 1).padStart(2, '0')}</span><span class="performance-main"><strong>${escapeHtml(row.label)}</strong><small>${row.count} transaksi lunas</small></span><strong>${money(row.amount)}</strong></div>`).join('') || '<p class="report-empty">Belum ada transaksi jasa.</p>'}</div>`;
+  const productPerformance = `<div class="performance-list">${productItems.map(row => `<div class="performance-row"><span class="performance-main"><strong>${escapeHtml(row.label)}</strong><small>${row.amount} unit · ${money(row.revenue)}</small></span><span class="stock-indicator ${row.stock <= row.minStock ? 'stock-indicator-low' : ''}">${row.stock <= row.minStock ? 'Stok rendah' : `${row.stock} stok`}</span></div>`).join('') || '<p class="report-empty">Belum ada penjualan produk.</p>'}</div>`;
+  const pendingCount = db.transactions.filter(tx => tx.payment_status === 'PENDING').length;
+  return `<section class="admin-panel report-primary"><div class="panel-heading"><div><p class="eyebrow">TREN PENDAPATAN</p><h2>Tujuh hari terakhir</h2></div><span class="report-period">Lunas · ${paid.length} transaksi</span></div>${renderRevenueLineChart(daily)}</section><div class="report-support-grid"><section class="admin-panel report-split"><div class="panel-heading"><div><p class="eyebrow">KOMPOSISI PENDAPATAN</p><h2>Jasa dan produk</h2></div><strong>${money(totalRevenue)}</strong></div><div class="revenue-composition" role="img" aria-label="Jasa ${money(serviceRevenue)}, produk ${money(productRevenue)}"><span class="revenue-service" style="width:${totalRevenue ? serviceRevenue / totalRevenue * 100 : 0}%"></span><span class="revenue-product" style="width:${totalRevenue ? productRevenue / totalRevenue * 100 : 0}%"></span></div><div class="composition-legend"><span><i></i>Jasa <strong>${money(serviceRevenue)}</strong></span><span><i></i>Produk <strong>${money(productRevenue)}</strong></span></div></section><section class="admin-panel report-payments"><div class="panel-heading"><div><p class="eyebrow">METODE PEMBAYARAN</p><h2>Transaksi lunas</h2></div><span>${pendingCount} pending</span></div>${paymentMix.map(row => `<div class="report-payment-row"><span>${escapeHtml(row.label)}</span><strong>${money(row.amount)}</strong><small>${row.count} transaksi</small></div>`).join('')}</section></div><section class="admin-panel report-vehicle-panel"><div class="panel-heading"><div><p class="eyebrow">PENDAPATAN PER KENDARAAN</p><h2>Mobil dan sepeda motor</h2></div></div><div class="report-vehicle-list">${vehicleItems.map(row => `<div><span>${escapeHtml(row.label)} <small>${row.count} transaksi lunas</small></span><strong>${money(row.amount)}</strong></div>`).join('')}</div></section><div class="report-performance-grid"><section class="admin-panel"><div class="panel-heading"><div><p class="eyebrow">KINERJA LAYANAN</p><h2>Jasa teratas</h2></div></div>${servicePerformance}</section><section class="admin-panel"><div class="panel-heading"><div><p class="eyebrow">KINERJA PRODUK</p><h2>Penjualan dan stok</h2></div></div>${productPerformance}</section></div><section class="report-detail"><div class="catalog-toolbar"><div><p class="eyebrow">DETAIL</p><h2>Transaksi tercatat</h2></div><span class="shop-count">${db.transactions.length} transaksi</span></div>${renderAdminTransactionList(db.transactions, 'Transaksi dari semua status pembayaran.', 'RIWAYAT TRANSAKSI')}</section>`;
+}
+function renderAdminCatalog() {
+  const items = [...db.services_products].sort((a, b) => a.item_type.localeCompare(b.item_type) || a.name.localeCompare(b.name));
+  return `<div class="catalog-toolbar"><div><p class="eyebrow">KATALOG STUDIO</p><h2>Layanan dan produk</h2><p>Harga, durasi, ketersediaan, dan stok katalog.</p></div><button class="button button-dark" data-action="add-item">Tambah item</button></div><div class="catalog-table admin-catalog-table"><div class="catalog-row catalog-head"><span>ITEM</span><span>JENIS / KATEGORI</span><span>HARGA</span><span>STOK / DURASI</span><span>STATUS</span></div>${items.map(item => {
+    const copy = catalogItem(item);
+    const category = item.category || (item.item_type === 'ADD_ON' ? 'Tambahan' : 'Perawatan');
+    const vehicleType = item.type === 'MOTOR' ? 'Motor' : item.type === 'CAR' ? 'Mobil' : '';
+    return `<div class="catalog-row"><span class="catalog-name catalog-name-${String(item.item_type).toLowerCase()}"><img src="${copy.image || PHOTOS.car}" alt=""><strong>${escapeHtml(item.name)}<small>${escapeHtml([category, vehicleType].filter(Boolean).join(' · '))}</small></strong></span><span>${item.item_type === 'PRODUCT' ? 'Produk' : item.item_type === 'ADD_ON' ? 'Tambahan' : 'Layanan'}<small>${escapeHtml(category)}</small></span><span class="catalog-price">${money(item.price)}</span><span>${item.item_type === 'PRODUCT' ? `<b class="${item.stock <= item.min_stock ? 'stock-low' : ''}">${item.stock} unit</b><small>Minimum ${item.min_stock}</small>` : `${item.duration || 0} menit`}</span><button class="toggle-active" data-edit-item="${item.id}">${item.active === false ? 'Nonaktif' : 'Aktif'} · Ubah</button></div>`;
+  }).join('')}</div>`;
 }
 function activateAdminTab(tab) {
   document.querySelectorAll('.admin-nav').forEach(button => button.classList.toggle('active', button.dataset.adminTab === tab));
@@ -620,13 +721,19 @@ function activateAdminTab(tab) {
   if (!content) return;
   const labels = { overview: 'Ringkasan operasional', transactions: 'Transaksi', bookings: 'Booking', queue: 'Antrean cuci', 'self-service': 'Self-Service Bays', catalog: 'Layanan & produk', customers: 'Pelanggan & kendaraan', reports: 'Laporan pendapatan' };
   heading.textContent = labels[tab] || labels.overview;
+  setAdminDescription(tab);
   if (tab === 'overview') { render(); return; }
+  if (tab === 'catalog') {
+    content.innerHTML = renderAdminCatalog();
+    simplifyUiSymbols(content);
+    return;
+  }
   if (tab === 'transactions') content.innerHTML = renderAdminTransactionList(db.transactions, 'Seluruh transaksi studio.', 'DAFTAR TRANSAKSI');
-  else if (tab === 'bookings') content.innerHTML = renderAdminTransactionList(db.transactions.filter(tx => tx.transaction_type === 'BOOKING'), 'Jadwal booking mendatang dan riwayat booking.', 'DAFTAR BOOKING');
+  else if (tab === 'bookings') content.innerHTML = renderAdminBookings();
   else if (tab === 'self-service') content.innerHTML = renderAdminBays();
   if (tab === 'queue') content.innerHTML = `<div class="queue-toolbar"><div><p class="eyebrow">PENGELOLAAN AREA CUCI</p><h2>Pantau setiap kendaraan.</h2></div><button class="button button-dark" data-action="walkin">+ Walk-in baru</button></div>${renderQueueColumns(true)}`;
   else if (tab === 'reports') { content.innerHTML = renderReports(); content.insertAdjacentHTML('beforeend', renderReportDetails()); }
-  else if (tab === 'customers') content.innerHTML = `<div class="catalog-toolbar"><div><p class="eyebrow">DATA PELANGGAN</p><h2>Pelanggan dan kendaraannya.</h2></div><span class="shop-count">${db.customers.length} pelanggan · ${db.vehicles.length} kendaraan</span></div><div class="customer-grid">${db.customers.map(customer => `<article class="customer-card"><span class="customer-avatar">${customer.full_name.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase()}</span><h3>${escapeHtml(customer.full_name)}</h3><p>${escapeHtml(customer.phone)}</p><div>${db.vehicles.filter(vehicle => vehicle.customer_id === customer.id).map(vehicle => `<span class="vehicle-chip">${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.plate)}</span>`).join('')}</div><small>${db.transactions.filter(tx => tx.customer_id === customer.id).length} kunjungan</small></article>`).join('')}</div>`;
+  else if (tab === 'customers') content.innerHTML = renderAdminCustomers();
   else if (tab === 'catalog') content.innerHTML = `<div class="catalog-toolbar"><div><p class="eyebrow">KATALOG DAN PERSEDIAAN</p><h2>Kelola layanan dan produk.</h2></div><button class="button button-dark" data-action="add-item">+ Tambah item</button></div><div class="catalog-table"><div class="catalog-row catalog-head"><span>ITEM</span><span>JENIS</span><span>HARGA</span><span>STOK / DURASI</span><span>STATUS</span></div>${db.services_products.map(item => `<div class="catalog-row"><span class="catalog-name"><img src="${item.image || PHOTOS.car}" alt=""><strong>${escapeHtml(item.name)}</strong></span><span>${item.item_type === 'PRODUCT' ? 'PRODUK' : item.item_type === 'ADD_ON' ? 'TAMBAHAN' : 'LAYANAN'}</span><span>${money(item.price)}</span><span>${item.item_type === 'PRODUCT' ? `<b class="${item.stock <= item.min_stock ? 'stock-low' : ''}">${item.stock} / min ${item.min_stock}</b>` : `${item.duration || 0} menit`}</span><button class="toggle-active" data-edit-item="${item.id}">${item.active === false ? 'NONAKTIF' : 'AKTIF'} · Ubah</button></div>`).join('')}</div>`;
   simplifyUiSymbols(content);
 }
