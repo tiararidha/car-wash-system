@@ -170,7 +170,7 @@ function escapeHtml(value = '') { return String(value).replace(/[&<>"']/g, char 
 function getVehicle(tx) { return db.vehicles.find(item => item.id === tx.vehicle_id); }
 function getCustomer(tx) { return db.customers.find(item => item.id === tx.customer_id); }
 function statusLabel(value) {
-  return ({ AVAILABLE: 'TERSEDIA', OCCUPIED: 'DIGUNAKAN', RESERVED: 'DIPESAN', PAID: 'LUNAS', PENDING: 'MENUNGGU', FAILED: 'GAGAL', REFUNDED: 'DIKEMBALIKAN', COMPLETED: 'SELESAI', BOOKED: 'DIBOOKING', ACTIVE: 'AKTIF', CANCELLED: 'DIBATALKAN', WAITING: 'MENUNGGU', WASHING: 'DICUCI', FINISHING: 'TAHAP AKHIR', CASH: 'TUNAI', QRIS: 'QRIS', E_WALLET: 'E-WALLET', CARD: 'KARTU' })[value] || String(value || '').replaceAll('_', ' ');
+  return ({ AVAILABLE: 'TERSEDIA', OCCUPIED: 'DIGUNAKAN', RESERVED: 'DIPESAN', PAID: 'Lunas', PENDING: 'Pending', FAILED: 'Gagal', REFUNDED: 'Dikembalikan', COMPLETED: 'SELESAI', BOOKED: 'DIBOOKING', ACTIVE: 'AKTIF', CANCELLED: 'DIBATALKAN', WAITING: 'MENUNGGU', WASHING: 'DICUCI', FINISHING: 'TAHAP AKHIR', CASH: 'Tunai', QRIS: 'QRIS', E_WALLET: 'E-Wallet', CARD: 'Kartu' })[value] || String(value || '').replaceAll('_', ' ');
 }
 function statusBadge(value) { return `<span class="status status-${String(value).toLowerCase().replaceAll('_', '-')}">${statusLabel(value)}</span>`; }
 function bayMinutesLeft(tx) { return Math.max(0, tx.duration_minutes - Math.floor((Date.now() - new Date(tx.created_at).getTime()) / 60000)); }
@@ -230,10 +230,16 @@ function renderAdminDataState() {
 }
 function simplifyUiSymbols(root = document.body) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const emptyDecorations = new Set();
   let node;
   while ((node = walker.nextNode())) {
-    if (/[↗↓→←]/.test(node.nodeValue)) node.nodeValue = node.nodeValue.replace(/[↗↓→←]/g, '').replace(/\s{2,}/g, ' ');
+    if (!/[↗↓→←]/.test(node.nodeValue)) continue;
+    const cleaned = node.nodeValue.replace(/[↗↓→←]/g, '').replace(/\s{2,}/g, ' ');
+    const wrapper = node.parentElement;
+    if (!cleaned.trim() && wrapper && !wrapper.children.length && /^(SPAN|I)$/.test(wrapper.tagName)) emptyDecorations.add(wrapper);
+    else node.nodeValue = cleaned;
   }
+  emptyDecorations.forEach(element => element.remove());
 }
 function renderAdminLogin() {
   return `<section class="admin-login-page"><div class="admin-login-image"><img src="${PHOTOS.hero}" alt="Mobil sedang dicuci di studio"></div><div class="admin-login-content"><a class="brand" href="#home" data-nav="home"><span class="brand-mark">R</span><span>rinse<span class="brand-light">society</span><small>WASH STUDIO · SEMARANG</small></span></a><p class="eyebrow">AREA KHUSUS TIM STUDIO</p><h1>Admin Login</h1><p>Masuk untuk mengelola operasional Rinse Society.</p><form id="admin-login-form" class="admin-login-form"><label for="admin-email">Email</label><input id="admin-email" name="email" type="email" autocomplete="username" required placeholder="nama@bisnis.id"><label for="admin-password">Password</label><input id="admin-password" name="password" type="password" autocomplete="current-password" required placeholder="Masukkan password"><button class="button button-dark button-full" type="submit">Masuk</button><p class="login-error" id="login-error" role="alert"></p></form><button class="text-link" data-nav="home">Kembali ke Website</button></div></section>`;
@@ -555,11 +561,13 @@ function renderReports() {
   const products = paid.filter(tx => tx.item_type === 'PRODUCT');
   const serviceRevenue = services.reduce((sum, tx) => sum + Number(tx.amount), 0);
   const productRevenue = products.reduce((sum, tx) => sum + Number(tx.amount), 0);
-  const total = db.transactions.reduce((sum, tx) => sum + Number(tx.amount), 0);
-  return `<div class="reports-heading"><div><p class="eyebrow">RINGKASAN KEUANGAN</p><h2>Pendapatan tercatat rapi.</h2></div><span class="shop-count">${db.transactions.length} transaksi tercatat</span></div><div class="report-grid"><article class="report-card"><span>PENDAPATAN JASA</span><strong>${money(serviceRevenue)}</strong><small>${services.length} transaksi cuci dan add-on</small></article><article class="report-card"><span>PENDAPATAN PRODUK</span><strong>${money(productRevenue)}</strong><small>${products.length} baris penjualan retail</small></article><article class="report-card"><span>JUMLAH TRANSAKSI</span><strong>${db.transactions.length}</strong><small>${db.transactions.filter(tx => tx.transaction_type === 'BOOKING').length} booking · ${db.transactions.filter(tx => tx.transaction_type === 'WALK_IN').length} walk-in</small></article><article class="report-card"><span>TOTAL NILAI TRANSAKSI</span><strong>${money(total)}</strong><small>Termasuk pembayaran yang menunggu</small></article></div><section class="admin-panel payment-report"><div class="panel-heading"><div><p class="eyebrow">METODE PEMBAYARAN</p><h2>Ringkasan pembayaran</h2></div></div>${['CASH', 'QRIS', 'E_WALLET', 'CARD'].map(method => { const rows = paid.filter(tx => tx.payment_method === method); const amount = rows.reduce((sum, tx) => sum + Number(tx.amount), 0); return `<div class="revenue-bar-row"><span>${statusLabel(method)}</span><div><i style="width:${paid.length ? rows.length / paid.length * 100 : 0}%"></i></div><strong>${money(amount)} · ${rows.length} transaksi</strong></div>`; }).join('')}</section>`;
+  const totalRevenue = serviceRevenue + productRevenue;
+  const bookingCount = db.transactions.filter(tx => tx.transaction_type === 'BOOKING').length;
+  const walkInCount = db.transactions.filter(tx => tx.transaction_type === 'WALK_IN').length;
+  return `<header class="reports-heading"><div><p class="eyebrow">LAPORAN KEUANGAN</p><h2>Pendapatan studio</h2><p>Ringkasan transaksi lunas dan aktivitas operasional dari database.</p></div><span class="report-period">${db.transactions.length} transaksi · semua periode</span></header><div class="report-grid report-summary-grid"><article class="report-card report-card-primary"><span>TOTAL PENDAPATAN LUNAS</span><strong>${money(totalRevenue)}</strong><small>${paid.length} transaksi telah dibayar</small></article><article class="report-card"><span>PENDAPATAN JASA</span><strong>${money(serviceRevenue)}</strong><small>${services.length} transaksi jasa</small></article><article class="report-card"><span>PENDAPATAN PRODUK</span><strong>${money(productRevenue)}</strong><small>${products.length} baris penjualan</small></article><article class="report-card"><span>JUMLAH TRANSAKSI</span><strong>${db.transactions.length}</strong><small>${bookingCount} booking · ${walkInCount} walk-in</small></article></div>`;
 }
 function renderAdminTransactionList(records, title, eyebrow) {
-  return `<div class="catalog-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2></div><span class="shop-count">${records.length} transaksi</span></div><div class="catalog-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>PELANGGAN / KENDARAAN</span><span>ITEM</span><span>PEMBAYARAN</span><span>TOTAL</span></div>${records.length ? records.map(tx => { const customer = getCustomer(tx), vehicle = getVehicle(tx); return `<div class="catalog-row"><span class="catalog-name"><strong>${escapeHtml(tx.code)}<small>${escapeHtml(tx.booking_date)} · ${escapeHtml(tx.booking_time)}</small></strong></span><span>${escapeHtml(customer?.full_name || 'Pelanggan')}<small>${escapeHtml(vehicle?.plate || 'Pembelian produk')}</small></span><span>${escapeHtml(tx.item_name)}</span><span>${statusLabel(tx.payment_method)}<small>${statusLabel(tx.payment_status)}</small></span><span>${money(tx.amount)}</span></div>`; }).join('') : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
+  return `<div class="catalog-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2></div><span class="shop-count">${records.length} transaksi</span></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>PELANGGAN / KENDARAAN</span><span>ITEM</span><span>PEMBAYARAN</span><span>TOTAL</span></div>${records.length ? records.map(tx => { const customer = getCustomer(tx), vehicle = getVehicle(tx); return `<div class="catalog-row"><span class="catalog-name"><strong>${escapeHtml(tx.code)}<small>${escapeHtml(tx.booking_date)} · ${escapeHtml(tx.booking_time)}</small></strong></span><span>${escapeHtml(customer?.full_name || 'Pelanggan')}<small>${escapeHtml(vehicle?.plate || 'Pembelian produk')}</small></span><span>${escapeHtml(tx.item_name)}</span><span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span></span></span><span>${money(tx.amount)}</span></div>`; }).join('') : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
 }
 function renderAdminBays() {
   const bays = [1, 2, 3, 4].map(number => {
@@ -583,19 +591,27 @@ function renderReportDetailsLegacy() {
 }
 function renderReportDetails() {
   const paid = db.transactions.filter(tx => tx.payment_status === 'PAID');
-  const periods = [...new Set(paid.map(tx => tx.booking_date))].sort();
-  const days = periods.slice(-7);
-  const months = [...new Set(paid.map(tx => tx.booking_date.slice(0, 7)))].sort().slice(-6);
-  const renderBars = (eyebrow, title, rows) => {
+  const days = [...new Set(paid.map(tx => tx.booking_date))].sort().slice(-7);
+  const daily = days.map(day => ({ label: new Date(`${day}T12:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }), amount: paid.filter(tx => tx.booking_date === day).reduce((sum, tx) => sum + Number(tx.amount), 0) }));
+  const renderBars = (rows, formatValue = money) => {
     const maximum = Math.max(1, ...rows.map(row => row.amount));
-    return `<section class="admin-panel payment-report"><div class="panel-heading"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2></div></div>${rows.map(row => `<div class="revenue-bar-row"><span>${escapeHtml(row.label)}</span><div><i style="width:${row.amount / maximum * 100}%"></i></div><strong>${row.count === undefined ? money(row.amount) : `${row.count} produk`}</strong></div>`).join('') || '<div class="queue-empty">Belum ada transaksi lunas.</div>'}</section>`;
+    return `<div class="report-bars">${rows.map(row => `<div class="report-bar-row"><span>${escapeHtml(row.label)}</span><div class="report-bar-track"><i style="width:${row.amount / maximum * 100}%"></i></div><strong>${formatValue(row.amount, row)}</strong></div>`).join('') || '<p class="report-empty">Belum ada transaksi lunas.</p>'}</div>`;
   };
-  const daily = days.map(day => ({ label: day, amount: paid.filter(tx => tx.booking_date === day).reduce((sum, tx) => sum + Number(tx.amount), 0) }));
-  const monthly = months.map(month => ({ label: month, amount: paid.filter(tx => tx.booking_date.startsWith(month)).reduce((sum, tx) => sum + Number(tx.amount), 0) }));
+  const serviceRevenue = paid.filter(tx => tx.item_type !== 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const productRevenue = paid.filter(tx => tx.item_type === 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const totalRevenue = serviceRevenue + productRevenue;
+  const revenueSplit = [
+    { label: 'Jasa', amount: serviceRevenue },
+    { label: 'Produk', amount: productRevenue }
+  ];
+  const paymentMix = ['CASH', 'QRIS', 'E_WALLET', 'CARD'].map(method => {
+    const rows = paid.filter(tx => tx.payment_method === method);
+    return { label: statusLabel(method), amount: rows.reduce((sum, tx) => sum + Number(tx.amount), 0), count: rows.length };
+  });
   const byVehicle = ['CAR', 'MOTOR'].map(type => ({ label: type === 'CAR' ? 'Mobil' : 'Sepeda motor', amount: paid.filter(tx => getVehicle(tx)?.type === type).reduce((sum, tx) => sum + Number(tx.amount), 0) }));
   const popular = SERVICES.map(service => ({ label: service.name, amount: paid.filter(tx => tx.item_id === service.id).reduce((sum, tx) => sum + Number(tx.amount), 0) })).sort((a, b) => b.amount - a.amount);
-  const productSales = db.services_products.filter(item => item.item_type === 'PRODUCT').map(product => ({ label: product.name, amount: paid.filter(tx => tx.item_id === product.id).reduce((sum, tx) => sum + (tx.quantity || 1), 0), count: paid.filter(tx => tx.item_id === product.id).reduce((sum, tx) => sum + (tx.quantity || 1), 0) }));
-  return `${renderBars('PENDAPATAN HARIAN', 'Tujuh hari terakhir', daily)}${renderBars('PENDAPATAN BULANAN', 'Ringkasan per bulan', monthly)}${renderBars('PENDAPATAN PER KENDARAAN', 'Mobil dan sepeda motor', byVehicle)}${renderBars('LAYANAN TERPOPULER', 'Pendapatan per layanan', popular)}${renderBars('PENJUALAN PRODUK', 'Produk terjual', productSales)}`;
+  const productSales = db.services_products.filter(item => item.item_type === 'PRODUCT').map(product => ({ label: product.name, amount: paid.filter(tx => tx.item_id === product.id).reduce((sum, tx) => sum + Number(tx.quantity || 1), 0) }));
+  return `<div class="report-visual-grid"><section class="admin-panel report-trend"><div class="panel-heading"><div><p class="eyebrow">TREN PENDAPATAN</p><h2>Tujuh hari terakhir</h2></div><strong>${money(totalRevenue)}</strong></div>${renderBars(daily)}</section><section class="admin-panel report-split"><div class="panel-heading"><div><p class="eyebrow">KOMPOSISI PENDAPATAN</p><h2>Jasa dan produk</h2></div></div>${renderBars(revenueSplit)}</section><section class="admin-panel report-payments"><div class="panel-heading"><div><p class="eyebrow">METODE PEMBAYARAN</p><h2>Transaksi lunas</h2></div></div>${paymentMix.map(row => `<div class="report-payment-row"><span>${escapeHtml(row.label)}</span><strong>${money(row.amount)}</strong><small>${row.count} transaksi</small></div>`).join('')}</section></div><section class="admin-panel report-breakdown"><div class="panel-heading"><div><p class="eyebrow">RINCIAN OPERASIONAL</p><h2>Pendapatan dan penjualan</h2></div></div><div class="report-breakdown-grid"><div><h3>Menurut kendaraan</h3>${renderBars(byVehicle)}</div><div><h3>Layanan</h3>${renderBars(popular)}</div><div><h3>Produk terjual</h3>${renderBars(productSales, row => `${row.amount} unit`)}</div></div></section>`;
 }
 function activateAdminTab(tab) {
   document.querySelectorAll('.admin-nav').forEach(button => button.classList.toggle('active', button.dataset.adminTab === tab));
@@ -895,10 +911,13 @@ document.addEventListener('submit', async event => {
   if (event.target.id === 'history-search') {
     event.preventDefault();
     const query = new FormData(event.target).get('query');
+    const results = document.getElementById('history-results');
     try {
       const records = await rpcRequest('lookup_transaction_history', { p_search: query });
-      document.getElementById('history-results').innerHTML = renderHistoryResults(records || []);
-    } catch (error) { document.getElementById('history-results').innerHTML = `<div class="empty-state"><h3>Riwayat belum dapat dimuat.</h3><p>${escapeHtml(error.message)}</p></div>`; }
+      if (results?.isConnected) results.innerHTML = renderHistoryResults(records || []);
+    } catch (error) {
+      if (results?.isConnected) results.innerHTML = `<div class="empty-state"><h3>Riwayat belum dapat dimuat.</h3><p>${escapeHtml(error.message)}</p></div>`;
+    }
   }
   if (event.target.id === 'transaction-form') { event.preventDefault(); const submit = event.target.querySelector('[type="submit"]'); submit.disabled = true; try { await submitService(event.target); } catch (error) { showToast(error.message, 'error'); submit.disabled = false; } }
   if (event.target.id === 'product-checkout-form') {
