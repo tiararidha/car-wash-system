@@ -1,11 +1,11 @@
 :root {
-  --display: 'Outfit', sans-serif;
-  --body: 'Inter', sans-serif;
-  --mono: 'Inter', sans-serif;
+  --display: 'Outfit', system-ui, sans-serif;
+  --body: 'Inter', system-ui, sans-serif;
+  --mono: 'Inter', system-ui, sans-serif;
   --ui-radius: 4px;
 }
 
-body { font-size: 15px; line-height: 1.6; }
+body { font-size: 14px; line-height: 22px; }
 .brand { font-size: 21px; }
 .brand small { font-size: 9px; }
 .main-nav { gap: 28px; font-size: 14px; }
@@ -28,7 +28,7 @@ body { font-size: 15px; line-height: 1.6; }
 .quantity-control button {
   transition: background-color .18s ease, color .18s ease, border-color .18s ease, opacity .18s ease;
 }
-.button { min-height: 44px; gap: 9px; padding: 0 18px; border-radius: var(--ui-radius); font: 600 14px/1.2 var(--body); transform: none; }
+.button { min-height: 44px; gap: 9px; padding: 0 18px; border-radius: var(--ui-radius); font: 600 12px/16px var(--body); transform: none; }
 .button:hover { transform: none; }
 .button-small { min-height: 40px; padding: 0 15px; font-size: 13px; }
 .button-full { justify-content: center; }
@@ -52,7 +52,7 @@ button.text-link { justify-content: flex-start; padding: 8px 0; text-align: left
 .hero { min-height: 660px; }
 .hero-shade { background: linear-gradient(90deg, rgba(7,25,29,.68) 0%, rgba(7,25,29,.34) 45%, rgba(7,25,29,.04) 100%), linear-gradient(0deg, rgba(7,25,29,.36), transparent 34%); }
 .hero-content { top: 46%; width: min(680px, 55vw); max-width: 680px; }
-.hero h1 { max-width: 660px; font-size: 60px; line-height: 1.08; margin-bottom: 16px; }
+.hero h1 { max-width: 660px; font-size: 50px; line-height: 58px; margin-bottom: 16px; }
 .hero-description { max-width: 480px; line-height: 1.65; }
 .hero-buttons { gap: 20px; }
 .hero-note { display: flex; align-items: center; gap: 12px; }
@@ -60,10 +60,10 @@ button.text-link { justify-content: flex-start; padding: 8px 0; text-align: left
 .section-heading { column-gap: 40px; row-gap: 18px; }
 .section-heading h2,
 .editorial-copy h2,
-.shop-teaser h2 { font-size: 32px; line-height: 1.18; }
+.shop-teaser h2 { font-size: 32px; line-height: 40px; }
 .section-aside,
 .page-hero > div > p:last-child,
-.editorial-copy > p:not(.eyebrow) { font-size: 15px; line-height: 1.7; }
+.editorial-copy > p:not(.eyebrow) { font-size: 16px; line-height: 26px; }
 .eyebrow { font-size: 11px; line-height: 1.4; }
 
 .service-grid { align-items: stretch; }
@@ -75,9 +75,9 @@ button.text-link { justify-content: flex-start; padding: 8px 0; text-align: left
 .photo-tag { top: 14px; left: 14px; padding: 6px 8px; border-radius: 2px; font-size: 10px; }
 .service-copy { display: flex; flex: 1; flex-direction: column; padding: 20px; }
 .service-title-row { align-items: baseline; gap: 14px; }
-.service-title-row h3 { font-size: 19px; line-height: 1.3; }
-.service-price { flex: 0 0 auto; font-size: 20px; }
-.service-copy > p { min-height: 3.2em; font-size: 14px; line-height: 1.6; }
+.service-title-row h3 { font-size: 18px; line-height: 24px; }
+.service-price { flex: 0 0 auto; font-size: 16px; line-height: 20px; }
+.service-copy > p { min-height: 3.2em; font-size: 14px; line-height: 22px; }
 .service-meta { margin-top: auto; font-size: 12px; }
 .service-meta button { margin-left: auto; }
 .service-banner { border-radius: var(--ui-radius); overflow: hidden; }
@@ -103,16 +103,16 @@ button.text-link { justify-content: flex-start; padding: 8px 0; text-align: left
 .product-add { top: 14px; right: 14px; border-radius: 50%; }
 .product-info { display: flex; flex: 1; flex-direction: column; padding: 18px; }
 .product-info .eyebrow { font-size: 10px; margin-bottom: 7px; }
-.product-info h3 { font-size: 17px; line-height: 1.35; margin-bottom: 6px; }
-.product-info > p { flex: 1; min-height: 3.2em; margin-bottom: 14px; font-size: 13px; line-height: 1.55; }
+.product-info h3 { font-size: 16px; line-height: 22px; margin-bottom: 6px; }
+.product-info > p { flex: 1; min-height: 3.2em; margin-bottom: 14px; font-size: 14px; line-height: 22px; }
 .product-price-row { align-items: center; gap: 10px; margin-top: auto; }
-.product-price-row strong { font: 600 19px/1.25 var(--display); }
+.product-price-row strong { font: 600 16px/20px var(--display); }
 .stock-note { padding: 5px 7px; border-radius: 2px; font-size: 10px; }
 .product-buy { width: 100%; margin-top: 13px; }
 .cart-drawer-inline { align-items: center; border-radius: var(--ui-radius); }
 
 .page-hero { min-height: 330px; padding-top: 58px; padding-bottom: 58px; }
-.page-hero h1 { max-width: 720px; font-size: 46px; line-height: 1.12; }
+.page-hero h1 { max-width: 720px; font-size: 42px; line-height: 50px; }
 .page-hero > div > p:last-child { max-width: 620px; }
 .page-hero-number { line-height: 1; }
 .history-search input,
@@ -132,7 +132,7 @@ a:focus-visible { outline: 3px solid rgba(23,102,116,.25); outline-offset: 2px; 
 .form-two > label,
 .payment-options legend { font-size: 13px; line-height: 1.45; }
 .flow-dialog { border-radius: var(--ui-radius); }
-.flow-dialog h2 { font-size: 30px; line-height: 1.2; }
+.flow-dialog h2 { font-size: 28px; line-height: 36px; }
 .dialog-intro { font-size: 14px; line-height: 1.6; }
 .dialog-form > small { font-size: 12px; line-height: 1.6; }
 .login-error { line-height: 1.5; }
@@ -157,7 +157,7 @@ a:focus-visible { outline: 3px solid rgba(23,102,116,.25); outline-offset: 2px; 
 .admin-nav.active { border-left-width: 2px; }
 .admin-main { min-width: 0; padding: 30px clamp(22px, 4vw, 54px); }
 .admin-topbar { gap: 18px; }
-.admin-topbar h1 { font: 600 28px/1.2 var(--display); }
+.admin-topbar h1 { font: 600 26px/32px var(--display); }
 .admin-topbar .eyebrow { font: 600 10px/1.45 var(--body); letter-spacing: .06em; }
 .admin-top-actions { gap: 12px; }
 .connection-indicator { font: 500 10px/1.3 var(--body); }
@@ -174,7 +174,7 @@ a:focus-visible { outline: 3px solid rgba(23,102,116,.25); outline-offset: 2px; 
 .panel-heading h2,
 .queue-toolbar h2,
 .catalog-toolbar h2,
-.reports-heading h2 { font: 600 20px/1.25 var(--display); }
+.reports-heading h2 { font: 600 22px/28px var(--display); }
 .catalog-toolbar,
 .queue-toolbar,
 .reports-heading { gap: 18px; }
@@ -272,31 +272,31 @@ a:focus-visible { outline: 3px solid rgba(23,102,116,.25); outline-offset: 2px; 
   .header-actions { gap: 7px; }
   .header-actions .button { display: none; }
   .hero { min-height: 620px; }
-  .hero h1 { max-width: 520px; font-size: 44px; line-height: 1.1; }
+  .hero h1 { max-width: 520px; font-size: 34px; line-height: 40px; }
   .hero-content { left: 22px; right: 22px; bottom: 110px; top: auto; transform: none; }
-  .hero-description { max-width: 390px; font-size: 14px; }
+  .hero-description { max-width: 390px; font-size: 14px; line-height: 22px; }
   .hero-buttons { gap: 16px; }
   .hero-note { right: 20px; bottom: 25px; }
   .section-heading h2,
   .editorial-copy h2,
-  .shop-teaser h2 { font-size: 28px; }
+  .shop-teaser h2 { font-size: 26px; line-height: 32px; }
   .service-photo,
   .service-grid .service-photo { height: 235px; }
   .service-copy { padding: 16px; }
-  .service-title-row h3 { font-size: 16px; }
-  .service-price { font-size: 18px; }
+  .service-title-row h3 { font-size: 18px; line-height: 24px; }
+  .service-price { font-size: 16px; line-height: 20px; }
   .editorial-image { min-height: 360px; height: 360px; }
   .editorial-copy { min-height: 400px; padding: 44px 24px; }
   .product-image,
   .shop-section .product-image { height: auto; aspect-ratio: 4 / 3; padding: 10px; }
   .product-info { padding: 13px; }
-  .product-info h3 { font-size: 14px; }
-  .product-info > p { min-height: 4.5em; font-size: 12px; }
+  .product-info h3 { font-size: 16px; line-height: 22px; }
+  .product-info > p { min-height: 4.5em; font-size: 14px; line-height: 22px; }
   .product-price-row { align-items: flex-start; flex-direction: column; gap: 5px; }
-  .product-price-row strong { font-size: 17px; }
+  .product-price-row strong { font-size: 16px; line-height: 20px; }
   .product-buy { min-height: 42px; padding: 0 8px; font-size: 12px; }
   .page-hero { min-height: 300px; padding: 48px 22px; }
-  .page-hero h1 { font-size: 38px; line-height: 1.15; }
+  .page-hero h1 { font-size: 34px; line-height: 40px; }
   .admin-shell { grid-template-columns: 1fr; }
   .admin-sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 12px; }
   .admin-brand { grid-column: 1 / -1; margin: 0; padding: 0 5px 8px; }
@@ -305,13 +305,13 @@ a:focus-visible { outline: 3px solid rgba(23,102,116,.25); outline-offset: 2px; 
   .admin-nav { min-height: 40px; height: auto; padding: 0 8px; font-size: 12px; }
   .admin-main { padding: 22px 14px; }
   .admin-topbar { align-items: flex-start; gap: 12px; }
-  .admin-topbar h1 { font-size: 22px; }
+  .admin-topbar h1 { font-size: 22px; line-height: 28px; }
   .admin-top-actions { align-items: flex-end; flex-direction: column-reverse; gap: 8px; }
   .admin-top-actions .button { min-height: 38px; font-size: 12px; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .metric-card { min-height: 120px; padding: 13px; }
   .metric-card > span { font-size: 9px; }
-  .metric-card strong { font-size: 21px; }
+  .metric-card strong { font-size: 24px; line-height: 30px; }
   .metric-card small { font-size: 11px; }
   .admin-content-grid { grid-template-columns: 1fr; }
   .customer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -354,7 +354,7 @@ a:focus-visible { outline: 3px solid rgba(23,102,116,.25); outline-offset: 2px; 
   .header-actions { gap: 4px; }
   .header-actions .button { display: inline-flex; min-height: 34px; padding: 0 7px; font-size: 10px; }
   .mobile-menu { width: 34px; min-width: 34px; height: 34px; }
-  .hero h1 { font-size: 39px; }
+  .hero h1 { font-size: 34px; line-height: 40px; }
   .hero-content { bottom: 100px; }
   .hero-buttons { gap: 12px; }
   .button { padding: 0 14px; }
@@ -577,8 +577,8 @@ a:focus-visible { outline: 3px solid rgba(23,102,116,.25); outline-offset: 2px; 
 }
 
 :root {
-  --display: 'Outfit', sans-serif;
-  --body: 'Inter', sans-serif;
+  --display: 'Outfit', system-ui, sans-serif;
+  --body: 'Inter', system-ui, sans-serif;
 }
 
 body,
@@ -603,15 +603,15 @@ h3,
 h1,
 h2 { font-weight: 700; }
 h3 { font-weight: 600; }
-.hero h1 { font-size: 56px; line-height: 64px; font-weight: 700; letter-spacing: 0; }
-.page-hero h1 { font-size: 44px; line-height: 52px; font-weight: 700; letter-spacing: 0; }
+.hero h1 { font-size: 50px; line-height: 58px; font-weight: 700; letter-spacing: 0; }
+.page-hero h1 { font-size: 42px; line-height: 50px; font-weight: 700; letter-spacing: 0; }
 .section-heading h2,
 .editorial-copy h2,
-.shop-teaser h2 { font-size: 36px; line-height: 44px; font-weight: 700; letter-spacing: 0; }
+.shop-teaser h2 { font-size: 32px; line-height: 40px; font-weight: 700; letter-spacing: 0; }
 .panel-heading h2,
 .queue-toolbar h2,
 .catalog-toolbar h2,
-.reports-heading h2 { font-size: 24px; line-height: 30px; font-weight: 600; }
+.reports-heading h2 { font-size: 22px; line-height: 28px; font-weight: 600; }
 .service-title-row h3,
 .product-info h3,
 .customer-card-heading h3,
@@ -641,9 +641,9 @@ small,
 .toggle-active { font: 600 12px/16px var(--body); }
 .service-price,
 .product-price-row strong { font-size: 16px; line-height: 20px; font-weight: 700; }
-.metric-card strong { font: 700 36px/40px var(--display); font-variant-numeric: tabular-nums; }
+.metric-card strong { font: 700 42px/48px var(--display); font-variant-numeric: tabular-nums; }
 .metric-primary strong,
-.report-card-primary strong { font: 700 48px/52px var(--display); font-variant-numeric: tabular-nums; }
+.report-card-primary strong { font: 700 44px/50px var(--display); font-variant-numeric: tabular-nums; }
 .report-card-quiet strong { font: 700 24px/30px var(--display); }
 .service-card { transition: transform .22s ease-out, box-shadow .22s ease-out; }
 .service-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(20,47,52,.1); }
@@ -667,10 +667,10 @@ small,
   .panel-heading h2,
   .queue-toolbar h2,
   .catalog-toolbar h2,
-  .reports-heading h2 { font-size: 21px; line-height: 28px; }
-  .metric-card strong { font-size: 28px; line-height: 34px; }
+  .reports-heading h2 { font-size: 20px; line-height: 26px; }
+  .metric-card strong { font-size: 24px; line-height: 30px; }
   .metric-primary strong,
-  .report-card-primary strong { font-size: 32px; line-height: 38px; }
+  .report-card-primary strong { font-size: 30px; line-height: 36px; }
   .customer-toolbar { width: 100%; }
   .customer-search { width: 100%; }
 }
