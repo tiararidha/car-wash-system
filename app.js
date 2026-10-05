@@ -182,6 +182,7 @@ SEED.transactions.forEach((transaction, index) => {
 
 const SUPABASE_URL = 'https://cvnzbfbzgmjlepbsjinl.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_vzeEcRxxXJaMfE7JyKWOeg_KLx8XqnH';
+const SUPABASE_REQUEST_TIMEOUT_MS = 15000;
 const AUTH_SESSION_KEY = 'rinse-admin-session';
 const CART_KEY = 'rinse-society-cart';
 const EMPTY_DB = { customers: [], vehicles: [], services_products: [], transactions: [] };
@@ -359,7 +360,15 @@ function render() {
   app.querySelectorAll('.connection-indicator, .database-notice').forEach(element => element.remove());
   const settingsButton = app.querySelector('.admin-sidebar [data-action="settings"]');
   if (settingsButton) settingsButton.setAttribute('aria-label', 'Pengaturan studio');
-  if (page === 'admin' && adminUser && adminDataReady && document.querySelector('.metric-grid')) renderAdminMetrics();
+  if (page === 'admin' && adminUser && adminDataReady && document.querySelector('.metric-grid')) {
+    try {
+      renderAdminMetrics();
+    } catch (error) {
+      console.error('[Admin dashboard] Render failed:', error);
+      const content = app.querySelector('#admin-content');
+      if (content) content.innerHTML = `<section class="empty-state" role="alert"><h3>Data belum dapat dimuat</h3><p>${escapeHtml(error.message || 'Dashboard gagal dirender.')}</p><button class="button button-dark" data-action="retry-admin-data">Coba muat ulang</button></section>`;
+    }
+  }
   document.querySelectorAll('[data-nav]').forEach(link => link.classList.toggle('active', link.dataset.nav === page));
   simplifyUiSymbols();
 }
@@ -369,7 +378,7 @@ function renderPublicDataState() {
 }
 function renderAdminDataState() {
   const loading = adminDataState === 'loading';
-  return `<section class="section"><div class="empty-state" role="status"><h3>${loading ? 'Memuat dashboard...' : 'Dashboard belum dapat dimuat.'}</h3><p>${loading ? 'Mohon tunggu sebentar.' : escapeHtml(adminDataError || 'Data studio belum tersedia. Silakan coba lagi.')}</p>${loading ? '' : '<button class="button button-dark" data-action="retry-admin-data">Coba lagi</button><button class="text-link" data-action="logout">Keluar</button>'}</div></section>`;
+  return `<section class="section"><div class="empty-state" role="status"><h3>${loading ? 'Memuat dashboard...' : 'Data belum dapat dimuat.'}</h3><p>${loading ? 'Mohon tunggu sebentar.' : escapeHtml(adminDataError || 'Data studio belum tersedia. Silakan coba lagi.')}</p>${loading ? '' : '<button class="button button-dark" data-action="retry-admin-data">Coba lagi</button><button class="text-link" data-action="logout">Keluar</button>'}</div></section>`;
 }
 function simplifyUiSymbols(root = document.body) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -400,17 +409,10 @@ function dailyPaidRevenue(transactions, dayCount = 7) {
   });
 }
 function renderRevenueLineChart(rows, className = '') {
-function reportTransactions() {
-  return [...db.transactions, ...SEED.transactions.map(tx => ({ ...tx, is_demo: true, payment_status: demoPaymentStatuses[tx.id] || tx.payment_status }))];
-}
-function reportVehicle(transaction) {
-  return transaction.is_demo ? SEED.vehicles.find(vehicle => vehicle.id === transaction.vehicle_id) : getVehicle(transaction);
-}
   const width = 760, height = 250;
   const pad = { top: 18, right: 16, bottom: 38, left: 76 };
+  const plotWidth = width - pad.left - pad.right;
   const max = Math.max(1, ...rows.map(row => row.amount));
-  const transactions = reportTransactions();
-  const todays = transactions.filter(tx => tx.booking_date === today);
   const plotHeight = height - pad.top - pad.bottom;
   const points = rows.map((row, index) => ({
     ...row,
@@ -426,10 +428,17 @@ function reportVehicle(transaction) {
   const dots = points.map(point => `<circle class="chart-point" cx="${point.x}" cy="${point.y}" r="4"><title>${escapeHtml(point.label)}: ${escapeHtml(money(point.amount))}</title></circle><text class="chart-date" x="${point.x}" y="${height - 10}" text-anchor="middle">${escapeHtml(point.label)}</text>`).join('');
   return `<svg class="revenue-line-chart ${className}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Tren pendapatan harian tujuh hari terakhir">${guides}<path class="chart-area" d="${path} L${points.at(-1)?.x || pad.left},${pad.top + plotHeight} L${points[0]?.x || pad.left},${pad.top + plotHeight} Z"/><path class="chart-line" d="${path}"/>${dots}</svg>`;
 }
+function reportTransactions() {
+  return [...db.transactions, ...SEED.transactions.map(tx => ({ ...tx, is_demo: true, payment_status: demoPaymentStatuses[tx.id] || tx.payment_status }))];
+}
+function reportVehicle(transaction) {
+  return transaction.is_demo ? SEED.vehicles.find(vehicle => vehicle.id === transaction.vehicle_id) : getVehicle(transaction);
+}
 function renderAdminMetrics() {
   if (!document.querySelector('.metric-grid')) return;
+  const transactions = reportTransactions();
   const today = getJakartaDateString();
-  const todays = db.transactions.filter(tx => tx.booking_date === today);
+  const todays = transactions.filter(tx => tx.booking_date === today);
   const paidToday = todays.filter(tx => tx.payment_status === 'PAID');
   const lowStock = db.services_products.filter(item => item.item_type === 'PRODUCT' && item.stock <= item.min_stock).length;
   const washed = todays.filter(tx => tx.item_type !== 'PRODUCT' && tx.transaction_status === 'COMPLETED').length;
@@ -992,27 +1001,45 @@ function requestHeaders(prefer = 'return=representation') {
   const bearer = supabaseSession?.access_token || SUPABASE_PUBLISHABLE_KEY;
   return { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', Prefer: prefer };
 }
+async function fetchWithDiagnostics(url, options, label) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), SUPABASE_REQUEST_TIMEOUT_MS);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const text = response.status === 204 ? '' : await response.text();
+    const duration = Date.now() - startedAt;
+    const result = `[Supabase] ${label} -> ${response.status} (${duration} ms)`;
+    if (response.ok) console.info(result);
+    else console.error(`${result}: ${text.slice(0, 500)}`);
+    return { response, text };
+  } catch (error) {
+    const reason = controller.signal.aborted ? `timed out after ${SUPABASE_REQUEST_TIMEOUT_MS} ms` : error.message || 'network error';
+    console.error(`[Supabase] ${label} failed: ${reason}`);
+    throw new Error(`${label}: ${reason}`);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
 async function supabaseRequest(table, method = 'GET', body, query = '', prefer = 'return=representation') {
   if (!isSupabaseConfigured()) throw new Error('Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.');
   if (supabaseSession?.expires_at && supabaseSession.expires_at * 1000 < Date.now() + 30000) await refreshAdminSession();
-  const response = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${table}${query}`, { method, headers: requestHeaders(prefer), body: body ? JSON.stringify(body) : undefined });
+  const label = `${method} /rest/v1/${table}`;
+  const { response, text } = await fetchWithDiagnostics(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${table}${query}`, { method, headers: requestHeaders(prefer), body: body ? JSON.stringify(body) : undefined }, label);
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`${method} /rest/v1/${table} gagal (${response.status}): ${detail || response.statusText}`);
+    throw new Error(`${label} failed (${response.status}): ${text || response.statusText}`);
   }
   if (response.status === 204) return null;
-  const text = await response.text();
   return text ? JSON.parse(text) : null;
 }
 async function rpcRequest(name, parameters = {}) {
   if (!isSupabaseConfigured()) throw new Error('Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.');
   if (supabaseSession?.expires_at && supabaseSession.expires_at * 1000 < Date.now() + 30000) await refreshAdminSession();
-  const response = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${name}`, { method: 'POST', headers: requestHeaders('return=representation'), body: JSON.stringify(parameters) });
+  const label = `POST /rest/v1/rpc/${name}`;
+  const { response, text } = await fetchWithDiagnostics(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${name}`, { method: 'POST', headers: requestHeaders('return=representation'), body: JSON.stringify(parameters) }, label);
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`RPC ${name} gagal (${response.status}): ${detail || response.statusText}`);
+    throw new Error(`${label} failed (${response.status}): ${text || response.statusText}`);
   }
-  const text = await response.text();
   return text ? JSON.parse(text) : null;
 }
 async function insertRow(table, row) {
@@ -1027,13 +1054,14 @@ async function patchRow(table, id, changes) {
 async function refreshAdminSession() {
   if (!supabaseSession?.refresh_token) throw new Error('Sesi admin berakhir. Silakan masuk kembali.');
   let response;
+  let text;
   try {
-    response = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/token?grant_type=refresh_token`, {
+    ({ response, text } = await fetchWithDiagnostics(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/token?grant_type=refresh_token`, {
       method: 'POST',
       headers: { apikey: SUPABASE_PUBLISHABLE_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: supabaseSession.refresh_token })
-    });
-  } catch (_) { throw new Error('Tidak dapat memverifikasi sesi. Periksa koneksi lalu coba lagi.'); }
+    }, 'POST /auth/v1/token (refresh)'));
+  } catch (error) { throw new Error(error.message || 'Tidak dapat memverifikasi sesi.'); }
   if (!response.ok) {
     if ([400, 401, 403].includes(response.status)) {
       rememberAuthSession(null);
@@ -1042,7 +1070,7 @@ async function refreshAdminSession() {
     }
     throw new Error('Tidak dapat memverifikasi sesi. Silakan coba lagi.');
   }
-  const session = await response.json();
+  const session = JSON.parse(text || '{}');
   session.expires_at = Math.floor(Date.now() / 1000) + session.expires_in;
   rememberAuthSession(session);
   return session;
@@ -1051,14 +1079,15 @@ async function signInAdmin(email, password) {
   if (!email || !password) throw new Error('Masukkan email dan password admin.');
   if (!isSupabaseConfigured()) throw new Error('Layanan login belum tersedia. Silakan coba lagi nanti.');
   let response;
+  let text;
   try {
-    response = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/token?grant_type=password`, {
+    ({ response, text } = await fetchWithDiagnostics(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/token?grant_type=password`, {
       method: 'POST',
       headers: { apikey: SUPABASE_PUBLISHABLE_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
-    });
-  } catch (_) { throw new Error('Tidak dapat terhubung. Periksa koneksi lalu coba lagi.'); }
-  const result = await response.json().catch(() => ({}));
+    }, 'POST /auth/v1/token (password)'));
+  } catch (error) { throw new Error(error.message || 'Tidak dapat terhubung. Periksa koneksi lalu coba lagi.'); }
+  const result = JSON.parse(text || '{}');
   if (!response.ok) {
     const authCode = result.error_code || result.code || '';
     const authMessage = String(result.msg || result.message || result.error_description || '').toLowerCase();
@@ -1077,24 +1106,24 @@ async function signInAdmin(email, password) {
   rememberAuthSession(result);
   adminUser = user;
   try { await loadAdminData(); }
-  catch (_) {
+  catch (error) {
     adminDataReady = false;
     adminDataState = 'error';
-    throw new Error('Login berhasil, tetapi dashboard belum dapat dimuat. Silakan coba lagi.');
+    throw new Error(`Login berhasil, tetapi data dashboard gagal dimuat: ${error.message}`);
   }
 }
 async function restoreAdminSession() {
   if (!supabaseSession || !isSupabaseConfigured()) return false;
   try {
     if (supabaseSession.expires_at * 1000 < Date.now() + 30000) await refreshAdminSession();
-    const response = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/user`, { headers: requestHeaders() });
+    const { response, text } = await fetchWithDiagnostics(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/user`, { headers: requestHeaders() }, 'GET /auth/v1/user');
     if ([401, 403].includes(response.status)) {
       rememberAuthSession(null);
       adminUser = null;
       return false;
     }
     if (!response.ok) throw new Error('Tidak dapat memverifikasi sesi. Silakan coba lagi.');
-    adminUser = await response.json();
+    adminUser = JSON.parse(text || '{}');
     return true;
   } catch (_) {
     adminUser = null;
@@ -1103,7 +1132,7 @@ async function restoreAdminSession() {
 }
 async function logoutAdmin() {
   if (supabaseSession?.access_token && isSupabaseConfigured()) {
-    await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/logout`, { method: 'POST', headers: requestHeaders() }).catch(() => {});
+    await fetchWithDiagnostics(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/logout`, { method: 'POST', headers: requestHeaders() }, 'POST /auth/v1/logout').catch(() => {});
   }
   rememberAuthSession(null);
   adminUser = null;
@@ -1113,9 +1142,12 @@ async function logoutAdmin() {
 }
 async function loadPublicData() {
   if (!isSupabaseConfigured()) throw new Error('Supabase belum dikonfigurasi. Pastikan URL dan publishable key benar.');
-  const products = await supabaseRequest('services_products', 'GET', null, '?select=*&active=eq.true&order=name.asc');
-  const count = await rpcRequest('get_public_today_wash_count');
-  publicBays = await rpcRequest('get_public_bay_status') || [];
+  const [products, count, bays] = await Promise.all([
+    supabaseRequest('services_products', 'GET', null, '?select=*&active=eq.true&order=name.asc'),
+    rpcRequest('get_public_today_wash_count'),
+    rpcRequest('get_public_bay_status')
+  ]);
+  publicBays = bays || [];
   db = { ...emptyDatabase(), services_products: products || [] };
   syncServiceCatalog();
   publicWashCount = Number(count) || 0;
@@ -1124,13 +1156,20 @@ async function loadPublicData() {
 }
 async function loadAdminData() {
   if (!adminUser) throw new Error('Masuk sebagai admin untuk membuka data studio.');
-  const loaded = {};
+  const tables = ['customers', 'vehicles', 'services_products', 'transactions'];
   const publicCatalogIds = new Set(db.services_products.filter(item => item.active !== false).map(item => item.id));
   try {
-    for (const table of ['customers', 'vehicles', 'services_products', 'transactions']) loaded[table] = await supabaseRequest(table, 'GET', null, '?select=*&order=created_at.desc');
-    for (const table of Object.keys(loaded)) {
-      if (!Array.isArray(loaded[table])) throw new Error(`Supabase /rest/v1/${table} tidak mengembalikan daftar data.`);
+    if (supabaseSession?.expires_at && supabaseSession.expires_at * 1000 < Date.now() + 30000) await refreshAdminSession();
+    const results = await Promise.allSettled(tables.map(table => supabaseRequest(table, 'GET', null, '?select=*&order=created_at.desc')));
+    const failures = results.flatMap((result, index) => {
+      if (result.status === 'rejected') return [`${tables[index]}: ${result.reason.message}`];
+      if (!Array.isArray(result.value)) return [`${tables[index]}: respons tidak mengembalikan daftar data.`];
+      return [];
+    });
+    if (failures.length) {
+      throw new Error(`Gagal memuat data Supabase (${failures.join('; ')}).`);
     }
+    const loaded = Object.fromEntries(tables.map((table, index) => [table, results[index].value]));
     if ([...publicCatalogIds].some(id => !loaded.services_products.some(item => item.id === id))) {
       throw new Error('Policy RLS menolak pembacaan katalog oleh role authenticated. Jalankan sql/rls-authenticated-access.sql di Supabase.');
     }
@@ -1149,6 +1188,7 @@ async function loadAdminData() {
     adminDataReady = false;
     adminDataState = 'error';
     adminDataError = error.message;
+    console.error('[Supabase admin data] Load failed:', error.message);
     throw error;
   }
 }
