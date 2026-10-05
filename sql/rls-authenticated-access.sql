@@ -81,15 +81,24 @@ as $$
               when active.transaction_status = 'BOOKED' then 'RESERVED' else 'AVAILABLE' end,
          vehicle.type,
          coalesce(active.duration_minutes, 0),
-         case when active.transaction_status = 'ACTIVE'
-              then greatest(0, active.duration_minutes - floor(extract(epoch from (now() - active.created_at)) / 60)::integer)
+            case when active.transaction_status = 'ACTIVE'
+              then greatest(0, active.duration_minutes - floor(extract(epoch from (now() - ((active.booking_date + active.booking_time) at time zone 'Asia/Jakarta'))) / 60)::integer)
               else 0 end,
          active.booking_time
   from generate_series(1, 4) as bays(bay_number)
   left join lateral (
     select t.* from public.transactions t
-    where t.bay_number = bays.bay_number and t.transaction_status in ('ACTIVE', 'BOOKED')
-    order by case when t.transaction_status = 'ACTIVE' then 0 else 1 end, t.created_at desc limit 1
+    where t.bay_number = bays.bay_number
+      and (
+        (t.transaction_status = 'ACTIVE'
+          and ((t.booking_date + t.booking_time) at time zone 'Asia/Jakarta') <= now()
+          and ((t.booking_date + t.booking_time) at time zone 'Asia/Jakarta') + make_interval(mins => t.duration_minutes) > now())
+        or (t.transaction_status = 'BOOKED'
+          and t.booking_date = (now() at time zone 'Asia/Jakarta')::date
+          and t.booking_time >= (now() at time zone 'Asia/Jakarta')::time)
+      )
+    order by case when t.transaction_status = 'ACTIVE' then 0 else 1 end,
+      ((t.booking_date + t.booking_time) at time zone 'Asia/Jakarta') asc limit 1
   ) active on true
   left join public.vehicles vehicle on vehicle.id = active.vehicle_id
   order by bays.bay_number;
@@ -141,6 +150,8 @@ declare
   base_price integer;
   final_amount integer;
   bay integer;
+  requested_start timestamptz;
+  requested_end timestamptz;
   payment_method_value text;
   payment_status_value text;
   transaction_status_value text;
@@ -170,16 +181,27 @@ begin
 
   transaction_kind := p_transaction ->> 'transaction_type';
   if transaction_kind not in ('BOOKING', 'WALK_IN') then raise exception 'Jenis transaksi layanan tidak valid.'; end if;
+  if wash_service.category = 'SELF_SERVICE' and transaction_kind <> 'BOOKING' then
+    raise exception 'Self-Service harus dibuat sebagai booking.';
+  end if;
   payment_method_value := p_transaction ->> 'payment_method';
   payment_status_value := case when transaction_kind = 'WALK_IN' and payment_method_value = 'CASH' then 'PAID' else 'PENDING' end;
   transaction_status_value := case when transaction_kind = 'BOOKING' then 'BOOKED' else 'ACTIVE' end;
   bay := nullif(p_transaction ->> 'bay_number', '')::integer;
 
   if wash_service.category = 'SELF_SERVICE' then
-    if bay is null then raise exception 'Tidak ada self-service bay yang tersedia.'; end if;
+    if bay is null or bay not between 1 and 4 then raise exception 'Pilih salah satu dari empat self-service bay.'; end if;
+    requested_start := (((p_transaction ->> 'booking_date')::date + (p_transaction ->> 'booking_time')::time) at time zone 'Asia/Jakarta');
+    requested_end := requested_start + make_interval(mins => total_duration);
     perform pg_advisory_xact_lock(78131, bay);
-    if exists (select 1 from public.transactions where bay_number = bay and transaction_status in ('ACTIVE', 'BOOKED')) then
-      raise exception 'Bay tersebut baru saja digunakan atau dipesan.';
+    if exists (
+      select 1 from public.transactions t
+      where t.bay_number = bay
+        and t.transaction_status in ('ACTIVE', 'BOOKED')
+        and ((t.booking_date + t.booking_time) at time zone 'Asia/Jakarta') < requested_end
+        and ((t.booking_date + t.booking_time) at time zone 'Asia/Jakarta') + make_interval(mins => t.duration_minutes) > requested_start
+    ) then
+      raise exception 'Bay tersebut sudah digunakan atau dipesan pada slot waktu ini.';
     end if;
   else
     bay := null;
