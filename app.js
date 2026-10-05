@@ -315,6 +315,7 @@ function polishUiLabels(root) {
 function render() {
   const views = { home: renderHome, services: renderServices, 'self-service': renderBays, shop: renderShop, history: renderHistory, admin: renderAdmin };
   const app = document.getElementById('app');
+  document.body.classList.toggle('admin-mode', page === 'admin');
   if (page === 'admin') app.innerHTML = !adminUser ? renderAdminLogin() : adminDataReady ? renderAdmin() : renderAdminDataState();
   else app.innerHTML = databaseConnected ? (views[page] || renderHome)() : renderPublicDataState();
   polishUiLabels(app);
@@ -529,7 +530,8 @@ function openDialog(kind, serviceId) {
   }
   if (kind === 'settings') {
     content.innerHTML = `<p class="eyebrow">PENGATURAN STUDIO</p><h2>Akun <em>studio.</em></h2><p class="dialog-intro">${adminUser ? `Masuk sebagai ${escapeHtml(adminUser.email || 'admin')}.` : 'Pengaturan operasional Rinse Society.'}</p><div class="settings-status"><strong>Rinse Society · Semarang</strong><p>Kelola jadwal, layanan, dan produk studio dari dashboard.</p></div><div class="dialog-actions">${adminUser ? '<button class="button button-dark" data-action="logout">Keluar dari akun</button>' : ''}<button class="button button-quiet" data-action="close-dialog">Tutup</button></div>`;
-  } else if (kind === 'cart') renderCartDialog(content);
+  } else if (kind === 'booking-choice') renderBookingChoiceDialog(content);
+  else if (kind === 'cart') renderCartDialog(content);
   else if (kind === 'self-service') renderSelfServiceTransactionForm(content);
   else if (kind === 'booking' || kind === 'walkin') renderTransactionForm(content, kind, service || SERVICES[0]);
   else if (kind === 'product-checkout') renderProductCheckout(content);
@@ -543,6 +545,13 @@ function openDialog(kind, serviceId) {
   }
   dialog.showModal();
   simplifyUiSymbols(dialog);
+}
+function renderBookingChoiceDialog(content) {
+  const services = regularServices();
+  const professionalChoices = services.map(service => `<button class="booking-choice-service" type="button" data-service="${service.id}"><strong>${escapeHtml(service.name)}</strong><span>${money(service.price)} · ${service.duration} menit</span><b>Pilih layanan</b></button>`).join('');
+  const availableAddons = ADDONS.map(addon => `<li>${escapeHtml(addon.name)} · ${money(addon.price)}</li>`).join('');
+  content.innerHTML = `<p class="eyebrow">PEMESANAN</p><h2>Pilih jenis layanan</h2><p class="dialog-intro">Pilih cara mencuci kendaraan Anda.</p><div class="booking-choice-grid"><section class="booking-choice-option"><p class="eyebrow">PROFESSIONAL WASH</p><h3>Cuci kendaraan oleh tim</h3><p>Tim Rinse Society menangani pencucian kendaraan Anda.</p><div class="booking-choice-services">${professionalChoices || '<p class="report-empty">Layanan Professional Wash belum tersedia.</p>'}</div><div class="booking-choice-addons"><strong>Tambahan tersedia</strong><ul>${availableAddons || '<li>Belum ada tambahan</li>'}</ul></div></section><section class="booking-choice-option"><p class="eyebrow">SELF-SERVICE</p><h3>Cuci kendaraan sendiri</h3><p>Pilih kendaraan, tanggal, waktu, durasi, dan bay universal.</p><button class="button button-dark" type="button" data-action="self-service-book">Pilih Self-Service</button></section></div>`;
+  polishUiLabels(content);
 }
 function renderTransactionForm(content, kind, selectedService) {
   const walkin = kind === 'walkin';
@@ -803,7 +812,13 @@ function renderReports() {
 function renderAdminTransactionList(records, title, eyebrow) {
   const paidCount = records.filter(tx => tx.payment_status === 'PAID').length;
   const pendingCount = records.filter(tx => tx.payment_status === 'PENDING').length;
-  return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Urut berdasarkan aktivitas terbaru dari catatan Supabase.</p></div><div class="transaction-summary"><strong>${records.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} pending</span></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span></div>${records.length ? records.map(tx => { const customer = getCustomer(tx), vehicle = getVehicle(tx); return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small></span><span class="transaction-item">${escapeHtml(tx.item_name)}</span><span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span></span></span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${statusLabel(tx.transaction_status)}</span><span class="transaction-amount">${money(tx.amount)}</span></div>`; }).join('') : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
+  const rows = records.map(tx => {
+    const customer = getCustomer(tx);
+    const vehicle = getVehicle(tx);
+    const paymentAction = tx.payment_status === 'PENDING' ? `<button class="payment-mark-paid" type="button" data-payment-paid="${escapeHtml(tx.id)}">Tandai sebagai Lunas</button>` : '';
+    return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small></span><span class="transaction-item">${escapeHtml(tx.item_name)}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${paymentAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${statusLabel(tx.transaction_status)}</span><span class="transaction-amount">${money(tx.amount)}</span></div>`;
+  }).join('');
+  return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Urut berdasarkan aktivitas terbaru dari catatan Supabase.</p></div><div class="transaction-summary"><strong>${records.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span></div>${records.length ? rows : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
 }
 function renderAdminBookings() {
   const bookings = db.transactions.filter(tx => tx.transaction_type === 'BOOKING').sort((a, b) => `${a.booking_date} ${a.booking_time}`.localeCompare(`${b.booking_date} ${b.booking_time}`));
@@ -1157,18 +1172,46 @@ function editCatalogItem(item) {
   simplifyUiSymbols(document.getElementById('flow-dialog'));
 }
 
-document.addEventListener('click', event => {
+document.addEventListener('click', async event => {
+  const paymentButton = event.target.closest('[data-payment-paid]');
+  if (paymentButton) {
+    const tx = db.transactions.find(item => item.id === paymentButton.dataset.paymentPaid);
+    if (!tx || tx.payment_status !== 'PENDING') return;
+    paymentButton.disabled = true;
+    try {
+      const updatedRows = await patchRow('transactions', tx.id, { payment_status: 'PAID' });
+      if (!updatedRows?.some(row => row.id === tx.id && row.payment_status === 'PAID')) {
+        throw new Error('Status pembayaran belum tersimpan. Periksa izin transaksi lalu coba lagi.');
+      }
+      tx.payment_status = 'PAID';
+      activateAdminTab('transactions');
+      showToast(`${tx.code} ditandai lunas.`);
+    } catch (error) {
+      paymentButton.disabled = false;
+      showToast(error.message || 'Status pembayaran belum dapat diperbarui.', 'error');
+    }
+    return;
+  }
   const nav = event.target.closest('[data-nav]');
   if (nav) { event.preventDefault(); setPage(nav.dataset.nav); return; }
   const service = event.target.closest('[data-service]');
-  if (service) { openDialog('booking', service.dataset.service); return; }
+  if (service) {
+    const dialog = document.getElementById('flow-dialog');
+    if (dialog.open) dialog.close();
+    openDialog('booking', service.dataset.service);
+    return;
+  }
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (action) {
     if (action === 'close-dialog') document.getElementById('flow-dialog').close();
     else if (action === 'logout') { document.getElementById('flow-dialog').open && document.getElementById('flow-dialog').close(); logoutAdmin(); }
     else if (action === 'retry-data') bootstrapSupabase();
     else if (action === 'retry-admin-data') openAdmin().catch(() => {});
-    else if (['booking', 'walkin', 'self-service-book', 'cart', 'settings'].includes(action)) openDialog(action === 'self-service-book' ? 'self-service' : action);
+    else if (['booking', 'walkin', 'self-service-book', 'cart', 'settings'].includes(action)) {
+      const dialog = document.getElementById('flow-dialog');
+      if (dialog.open && ['booking', 'self-service-book'].includes(action)) dialog.close();
+      openDialog(action === 'booking' ? 'booking-choice' : action === 'self-service-book' ? 'self-service' : action);
+    }
     else if (action === 'checkout-product') renderProductCheckout(document.getElementById('dialog-content'));
     else if (action === 'add-item') addCatalogItem();
     return;

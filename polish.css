@@ -697,3 +697,30 @@ small,
   .booking-summary { margin-bottom: 18px; }
   .booking-row { padding: 10px 0; }
 }
+
+body.admin-mode > .announcement,
+body.admin-mode > .site-header,
+body.admin-mode > .site-footer { display: none !important; }
+body.admin-mode { min-height: 100vh; }
+body.admin-mode > #app,
+body.admin-mode .admin-shell { min-height: 100vh; }
+.booking-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 20px; }
+.booking-choice-option { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--ui-radius); background: #fff; }
+.booking-choice-option h3 { margin: 0 0 7px; font: 600 20px/26px var(--display); }
+.booking-choice-option > p:not(.eyebrow) { margin: 0 0 14px; color: var(--muted); font: 400 13px/20px var(--body); }
+.booking-choice-services { display: grid; gap: 8px; }
+.booking-choice-service { display: grid; width: 100%; gap: 4px; padding: 12px; border: 1px solid var(--line); border-radius: var(--ui-radius); background: var(--paper); color: var(--ink); text-align: left; }
+.booking-choice-service strong { font: 600 14px/20px var(--display); }
+.booking-choice-service span { color: var(--muted); font: 400 12px/18px var(--body); }
+.booking-choice-service b { color: var(--blue); font: 600 12px/16px var(--body); }
+.booking-choice-service:hover { border-color: rgba(23,102,116,.4); background: #f1f7f5; }
+.booking-choice-addons { margin-top: 14px; color: var(--muted); font: 400 12px/18px var(--body); }
+.booking-choice-addons strong { color: var(--ink); font-weight: 600; }
+.booking-choice-addons ul { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 5px 0 0; padding-left: 16px; }
+.payment-mark-paid { width: fit-content; padding: 5px 8px; border: 1px solid rgba(23,102,116,.25); border-radius: var(--ui-radius); background: #f1f7f5; color: var(--blue); font: 600 11px/15px var(--body); }
+.payment-mark-paid:hover { border-color: rgba(23,102,116,.5); background: #e6f1ee; }
+.payment-mark-paid:disabled { cursor: wait; opacity: .6; }
+
+@media (max-width: 760px) {
+  .booking-choice-grid { grid-template-columns: 1fr; }
+}
