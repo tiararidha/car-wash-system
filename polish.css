@@ -557,6 +557,112 @@ a:focus-visible { outline: 3px solid rgba(23,102,116,.25); outline-offset: 2px; 
   .booking-summary > div { padding-inline: 6px; }
 }
 
+:root {
+  --display: 'Outfit', sans-serif;
+  --body: 'Inter', sans-serif;
+}
+
+body,
+button,
+input,
+select,
+textarea,
+.main-nav,
+.admin-nav,
+.catalog-row,
+.status { font-family: var(--body); }
+body { font-size: 14px; line-height: 22px; }
+h1,
+h2,
+h3,
+.metric-card strong,
+.report-card strong,
+.service-price,
+.product-price-row strong,
+.dashboard-revenue-total,
+.transaction-amount { font-family: var(--display); }
+h1,
+h2 { font-weight: 700; }
+h3 { font-weight: 600; }
+.hero h1 { font-size: 56px; line-height: 64px; font-weight: 700; letter-spacing: 0; }
+.page-hero h1 { font-size: 44px; line-height: 52px; font-weight: 700; letter-spacing: 0; }
+.section-heading h2,
+.editorial-copy h2,
+.shop-teaser h2 { font-size: 36px; line-height: 44px; font-weight: 700; letter-spacing: 0; }
+.panel-heading h2,
+.queue-toolbar h2,
+.catalog-toolbar h2,
+.reports-heading h2 { font-size: 24px; line-height: 30px; font-weight: 600; }
+.service-title-row h3,
+.product-info h3,
+.customer-card-heading h3,
+.queue-card h3 { font-size: 18px; line-height: 24px; font-weight: 600; }
+.hero-description,
+.section-aside,
+.page-hero > div > p:last-child { font: 400 16px/26px var(--body); }
+body,
+.service-copy > p,
+.product-info > p,
+.dialog-intro,
+.admin-page-description { font-size: 14px; line-height: 22px; }
+small,
+.small-body,
+.dialog-form > small,
+.report-empty { font-size: 12px; line-height: 18px; }
+.eyebrow,
+.admin-nav-label,
+.catalog-head,
+.metric-card > span,
+.report-card > span { font-family: var(--body); font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0; }
+.button,
+.service-meta button,
+.product-buy,
+.status,
+.stock-note,
+.toggle-active { font: 600 12px/16px var(--body); }
+.service-price,
+.product-price-row strong { font-size: 16px; line-height: 20px; font-weight: 700; }
+.metric-card strong { font: 700 36px/40px var(--display); font-variant-numeric: tabular-nums; }
+.metric-primary strong,
+.report-card-primary strong { font: 700 48px/52px var(--display); font-variant-numeric: tabular-nums; }
+.report-card-quiet strong { font: 700 24px/30px var(--display); }
+.service-card { transition: transform .22s ease-out, box-shadow .22s ease-out; }
+.service-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(20,47,52,.1); }
+.service-card:hover .service-photo img { transform: scale(1.01); }
+.main-nav { gap: clamp(14px, 1.6vw, 24px); font-size: 13px; }
+.header-actions { gap: 12px; }
+.customer-search { display: grid; min-width: min(280px, 100%); gap: 5px; color: var(--muted); font: 600 12px/16px var(--body); }
+.customer-search input { width: 100%; min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--ui-radius); background: #fff; color: var(--ink); font: 400 13px/20px var(--body); }
+.customer-card[hidden] { display: none; }
+.customer-email { overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .brand { font-size: 16px; }
+  .header-actions { gap: 6px; }
+  .header-actions .button { display: inline-flex; min-height: 36px; padding: 0 9px; font-size: 11px; }
+  .hero h1 { font-size: 34px; line-height: 40px; }
+  .page-hero h1 { font-size: 34px; line-height: 40px; }
+  .section-heading h2,
+  .editorial-copy h2,
+  .shop-teaser h2 { font-size: 26px; line-height: 32px; }
+  .panel-heading h2,
+  .queue-toolbar h2,
+  .catalog-toolbar h2,
+  .reports-heading h2 { font-size: 21px; line-height: 28px; }
+  .metric-card strong { font-size: 28px; line-height: 34px; }
+  .metric-primary strong,
+  .report-card-primary strong { font-size: 32px; line-height: 38px; }
+  .customer-toolbar { width: 100%; }
+  .customer-search { width: 100%; }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .service-card,
+  .service-card:hover,
+  .service-card:hover .service-photo img { transition-duration: .01ms; transform: none; }
+}
+
 .admin-catalog-table .catalog-row { min-width: 790px; grid-template-columns: minmax(230px, 1.7fr) minmax(110px, .8fr) minmax(100px, .65fr) minmax(110px, .75fr) minmax(90px, .6fr); }
 .admin-catalog-table .catalog-name { gap: 11px; }
 .admin-catalog-table .catalog-name img { width: 50px; height: 50px; flex: 0 0 50px; padding: 4px; border-radius: 3px; background: #e7efed; }

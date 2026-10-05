@@ -3,7 +3,18 @@ if (typeof window === 'undefined') {
   const fs = require('node:fs');
   const path = require('node:path');
   const root = __dirname;
-  const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.sql': 'text/plain; charset=utf-8' };
+  const types = {
+    '.html': 'text/html; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.sql': 'text/plain; charset=utf-8',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif'
+  };
   const server = http.createServer((request, response) => {
     const pathname = new URL(request.url, 'http://localhost').pathname;
     const relative = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.slice(1));
@@ -25,9 +36,10 @@ const PHOTOS = {
   hero: 'https://images.pexels.com/photos/28995189/pexels-photo-28995189.jpeg?auto=compress&cs=tinysrgb&w=2000',
   car: 'https://images.pexels.com/photos/6873176/pexels-photo-6873176.jpeg?auto=compress&cs=tinysrgb&w=1000',
   motorcycle: 'https://images.pexels.com/photos/36709685/pexels-photo-36709685.jpeg?auto=compress&cs=tinysrgb&w=1000',
-  selfCar: 'https://images.pexels.com/photos/15363884/pexels-photo-15363884.jpeg?auto=compress&cs=tinysrgb&w=1000',
-  selfMotorcycle: 'https://images.pexels.com/photos/20515049/pexels-photo-20515049.jpeg?auto=compress&cs=tinysrgb&w=1000',
-  self: 'https://images.pexels.com/photos/15363884/pexels-photo-15363884.jpeg?auto=compress&cs=tinysrgb&w=1000',
+  selfCar: 'assets/self-service-bay.jpg',
+  selfMotorcycle: 'assets/self-service-bay.jpg',
+  selfBay: 'assets/self-service-bay.jpg',
+  self: 'assets/self-service-bay.jpg',
   product: 'https://images.pexels.com/photos/9470891/pexels-photo-9470891.jpeg?auto=compress&cs=tinysrgb&w=700',
   detailing: 'https://images.pexels.com/photos/12920558/pexels-photo-12920558.jpeg?auto=compress&cs=tinysrgb&w=700',
   shampoo: 'https://cdn.shopify.com/s/files/1/0261/5033/8613/files/54320_HS-Pure-Wash-64oz_MobileOptPDP_wGray_Square_Tile1_1.jpg?v=1765195718',
@@ -184,7 +196,7 @@ function syncServiceCatalog() {
   ADDONS.splice(0, ADDONS.length, ...addons.map(catalogItem));
 }
 function transactionTypeLabel(value) {
-  return ({ BOOKING: 'Booking', WALK_IN: 'Walk-in', SHOP: 'Toko' })[value] || String(value || '').replaceAll('_', ' ');
+  return ({ BOOKING: 'Booking', WALK_IN: 'Datang langsung', SHOP: 'Toko' })[value] || String(value || '').replaceAll('_', ' ');
 }
 function money(value) { return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value) || 0); }
 function escapeHtml(value = '') { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])); }
@@ -193,6 +205,9 @@ function isRegularServiceItem(item) {
 }
 function isSelfServiceItem(item) {
   return !!item && item.item_type === 'SERVICE' && item.active !== false && item.category === 'SELF_SERVICE';
+}
+function regularServices() {
+  return SERVICES.filter(isRegularServiceItem);
 }
 function getJakartaFutureTimeString(minutes = 10) {
   return getJakartaTimeString(new Date(Date.now() + Number(minutes) * 60000));
@@ -230,7 +245,7 @@ function addDaysToJakartaDate(dateString, offsetDays) {
 function getVehicle(tx) { return db.vehicles.find(item => item.id === tx.vehicle_id); }
 function getCustomer(tx) { return db.customers.find(item => item.id === tx.customer_id); }
 function statusLabel(value) {
-  return ({ AVAILABLE: 'TERSEDIA', OCCUPIED: 'DIGUNAKAN', RESERVED: 'DIPESAN', PAID: 'Lunas', PENDING: 'Pending', FAILED: 'Gagal', REFUNDED: 'Dikembalikan', COMPLETED: 'SELESAI', BOOKED: 'DIBOOKING', ACTIVE: 'AKTIF', CANCELLED: 'DIBATALKAN', WAITING: 'MENUNGGU', WASHING: 'DICUCI', FINISHING: 'TAHAP AKHIR', CASH: 'Tunai', QRIS: 'QRIS', E_WALLET: 'E-Wallet', CARD: 'Kartu' })[value] || String(value || '').replaceAll('_', ' ');
+  return ({ AVAILABLE: 'TERSEDIA', OCCUPIED: 'DIGUNAKAN', RESERVED: 'DIPESAN', PAID: 'LUNAS', PENDING: 'BELUM DIBAYAR', FAILED: 'GAGAL', REFUNDED: 'DIKEMBALIKAN', COMPLETED: 'SELESAI', BOOKED: 'DIPESAN', ACTIVE: 'AKTIF', CANCELLED: 'DIBATALKAN', WAITING: 'MENUNGGU', WASHING: 'DICUCI', FINISHING: 'TAHAP AKHIR', CASH: 'Tunai', QRIS: 'QRIS', E_WALLET: 'Dompet digital', CARD: 'Kartu' })[value] || String(value || '').replaceAll('_', ' ');
 }
 function statusBadge(value) { return `<span class="status status-${String(value).toLowerCase().replaceAll('_', '-')}">${statusLabel(value)}</span>`; }
 function isBayTransactionCurrent(tx, now = Date.now()) {
@@ -266,34 +281,66 @@ async function openAdmin() {
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+function polishUiLabels(root) {
+  const finalUiLabel = value => value
+    .replaceAll('CUCI MANDIRI', 'SELF-SERVICE')
+    .replaceAll('Cuci Mandiri', 'Self-Service')
+    .replaceAll('Cuci mandiri', 'Self-Service')
+    .replaceAll('cuci mandiri', 'Self-Service')
+    .replaceAll('LANDASAN LAYANAN', 'PROFESSIONAL WASH')
+    .replaceAll('Semua layanan', 'Lihat pilihan')
+    .replaceAll('Coba Self-Service', 'Pilih bay')
+    .replaceAll('LAYANAN CUCI', 'PROFESSIONAL WASH')
+    .replaceAll('Layanan Cuci', 'Professional Wash')
+    .replaceAll('Layanan cuci', 'Professional Wash')
+    .replaceAll('Layanan & produk', 'Produk & Layanan')
+    .replaceAll('Layanan dan produk', 'Produk & Layanan')
+    .replaceAll('Services & products', 'Produk & Layanan')
+    .replaceAll('Customers & vehicles', 'Pelanggan & Kendaraan')
+    .replaceAll('Antrean cuci', 'Antrean')
+    .replaceAll('Pesan cuci', 'Pesan Cuci')
+    .replaceAll('Walk-in baru', 'Transaksi langsung')
+    .replaceAll('WALK-IN', 'DATANG LANGSUNG')
+    .replaceAll(' pending', ' belum dibayar')
+    .replaceAll('Layanan tambahan', 'Tambahan')
+    .replaceAll('E-Wallet', 'Dompet digital')
+    .replaceAll('Lanjut ke review', 'Lanjut ke ringkasan')
+    .replaceAll('LAPORAN KEUANGAN', 'LAPORAN PENDAPATAN');
+  const labelWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let labelNode;
+  while ((labelNode = labelWalker.nextNode())) labelNode.textContent = finalUiLabel(labelNode.textContent);
+  root.querySelectorAll('img[alt]').forEach(image => { image.alt = finalUiLabel(image.alt); });
+}
+
 function render() {
   const views = { home: renderHome, services: renderServices, 'self-service': renderBays, shop: renderShop, history: renderHistory, admin: renderAdmin };
   const app = document.getElementById('app');
   if (page === 'admin') app.innerHTML = !adminUser ? renderAdminLogin() : adminDataReady ? renderAdmin() : renderAdminDataState();
   else app.innerHTML = databaseConnected ? (views[page] || renderHome)() : renderPublicDataState();
+  polishUiLabels(app);
+  const pageHero = app.querySelector('.page-hero');
+  if (page === 'services' && pageHero) {
+    pageHero.querySelector('.eyebrow').textContent = 'PROFESSIONAL WASH';
+    pageHero.querySelector('h1').textContent = 'Professional Wash';
+    pageHero.querySelector('.page-hero-number').innerHTML = '02<br><small>PILIHAN</small>';
+  } else if (page === 'self-service' && pageHero) {
+    pageHero.querySelector('.eyebrow').textContent = 'SELF-SERVICE';
+    pageHero.querySelector('h1').textContent = 'Self-Service';
+  } else if (page === 'home') {
+    const selfServiceHeading = app.querySelector('.service-banner h3');
+    if (selfServiceHeading) selfServiceHeading.textContent = 'Self-Service';
+  }
   if (page === 'admin' && adminUser && adminDataReady) setAdminDescription('overview');
   app.querySelectorAll('.connection-indicator, .database-notice').forEach(element => element.remove());
   const settingsButton = app.querySelector('.admin-sidebar [data-action="settings"]');
   if (settingsButton) settingsButton.setAttribute('aria-label', 'Pengaturan studio');
-  app.querySelectorAll('.eyebrow, .banner-index').forEach(label => {
-    label.textContent = label.textContent.replaceAll('CUCI MANDIRI', 'SELF-SERVICE');
-  });
-  app.querySelectorAll('.bay-card-bottom > span, .bay-visual img').forEach(element => {
-    if (element.tagName === 'IMG') element.alt = element.alt.replaceAll('Bay cuci mandiri', 'Bay Self-Service');
-    else element.textContent = element.textContent.replaceAll('Bay cuci mandiri', 'Bay Self-Service');
-  });
-  const bayNote = app.querySelector('.bay-note p');
-  if (bayNote) bayNote.textContent = `Status bay dihitung dari transaksi aktif. Sesi Self-Service mulai ${money(20000)}.`;
-  app.querySelector('.admin-nav[data-admin-tab="self-service"]')?.childNodes.forEach(node => {
-    if (node.nodeType === Node.TEXT_NODE) node.textContent = node.textContent.replace('Cuci mandiri', 'Self-Service');
-  });
   if (page === 'admin' && adminUser && adminDataReady && document.querySelector('.metric-grid')) renderAdminMetrics();
   document.querySelectorAll('[data-nav]').forEach(link => link.classList.toggle('active', link.dataset.nav === page));
   simplifyUiSymbols();
 }
 function renderPublicDataState() {
   const loading = dataLoadState === 'loading';
-  return `<section class="section"><div class="empty-state" role="status"><h3>${loading ? 'Memuat layanan...' : 'Layanan sementara tidak tersedia.'}</h3><p>${loading ? 'Mohon tunggu sebentar.' : 'Kami belum dapat memuat layanan. Silakan coba lagi.'}</p>${loading ? '' : '<button class="button button-dark" data-action="retry-data">Coba lagi</button>'}</div></section>`;
+  return `<section class="section"><div class="empty-state" role="status"><h3>${loading ? 'Memuat data studio...' : 'Data studio sementara tidak tersedia.'}</h3><p>${loading ? 'Mohon tunggu sebentar.' : 'Kami belum dapat memuat data. Silakan coba lagi.'}</p>${loading ? '' : '<button class="button button-dark" data-action="retry-data">Coba lagi</button>'}</div></section>`;
 }
 function renderAdminDataState() {
   const loading = adminDataState === 'loading';
@@ -313,7 +360,7 @@ function simplifyUiSymbols(root = document.body) {
   emptyDecorations.forEach(element => element.remove());
 }
 function renderAdminLogin() {
-  return `<section class="admin-login-page"><div class="admin-login-content"><a class="brand" href="#home" data-nav="home"><span class="brand-mark">R</span><span>rinse<span class="brand-light">society</span><small>WASH STUDIO · SEMARANG</small></span></a><h1>Admin Login</h1><p>Masuk untuk mengelola operasional Rinse Society.</p><form id="admin-login-form" class="admin-login-form"><label for="admin-email">Email</label><input id="admin-email" name="email" type="email" autocomplete="username" required placeholder="nama@bisnis.id"><label for="admin-password">Password</label><input id="admin-password" name="password" type="password" autocomplete="current-password" required placeholder="Masukkan password"><button class="button button-dark button-full" type="submit">Masuk</button><p class="login-error" id="login-error" role="alert"></p></form><button class="text-link" data-nav="home">Kembali ke Website</button></div></section>`;
+  return `<section class="admin-login-page"><div class="admin-login-content"><a class="brand" href="#home" data-nav="home"><span class="brand-mark">R</span><span>rinse<span class="brand-light">society</span><small>WASH STUDIO · SEMARANG</small></span></a><h1>Masuk Admin</h1><p>Masuk untuk mengelola operasional Rinse Society.</p><form id="admin-login-form" class="admin-login-form"><label for="admin-email">Email</label><input id="admin-email" name="email" type="email" autocomplete="username" required placeholder="nama@bisnis.id"><label for="admin-password">Kata sandi</label><input id="admin-password" name="password" type="password" autocomplete="current-password" required placeholder="Masukkan kata sandi"><button class="button button-dark button-full" type="submit">Masuk</button><p class="login-error" id="login-error" role="alert"></p></form><button class="text-link" data-nav="home">Kembali ke Beranda</button></div></section>`;
 }
 function dailyPaidRevenue(transactions, dayCount = 7) {
   const today = getJakartaDateString();
@@ -396,17 +443,17 @@ function renderAdminMetrics() {
 }
 function serviceCard(service) {
   const item = catalogItem(service);
-  return `<article class="service-card"><div class="service-photo"><img src="${item.image}" alt="${escapeHtml(item.name)}" loading="lazy"><span class="photo-tag">${item.category === 'SELF_SERVICE' ? 'SELF-SERVICE' : 'LAYANAN CUCI'}</span><button class="photo-cta" data-service="${item.id}" aria-label="Pesan ${escapeHtml(item.name)}">Pesan</button></div><div class="service-copy"><div class="service-title-row"><h3>${escapeHtml(item.name)}</h3><span class="service-price">${money(item.price)}</span></div><p>${escapeHtml(item.description)}</p><div class="service-meta"><span>${item.duration} menit</span><span class="meta-dot"></span><span>${item.type === 'MOTOR' ? 'Motor' : 'Mobil'}</span><button data-service="${item.id}">Pilih layanan</button></div></div></article>`;
+  return `<article class="service-card"><div class="service-photo"><img src="${item.image}" alt="${escapeHtml(item.name)}" loading="lazy"><span class="photo-tag">PROFESSIONAL WASH</span></div><div class="service-copy"><div class="service-title-row"><h3>${escapeHtml(item.name)}</h3><span class="service-price">${money(item.price)}</span></div><p>${escapeHtml(item.description)}</p><div class="service-meta"><span>${item.duration} menit</span><span class="meta-dot"></span><span>${item.type === 'MOTOR' ? 'Motor' : 'Mobil'}</span><button data-service="${item.id}">Pilih layanan</button></div></div></article>`;
 }
 function renderHome() {
   const washes = publicWashCount;
   const notice = '';
-  return `${notice}<section class="hero"><img class="hero-image" src="${PHOTOS.hero}" alt="Mobil berbusa saat dicuci di studio detailing"><div class="hero-shade"></div><div class="hero-topline"><span>STUDIO CUCI KENDARAAN SEMARANG</span><span><i class="live-dot"></i> BUKA HARI INI · 08.00 — 21.00</span></div><div class="hero-content"><p class="eyebrow eyebrow-light">GOOD CARE. GOOD MILES.</p><h1>Mobil Anda layak<br>mendapat <em>perawatan lebih.</em></h1><p class="hero-description">Layanan studio profesional dan bay self-service universal untuk kendaraan Anda, dengan hasil yang konsisten dan proses yang jelas.</p><div class="hero-buttons"><button class="button button-white" data-action="booking">Pesan cuci <span>↗</span></button><a class="text-link light-link" href="#services" data-nav="services">Lihat layanan <span>↓</span></a></div></div><div class="hero-note"><strong>${String(washes).padStart(2, '0')}</strong><span>kendaraan dirawat<br>hari ini</span></div><div class="hero-index">01 <span></span> 04</div></section>
-  <section class="intro-strip"><p>GOOD CLEAN. <span>GOOD ENERGY.</span></p><p>CUCI DETAIL, TANPA REPOT.</p><span class="intro-arrow">↓</span></section>
-  <section class="section services-section" id="services"><div class="section-heading"><div><p class="eyebrow">LANDASAN LAYANAN</p><h2>Serahkan kendaraan.<br><em>Tim kami yang menangani.</em></h2></div><p class="section-aside">Layanan studio untuk kendaraan yang Anda serahkan kepada tim Rinse Society. Fokus pada kualitas hasil, durasi, dan penanganan yang rapi.</p><a class="text-link" href="#services" data-nav="services">Semua layanan <span>↗</span></a></div><div class="service-grid">${SERVICES.slice(0, 2).map(serviceCard).join('')}</div><div class="service-banner"><img src="${PHOTOS.selfCar}" alt="Bay self-service universal di studio" loading="lazy"><div class="banner-content"><span class="eyebrow eyebrow-light">SELF-SERVICE</span><h3>Cuci sendiri di<br><em>bay pilihan Anda.</em></h3><p>4 bay universal untuk mobil dan sepeda motor. Anda memilih jadwal, durasi, dan bay yang tersedia.</p><button class="button button-white" data-nav="self-service">Lihat Self-Service <span>↗</span></button></div><span class="banner-index">BAY UNIVERSAL · 02</span></div></section>
-  <section class="editorial-band"><div class="editorial-image"><img src="${PHOTOS.motorcycle}" alt="Motor sedang dicuci dengan foam" loading="lazy"><span class="editorial-caption">UNTUK PENGGEMAR RODA DUA</span></div><div class="editorial-copy"><p class="eyebrow">MOBIL DAN MOTOR</p><h2>Service studio.<br><em>Tanpa ribet.</em></h2><p>Tim Rinse Society menangani pencucian, finishing, dan detail kebutuhan kendaraan Anda dengan proses yang konsisten dan rapi.</p><button class="text-link" data-service="svc-moto">Lihat cuci motor <span>↗</span></button><div class="editorial-stat"><strong>35<span>m</span></strong><span>perawatan motor<br>menyeluruh</span></div></div></section>
-  <section class="shop-teaser"><div class="section-heading"><div><p class="eyebrow">PERAWATAN KENDARAAN DI RUMAH</p><h2>Produk pilihan.<br><em>Rawat kilapnya.</em></h2></div><a class="text-link" href="#shop" data-nav="shop">Lihat semua produk <span>↗</span></a></div><div class="product-grid">${db.services_products.filter(item => item.item_type === 'PRODUCT').slice(0, 2).map(productCard).join('')}</div></section>
-  <section class="closing-cta"><div><p class="eyebrow eyebrow-light">RAWAT DENGAN LEBIH BAIK</p><h2>Mulai hari ini<br><em>dengan kendaraan bersih.</em></h2></div><button class="button button-white" data-action="booking">Pesan layanan <span>↗</span></button><span class="closing-mark">R.</span></section>`;
+  return `${notice}<section class="hero"><img class="hero-image" src="${PHOTOS.hero}" alt="Mobil berbusa saat dicuci di studio"><div class="hero-shade"></div><div class="hero-topline"><span>WASH STUDIO · SEMARANG</span><span><i class="live-dot"></i> BUKA HARI INI · 08.00 — 21.00</span></div><div class="hero-content"><p class="eyebrow eyebrow-light">CUCI LEBIH BAIK. BERKENDARA LEBIH NYAMAN.</p><h1>Mobil Anda layak<br>mendapat <em>perawatan lebih.</em></h1><p class="hero-description">Serahkan kendaraan kepada tim Rinse Society untuk hasil yang konsisten, rapi, dan terpercaya.</p><div class="hero-buttons"><button class="button button-white" data-action="booking">Pesan Cuci</button><a class="text-link light-link" href="#services" data-nav="services">Lihat pilihan</a></div></div><div class="hero-note"><strong>${String(washes).padStart(2, '0')}</strong><span>kendaraan dirawat<br>hari ini</span></div><div class="hero-index">01 <span></span> 04</div></section>
+  <section class="intro-strip"><p>BERSIH MENYELURUH. <span>PERJALANAN LEBIH NYAMAN.</span></p><p>PERAWATAN TELITI, TANPA REPOT.</p></section>
+  <section class="section services-section" id="services"><div class="section-heading"><div><p class="eyebrow">PROFESSIONAL WASH</p><h2>Serahkan kendaraan.<br><em>Tim kami yang menangani.</em></h2></div><p class="section-aside">Tim Rinse Society menangani pencucian kendaraan dengan fokus pada kualitas hasil, durasi, dan penanganan yang rapi.</p><a class="text-link" href="#services" data-nav="services">Lihat pilihan</a></div><div class="service-grid">${regularServices().slice(0, 2).map(serviceCard).join('')}</div><div class="service-banner"><img src="${PHOTOS.selfBay}" alt="Beberapa bay Self-Service yang siap digunakan" loading="lazy"><div class="banner-content"><span class="eyebrow eyebrow-light">SELF-SERVICE</span><h3>Self-Service</h3><p>Pilih salah satu dari empat bay universal untuk mobil atau sepeda motor, lalu tentukan waktu dan durasi cuci.</p><button class="button button-white" data-nav="self-service">Pilih bay</button></div><span class="banner-index">BAY UNIVERSAL · 02</span></div></section>
+  <section class="editorial-band"><div class="editorial-image"><img src="${PHOTOS.motorcycle}" alt="Sepeda motor di studio cuci" loading="lazy"><span class="editorial-caption">PERAWATAN SEPEDA MOTOR</span></div><div class="editorial-copy"><p class="eyebrow">MOBIL DAN SEPEDA MOTOR</p><h2>Perawatan profesional.<br><em>Tanpa repot.</em></h2><p>Tim Rinse Society menangani pencucian dan penyelesaian kendaraan dengan proses yang konsisten dan rapi.</p><button class="text-link" data-service="svc-moto">Pilih layanan motor</button><div class="editorial-stat"><strong>35<span>m</span></strong><span>perawatan motor<br>menyeluruh</span></div></div></section>
+  <section class="shop-teaser"><div class="section-heading"><div><p class="eyebrow">PERAWATAN KENDARAAN DI RUMAH</p><h2>Produk pilihan.<br><em>Rawat kilapnya.</em></h2></div><a class="text-link" href="#shop" data-nav="shop">Lihat semua produk</a></div><div class="product-grid">${db.services_products.filter(item => item.item_type === 'PRODUCT').slice(0, 2).map(productCard).join('')}</div></section>
+  <section class="closing-cta"><div><p class="eyebrow eyebrow-light">RAWAT DENGAN LEBIH BAIK</p><h2>Mulai hari ini<br><em>dengan kendaraan bersih.</em></h2></div><button class="button button-white" data-action="booking">Pesan Cuci</button><span class="closing-mark">R.</span></section>`;
 }
 function productCard(sourceProduct) {
   const product = catalogItem(sourceProduct);
@@ -414,30 +461,30 @@ function productCard(sourceProduct) {
   return `<article class="product-card"><button class="product-image" data-product="${product.id}" aria-label="Tambahkan ${escapeHtml(product.name)} ke keranjang"><img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy"><span class="product-add">+</span></button><div class="product-info"><span class="eyebrow">${escapeHtml(product.category || 'PRODUK PERAWATAN')}</span><h3>${escapeHtml(product.name)}</h3><p>${escapeHtml(product.description || '')}</p><div class="product-price-row"><strong>${money(product.price)}</strong><span class="stock-note ${low ? 'low-stock' : ''}">${low ? 'STOK MENIPIS' : `STOK ${product.stock}`}</span></div><button class="product-buy" data-product="${product.id}">Tambah ke keranjang <span>↗</span></button></div></article>`;
 }
 function renderServices() {
-  return `<section class="page-hero page-hero-blue"><div><p class="eyebrow eyebrow-light">LAYANAN</p><h1>Serahkan kendaraan.<br><em>Tim kami yang menangani.</em></h1><p>Fokus pada hasil, treatment, dan studio service yang rapi. Pilih layanan yang sesuai kebutuhan kendaraan Anda.</p></div><span class="page-hero-number">04<br><small>LAYANAN</small></span></section><section class="section services-list"><div class="section-heading compact-heading"><div><p class="eyebrow">PILIHAN PERAWATAN</p><h2>Temukan layanan <em>yang tepat.</em></h2></div><span class="availability"><i class="live-dot"></i> Walk-in & booking tersedia</span></div><div class="service-grid">${SERVICES.filter(item => item.category !== 'SELF_SERVICE').map(serviceCard).join('')}</div><div class="addons-row"><div><p class="eyebrow">SENTUHAN AKHIR</p><h3>Perawatan ekstra.<br><em>Hasil lebih bersih.</em></h3></div>${ADDONS.map(addon => `<button class="addon-item" data-addon="${addon.id}"><img src="${addon.image}" width="54" height="54" alt="${escapeHtml(addon.name)}" loading="lazy"><span><strong>${addon.name}</strong><small>${money(addon.price)} · ${addon.duration} menit</small></span><b>↗</b></button>`).join('')}</div></section>`;
+  return `<section class="page-hero page-hero-blue"><div><p class="eyebrow eyebrow-light">PROFESSIONAL WASH</p><h1>Professional Wash</h1><p>Tim Rinse Society mencuci kendaraan Anda dengan hasil yang konsisten, rapi, dan terpercaya.</p></div><span class="page-hero-number">02<br><small>PILIHAN</small></span></section><section class="section services-list"><div class="section-heading compact-heading"><div><p class="eyebrow">PILIHAN PERAWATAN</p><h2>Temukan layanan <em>yang tepat.</em></h2></div><span class="availability"><i class="live-dot"></i> Datang langsung atau booking</span></div><div class="service-grid">${regularServices().map(serviceCard).join('')}</div><div class="addons-row"><div><p class="eyebrow">SENTUHAN AKHIR</p><h3>Perawatan ekstra.<br><em>Hasil lebih bersih.</em></h3></div>${ADDONS.map(addon => `<button class="addon-item" data-addon="${addon.id}"><img src="${addon.image}" width="54" height="54" alt="${escapeHtml(addon.name)}" loading="lazy"><span><strong>${addon.name}</strong><small>${money(addon.price)} · ${addon.duration} menit</small></span><b>↗</b></button>`).join('')}</div></section>`;
 }
 function renderBays() {
   const bays = (publicBays.length ? publicBays : Array.from({ length: 4 }, (_, index) => ({ bay_number: index + 1, bay_status: 'AVAILABLE', vehicle_type: null, duration_minutes: 0, minutes_remaining: 0, booking_time: null }))).map(row => ({ number: row.bay_number, state: row.bay_status || 'AVAILABLE', type: row.vehicle_type || null, duration: Number(row.duration_minutes || 0), remaining: Number(row.minutes_remaining || 0), time: row.booking_time || null }));
-  return `<section class="page-hero page-hero-navy"><div><p class="eyebrow eyebrow-light">SELF-SERVICE</p><h1>Cuci sendiri di<br><em>bay pilihan Anda.</em></h1><p>4 bay universal untuk mobil dan sepeda motor. Pilih hari, waktu, dan bay yang tersedia untuk kendaraan Anda sendiri.</p></div><span class="page-hero-number">04<br><small>BAY</small></span></section><section class="section bays-section"><div class="section-heading compact-heading"><div><p class="eyebrow">STATUS BAY TERKINI</p><h2>4 bay universal.<br><em>Siap untuk mobil atau motor.</em></h2></div><span class="updated-label"><i class="live-dot"></i> Update real-time</span></div><div class="bay-grid">${bays.map(bay => {
+  return `<section class="page-hero page-hero-navy"><div><p class="eyebrow eyebrow-light">SELF-SERVICE</p><h1>Self-Service</h1><p>Pilih bay universal untuk mobil atau sepeda motor, lalu tentukan waktu dan durasi cuci.</p></div><span class="page-hero-number">04<br><small>BAY</small></span></section><section class="section bays-section"><div class="section-heading compact-heading"><div><p class="eyebrow">STATUS BAY TERKINI</p><h2>Empat bay universal.<br><em>Siap untuk mobil atau motor.</em></h2></div><span class="updated-label"><i class="live-dot"></i> Diperbarui langsung</span></div><div class="bay-grid">${bays.map(bay => {
     const normalizedState = bay.state === 'RESERVED' ? 'RESERVED' : bay.state === 'OCCUPIED' ? 'OCCUPIED' : 'AVAILABLE';
     const isOccupied = normalizedState === 'OCCUPIED';
     const isReserved = normalizedState === 'RESERVED';
-    const visualVehicle = isOccupied ? (bay.type === 'MOTOR' ? PHOTOS.selfMotorcycle : PHOTOS.selfCar) : PHOTOS.self;
-    const label = isOccupied ? (bay.type === 'MOTOR' ? 'Motor sedang digunakan' : 'Mobil sedang digunakan') : isReserved ? 'Dipesan' : 'Siap digunakan';
-    return `<article class="bay-card bay-${normalizedState.toLowerCase()}"><div class="bay-card-top"><span>B-${String(bay.number).padStart(2, '0')}</span>${statusBadge(normalizedState)}</div><div class="bay-visual"><img src="${visualVehicle}" alt="${isOccupied ? `Bay ${bay.number} sedang digunakan` : isReserved ? `Bay ${bay.number} dipesan` : `Bay ${bay.number} tersedia`}" loading="lazy"><span class="bay-number">${String(bay.number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><strong>${label}</strong><span>${isOccupied ? `${bay.duration || 0} menit · ${bay.remaining || 0} menit tersisa` : isReserved ? `${bay.time || 'Jadwal'} · dipesan` : '4 bay universal untuk mobil dan motor'}</span>${normalizedState === 'AVAILABLE' ? `<button class="text-link" data-action="self-service-book">Pilih bay ini <span>↗</span></button>` : `<span class="bay-time">${isOccupied ? `${bay.remaining || 0} menit tersisa` : `${bay.time || ''} · dipesan`}</span>`}</div></article>`;
-  }).join('')}</div><div class="bay-note"><span class="bay-note-icon">i</span><p>Bay universal untuk mobil dan sepeda motor. Status dihitung dari jadwal dan durasi sesi yang aktif.</p><button class="text-link" data-action="self-service-book">Mulai Self-Service <span>↗</span></button></div></section>`;
+    const visual = PHOTOS.selfBay;
+    const label = isOccupied ? (bay.type === 'MOTOR' ? 'DIGUNAKAN · Sepeda motor' : 'DIGUNAKAN · Mobil') : isReserved ? 'DIPESAN' : 'TERSEDIA';
+    return `<article class="bay-card bay-${normalizedState.toLowerCase()}"><div class="bay-card-top"><span>B-${String(bay.number).padStart(2, '0')}</span>${statusBadge(normalizedState)}</div><div class="bay-visual"><img src="${visual}" alt="Fasilitas Self-Service kosong untuk bay B-${String(bay.number).padStart(2, '0')}" loading="lazy"><span class="bay-number">${String(bay.number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><strong>${label}</strong><span>${isOccupied ? `${bay.duration || 0} menit · ${bay.remaining || 0} menit tersisa` : isReserved ? `${bay.time || 'Jadwal'} · dipesan` : 'Bay kosong · siap digunakan'}</span>${normalizedState === 'AVAILABLE' ? `<button class="text-link" data-action="self-service-book">Pilih bay</button>` : `<span class="bay-time">${isOccupied ? `${bay.remaining || 0} menit tersisa` : `${bay.time || ''} · dipesan`}</span>`}</div></article>`;
+  }).join('')}</div><div class="bay-note"><span class="bay-note-icon">i</span><p>Empat bay universal untuk mobil dan sepeda motor. Status ditentukan dari jadwal dan durasi sesi aktif.</p><button class="text-link" data-action="self-service-book">Mulai Self-Service</button></div></section>`;
 }
 function renderShop() {
   const items = Object.values(cart).reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = Object.entries(cart).reduce((sum, [id, row]) => sum + (db.services_products.find(product => product.id === id)?.price || 0) * row.quantity, 0);
-  return `<section class="page-hero page-hero-green"><div><p class="eyebrow eyebrow-light">RINSE GOODS</p><h1>Produk pilihan.<br><em>Rawat kilapnya.</em></h1><p>Produk perawatan kendaraan yang kami pilih untuk membantu menjaga hasil cuci lebih lama.</p></div><button class="cart-summary" data-action="cart"><span class="cart-icon">▱</span><span><strong>${items} produk</strong><small>${money(subtotal)} di keranjang</small></span><b>↗</b></button></section><section class="section shop-section"><div class="section-heading compact-heading"><div><p class="eyebrow">RAK PERAWATAN KENDARAAN</p><h2>Belanja produk <em>studio.</em></h2></div><span class="shop-count">${db.services_products.filter(item => item.item_type === 'PRODUCT' && item.active !== false).length} produk pilihan</span></div><div class="product-grid">${db.services_products.filter(item => item.item_type === 'PRODUCT' && item.active !== false).map(productCard).join('')}</div><div class="cart-drawer-inline"><div><span class="eyebrow">KERANJANG ANDA</span><strong>${items} produk · ${money(subtotal)}</strong></div><button class="button button-dark" data-action="cart">Lihat keranjang <span>↗</span></button></div></section>`;
+  return `<section class="page-hero page-hero-green"><div><p class="eyebrow eyebrow-light">PRODUK PILIHAN</p><h1>Produk Pilihan</h1><p>Produk perawatan kendaraan pilihan untuk menjaga hasil cuci lebih lama.</p></div><button class="cart-summary" data-action="cart"><span class="cart-icon">▱</span><span><strong>${items} produk</strong><small>${money(subtotal)} di keranjang</small></span></button></section><section class="section shop-section"><div class="section-heading compact-heading"><div><p class="eyebrow">KATALOG PERAWATAN</p><h2>Rawat kendaraan <em>di rumah.</em></h2></div><span class="shop-count">${db.services_products.filter(item => item.item_type === 'PRODUCT' && item.active !== false).length} produk pilihan</span></div><div class="product-grid">${db.services_products.filter(item => item.item_type === 'PRODUCT' && item.active !== false).map(productCard).join('')}</div><div class="cart-drawer-inline"><div><span class="eyebrow">KERANJANG ANDA</span><strong>${items} produk · ${money(subtotal)}</strong></div><button class="button button-dark" data-action="cart">Lihat keranjang</button></div></section>`;
 }
 function renderHistory() {
-  return `<section class="page-hero page-hero-sand"><div><p class="eyebrow">RIWAYAT KUNJUNGAN</p><h1>Setiap kunjungan.<br><em>Tersimpan rapi.</em></h1><p>Cari transaksi menggunakan kode booking, nomor HP, atau nomor polisi yang terdaftar.</p></div><span class="history-stamp">SENANG<br>BERJUMPA<br>KEMBALI.</span></section><section class="section history-section"><form id="history-search" class="history-search"><label for="history-query">Cari kunjungan</label><div><input id="history-query" name="query" placeholder="Kode booking, nomor HP, atau plat" autocomplete="off"><button class="button button-dark" type="submit">Cari riwayat <span>↗</span></button></div><small>Masukkan data lengkap yang digunakan saat transaksi.</small></form><div id="history-results">${renderHistoryResults([])}</div></section>`;
+  return `<section class="page-hero page-hero-sand"><div><p class="eyebrow">RIWAYAT TRANSAKSI</p><h1>Riwayat Transaksi</h1><p>Cari transaksi dengan kode booking, nomor HP, atau nomor polisi yang terdaftar.</p></div><span class="history-stamp">RIWAYAT<br>RINSE<br>SOCIETY.</span></section><section class="section history-section"><form id="history-search" class="history-search"><label for="history-query">Cari transaksi</label><div><input id="history-query" name="query" placeholder="Kode booking, nomor HP, atau nomor polisi" autocomplete="off"><button class="button button-dark" type="submit">Cari Riwayat</button></div><small>Masukkan data yang digunakan saat transaksi.</small></form><div id="history-results">${renderHistoryResults([])}</div></section>`;
 }
 function renderHistoryResults(records) {
   if (!records.length) return `<div class="empty-state"><h3>Belum ada kunjungan yang cocok.</h3><p>Periksa kembali kode booking, nomor HP, atau plat kendaraan.</p></div>`;
-  return `<div class="history-list">${records.map(tx => `<article class="history-item"><div class="history-date"><strong>${new Date(`${tx.booking_date}T12:00:00`).toLocaleDateString('id-ID', { day: '2-digit' })}</strong><span>${new Date(`${tx.booking_date}T12:00:00`).toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })}</span></div><div class="history-main"><span class="eyebrow">${escapeHtml(tx.code)} · ${escapeHtml(transactionTypeLabel(tx.transaction_type))}</span><h3>${escapeHtml(tx.item_name || 'Pembelian produk')}</h3><p>${escapeHtml(tx.vehicle_model || '')} · ${escapeHtml(tx.vehicle_plate || 'Pembelian produk')} · ${escapeHtml(tx.customer_name || '')}</p></div><div class="history-meta"><strong>${money(tx.amount)}</strong><span>${escapeHtml(statusLabel(tx.payment_method))} · ${tx.duration_minutes || 0} menit</span></div><div class="history-status">${statusBadge(tx.transaction_status)}${statusBadge(tx.payment_status)}</div></article>`).join('')}</div>`;
+  return `<div class="history-list">${records.map(tx => { const itemName = tx.bay_number ? `Self-Service · B-${String(tx.bay_number).padStart(2, '0')}` : tx.item_name || 'Pembelian produk'; return `<article class="history-item"><div class="history-date"><strong>${new Date(`${tx.booking_date}T12:00:00`).toLocaleDateString('id-ID', { day: '2-digit' })}</strong><span>${new Date(`${tx.booking_date}T12:00:00`).toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })}</span></div><div class="history-main"><span class="eyebrow">${escapeHtml(tx.code)} · ${escapeHtml(transactionTypeLabel(tx.transaction_type))}</span><h3>${escapeHtml(itemName)}</h3><p>${escapeHtml(tx.vehicle_model || '')} · ${escapeHtml(tx.vehicle_plate || 'Pembelian produk')} · ${escapeHtml(tx.customer_name || '')}</p></div><div class="history-meta"><strong>${money(tx.amount)}</strong><span>${escapeHtml(statusLabel(tx.payment_method))} · ${tx.duration_minutes || 0} menit</span></div><div class="history-status">${statusBadge(tx.transaction_status)}${statusBadge(tx.payment_status)}</div></article>`; }).join('')}</div>`;
 }
 function renderAdminLegacy() {
   const today = getJakartaDateString();
@@ -486,6 +533,14 @@ function openDialog(kind, serviceId) {
   else if (kind === 'self-service') renderSelfServiceTransactionForm(content);
   else if (kind === 'booking' || kind === 'walkin') renderTransactionForm(content, kind, service || SERVICES[0]);
   else if (kind === 'product-checkout') renderProductCheckout(content);
+  polishUiLabels(content);
+  if (kind === 'self-service') {
+    content.querySelector('.eyebrow').textContent = 'SELF-SERVICE · PEMESANAN';
+    content.querySelector('h2').textContent = 'Self-Service';
+  } else if (kind === 'booking' || kind === 'walkin') {
+    const serviceLabel = content.querySelector('select[name="service_id"]')?.closest('label');
+    if (serviceLabel?.firstChild) serviceLabel.firstChild.textContent = 'Professional Wash';
+  }
   dialog.showModal();
   simplifyUiSymbols(dialog);
 }
@@ -542,7 +597,7 @@ function renderSelfServiceTransactionForm(content) {
   const nowTime = getJakartaFutureTimeString();
   const bayOptions = Array.from({ length: 4 }, (_, index) => `<option value="${index + 1}">B-${String(index + 1).padStart(2, '0')}</option>`).join('');
   const durationOptions = [20, 30, 45, 60].map(value => `<option value="${value}" ${value === Number(defaultService.duration || 30) ? 'selected' : ''}>${value} menit</option>`).join('');
-  content.innerHTML = `<p class="eyebrow">SELF-SERVICE · BOOKING</p><h2>Cuci sendiri di<br><em>bay pilihan Anda.</em></h2><p class="dialog-intro">4 bay universal untuk mobil dan sepeda motor. Pilih kendaraan, jadwal, bay, dan pembayaran.</p><form id="transaction-form" class="dialog-form"><input type="hidden" name="flow" value="self-service"><input type="hidden" name="service_id" value="${defaultService.id}"><div class="form-two"><label>Jenis kendaraan<select name="vehicle_type" required><option value="CAR" selected>Mobil</option><option value="MOTOR">Sepeda Motor</option></select></label><label>Bay pilihan<select name="bay_number" required>${bayOptions}</select></label></div><div class="form-two"><label>Nama lengkap<input name="name" required placeholder="Nama pelanggan"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label></div><div class="form-two"><label>Model kendaraan<input name="model" placeholder="Contoh: Honda HR-V"></label><label>Nomor polisi<input name="plate" required placeholder="H 1234 NP"></label></div><div class="form-two"><label>Tanggal<select name="date" required>${Array.from({ length: 7 }, (_, index) => {
+  content.innerHTML = `<p class="eyebrow">CUCI MANDIRI · BOOKING</p><h2>Cuci sendiri di<br><em>bay pilihan Anda.</em></h2><p class="dialog-intro">4 bay universal untuk mobil dan sepeda motor. Pastikan jadwal, bay, dan durasi sesuai kebutuhan Anda.</p><form id="transaction-form" class="dialog-form"><input type="hidden" name="flow" value="self-service"><input type="hidden" name="service_id" value="${defaultService.id}"><div class="form-two"><label>Jenis kendaraan<select name="vehicle_type" required><option value="CAR" selected>Mobil</option><option value="MOTOR">Sepeda Motor</option></select></label><label>Bay<select name="bay_number" required>${bayOptions}</select></label></div><div class="form-two"><label>Nama lengkap<input name="name" required placeholder="Nama pelanggan"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label></div><div class="form-two"><label>Model kendaraan<input name="model" placeholder="Contoh: Honda HR-V"></label><label>Nomor polisi<input name="plate" required placeholder="H 1234 NP"></label></div><div class="form-two"><label>Tanggal<select name="date" required>${Array.from({ length: 7 }, (_, index) => {
       const value = addDaysToJakartaDate(todayDate, index);
       return `<option value="${value}" ${index === 0 ? 'selected' : ''}>${new Date(`${value}T12:00:00+07:00`).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })}</option>`;
     }).join('')}</select></label><label>Jam mulai<input name="time" type="time" required value="${nowTime}"></label></div><div class="form-two"><label>Durasi<select name="duration" required>${durationOptions}</select></label><label>Metode pembayaran<select name="payment"><option value="CASH">Tunai</option><option value="QRIS">QRIS</option><option value="E_WALLET">E-Wallet</option><option value="CARD">Kartu</option></select></label></div><div class="dialog-total"><span>Estimasi total</span><strong id="flow-total">${money(defaultService.price)}</strong></div><button class="button button-dark button-full" type="submit">Lanjut ke review <span>↗</span></button></form>`;
@@ -737,13 +792,13 @@ function renderReportsLegacy() {
 }
 function renderReports() {
   const paid = db.transactions.filter(tx => tx.payment_status === 'PAID');
-  const pending = db.transactions.filter(tx => tx.payment_status === 'PENDING');
   const services = paid.filter(tx => tx.item_type !== 'PRODUCT');
   const products = paid.filter(tx => tx.item_type === 'PRODUCT');
   const serviceRevenue = services.reduce((sum, tx) => sum + Number(tx.amount), 0);
   const productRevenue = products.reduce((sum, tx) => sum + Number(tx.amount), 0);
   const totalRevenue = serviceRevenue + productRevenue;
-  return `<header class="reports-heading"><div><p class="eyebrow">LAPORAN KEUANGAN</p><h2>Pendapatan studio</h2><p>Ringkasan transaksi berdasarkan catatan operasional Supabase.</p></div><span class="report-period">${db.transactions.length} transaksi · seluruh tanggal</span></header><div class="report-grid report-summary-grid"><article class="report-card report-card-primary"><span>TOTAL PENDAPATAN</span><strong>${money(totalRevenue)}</strong><small>Transaksi lunas · semua metode</small></article><article class="report-card"><span>PENDAPATAN JASA</span><strong>${money(serviceRevenue)}</strong><small>${services.length} transaksi lunas</small></article><article class="report-card"><span>PENDAPATAN PRODUK</span><strong>${money(productRevenue)}</strong><small>${products.length} baris penjualan lunas</small></article><article class="report-card"><span>TRANSAKSI TERCATAT</span><strong>${db.transactions.length}</strong><small>Semua status</small></article><article class="report-card report-card-quiet"><span>TRANSAKSI LUNAS</span><strong>${paid.length}</strong><small>PAID</small></article><article class="report-card report-card-quiet"><span>MENUNGGU PEMBAYARAN</span><strong>${pending.length}</strong><small>PENDING</small></article></div>`;
+  const vehiclesServed = new Set(db.transactions.filter(tx => tx.item_type !== 'PRODUCT' && tx.transaction_status === 'COMPLETED').map(tx => tx.vehicle_id).filter(Boolean)).size;
+  return `<header class="reports-heading"><div><p class="eyebrow">LAPORAN PENDAPATAN</p><h2>Laporan Pendapatan</h2><p>Ringkasan transaksi berdasarkan catatan operasional Supabase.</p></div><span class="report-period">${db.transactions.length} transaksi · seluruh tanggal</span></header><div class="report-grid report-summary-grid"><article class="report-card report-card-primary"><span>TOTAL PENDAPATAN</span><strong>${money(totalRevenue)}</strong><small>Transaksi lunas · semua metode</small></article><article class="report-card"><span>PENDAPATAN JASA</span><strong>${money(serviceRevenue)}</strong><small>${services.length} transaksi lunas</small></article><article class="report-card"><span>PENDAPATAN PRODUK</span><strong>${money(productRevenue)}</strong><small>${products.length} baris penjualan</small></article><article class="report-card"><span>JUMLAH TRANSAKSI</span><strong>${db.transactions.length}</strong><small>Semua status</small></article><article class="report-card report-card-quiet"><span>TRANSAKSI LUNAS</span><strong>${paid.length}</strong><small>Lunas</small></article><article class="report-card report-card-quiet"><span>KENDARAAN DILAYANI</span><strong>${vehiclesServed}</strong><small>Kendaraan unik · selesai</small></article></div>`;
 }
 function renderAdminTransactionList(records, title, eyebrow) {
   const paidCount = records.filter(tx => tx.payment_status === 'PAID').length;
@@ -758,11 +813,12 @@ function renderAdminBookings() {
   return `<div class="booking-board"><div class="booking-summary"><div><span>BOOKING MENDATANG</span><strong>${upcoming.length}</strong></div><div><span>MENUNGGU PEMBAYARAN</span><strong>${bookings.filter(tx => tx.payment_status === 'PENDING').length}</strong></div><div><span>BOOKING HARI INI</span><strong>${bookings.filter(tx => tx.booking_date === today).length}</strong></div></div><div class="booking-board-heading"><div><p class="eyebrow">JADWAL KUNJUNGAN</p><h2>${upcoming.length ? 'Booking berikutnya' : 'Riwayat booking'}</h2></div><span>${rows.length} jadwal</span></div><div class="booking-list">${rows.length ? rows.map(tx => { const customer = getCustomer(tx), vehicle = getVehicle(tx); const date = new Date(`${tx.booking_date}T12:00:00`); return `<article class="booking-row"><div class="booking-date"><strong>${date.toLocaleDateString('id-ID', { day: '2-digit' })}</strong><span>${date.toLocaleDateString('id-ID', { month: 'short' })}</span></div><div class="booking-main"><strong>${escapeHtml(tx.item_name)}</strong><span>${escapeHtml(customer?.full_name || 'Pelanggan')} · ${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</span><small>${escapeHtml(tx.code)}</small></div><div class="booking-time"><strong>${escapeHtml(tx.booking_time)}</strong><span>${tx.duration_minutes} menit</span></div><div class="booking-status"><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${statusLabel(tx.transaction_status)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span></div><strong class="booking-amount">${money(tx.amount)}</strong></article>`; }).join('') : '<p class="report-empty">Belum ada booking tercatat.</p>'}</div></div>`;
 }
 function renderAdminCustomers() {
-  return `<div class="customer-toolbar"><div><p class="eyebrow">PROFIL PELANGGAN</p><h2>Pelanggan dan kendaraan</h2><p>Ringkasan kunjungan dan kendaraan terdaftar.</p></div><span>${db.customers.length} pelanggan · ${db.vehicles.length} kendaraan</span></div><div class="customer-grid">${db.customers.map(customer => {
+  return `<div class="customer-toolbar"><div><p class="eyebrow">DATA PELANGGAN</p><h2>Pelanggan & Kendaraan</h2><p>Ringkasan kunjungan dan kendaraan terdaftar.</p></div><label class="customer-search" for="customer-search">Cari nama, nomor HP, atau plat<input id="customer-search" type="search" placeholder="Nama, nomor HP, atau plat"></label><span>${db.customers.length} pelanggan · ${db.vehicles.length} kendaraan</span></div><div class="customer-grid">${db.customers.map(customer => {
     const vehicles = db.vehicles.filter(vehicle => vehicle.customer_id === customer.id);
     const transactions = db.transactions.filter(tx => tx.customer_id === customer.id);
     const initials = customer.full_name.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase();
-    return `<article class="customer-card"><div class="customer-card-heading"><span class="customer-avatar">${escapeHtml(initials)}</span><div><h3>${escapeHtml(customer.full_name)}</h3><p>${escapeHtml(customer.phone)}</p></div></div><div class="customer-stats"><span><strong>${transactions.length}</strong> transaksi</span><span><strong>${vehicles.length}</strong> kendaraan</span></div><div class="customer-vehicles">${vehicles.map(vehicle => `<div class="customer-vehicle"><span class="vehicle-type">${vehicle.type === 'MOTOR' ? 'Motor' : 'Mobil'}</span><strong>${escapeHtml(vehicle.plate)}</strong><small>${escapeHtml(vehicle.model)}</small></div>`).join('') || '<span class="report-empty">Belum ada kendaraan terdaftar.</span>'}</div></article>`;
+    const searchText = [customer.full_name, customer.phone, customer.email, ...vehicles.flatMap(vehicle => [vehicle.plate, vehicle.model])].filter(Boolean).join(' ').toLocaleLowerCase('id-ID');
+    return `<article class="customer-card" data-customer-search="${escapeHtml(searchText)}"><div class="customer-card-heading"><span class="customer-avatar">${escapeHtml(initials)}</span><div><h3>${escapeHtml(customer.full_name)}</h3><p>${escapeHtml(customer.phone)}</p>${customer.email ? `<p class="customer-email">${escapeHtml(customer.email)}</p>` : ''}</div></div><div class="customer-stats"><span><strong>${transactions.length}</strong> transaksi</span><span><strong>${vehicles.length}</strong> kendaraan</span></div><div class="customer-vehicles">${vehicles.map(vehicle => `<div class="customer-vehicle"><span class="vehicle-type">${vehicle.type === 'MOTOR' ? 'Motor' : 'Mobil'}</span><strong>${escapeHtml(vehicle.plate)}</strong><small>${escapeHtml(vehicle.model)}</small></div>`).join('') || '<span class="report-empty">Belum ada kendaraan terdaftar.</span>'}</div></article>`;
   }).join('')}</div>`;
 }
 function adminDescription(tab) {
@@ -785,7 +841,8 @@ function renderAdminBays() {
     const tx = db.transactions.find(item => item.bay_number === number && isBayTransactionCurrent(item));
     const vehicle = tx && getVehicle(tx);
     const status = !tx ? 'AVAILABLE' : tx.transaction_status === 'ACTIVE' ? 'OCCUPIED' : 'RESERVED';
-    return `<article class="bay-card bay-${status.toLowerCase()}"><div class="bay-card-top"><span>B-${String(number).padStart(2, '0')}</span>${statusBadge(status)}</div><div class="bay-visual"><img src="${vehicle?.type === 'MOTOR' ? PHOTOS.selfMotorcycle : PHOTOS.selfCar}" alt="Bay cuci mandiri ${number}"><span class="bay-number">${String(number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><strong>${vehicle ? `${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.plate)}` : 'Siap digunakan'}</strong><span>${tx ? `${tx.duration_minutes} menit · ${vehicle?.type === 'MOTOR' ? 'Motor' : 'Mobil'}` : 'Belum ada sesi aktif'}</span><span class="bay-time">${status === 'OCCUPIED' ? `${bayMinutesLeft(tx)} menit tersisa` : status === 'RESERVED' ? `${tx.booking_time} · dipesan` : 'Tersedia sekarang'}</span></div></article>`;
+    const statusLabelText = !tx ? 'TERSEDIA' : status === 'OCCUPIED' ? 'DIGUNAKAN' : 'DIPESAN';
+    return `<article class="bay-card bay-${status.toLowerCase()}"><div class="bay-card-top"><span>B-${String(number).padStart(2, '0')}</span>${statusBadge(status)}</div><div class="bay-visual"><img src="${PHOTOS.selfBay}" alt="Bay cuci mandiri ${number}"><span class="bay-number">${String(number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><strong>${vehicle ? `${statusLabelText} · ${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.plate)}` : statusLabelText}</strong><span>${tx ? `${tx.duration_minutes} menit · ${vehicle?.type === 'MOTOR' ? 'Sepeda motor' : 'Mobil'}` : 'Belum ada sesi aktif'}</span><span class="bay-time">${status === 'OCCUPIED' ? `${bayMinutesLeft(tx)} menit tersisa` : status === 'RESERVED' ? `${tx.booking_time} · dipesan` : 'Tersedia sekarang'}</span></div></article>`;
   }).join('');
   return `<div class="catalog-toolbar"><div><p class="eyebrow">AREA CUCI MANDIRI</p><h2>Status bay saat ini.</h2></div><span class="shop-count">${db.transactions.filter(tx => tx.transaction_status === 'ACTIVE' && tx.bay_number && isBayTransactionCurrent(tx)).length} bay digunakan</span></div><div class="bay-grid">${bays}</div>`;
 }
@@ -853,12 +910,13 @@ function activateAdminTab(tab) {
   const heading = document.getElementById('admin-heading');
   const content = document.getElementById('admin-content');
   if (!content) return;
-  const labels = { overview: 'Ringkasan operasional', transactions: 'Transaksi', bookings: 'Booking', queue: 'Antrean cuci', 'self-service': 'Self-Service Bays', catalog: 'Layanan & produk', customers: 'Pelanggan & kendaraan', reports: 'Laporan pendapatan' };
+  const labels = { overview: 'Ringkasan', transactions: 'Transaksi', bookings: 'Booking', queue: 'Antrean', 'self-service': 'Self-Service', catalog: 'Produk & Layanan', customers: 'Pelanggan & Kendaraan', reports: 'Laporan Pendapatan' };
   heading.textContent = labels[tab] || labels.overview;
   setAdminDescription(tab);
   if (tab === 'overview') { render(); return; }
   if (tab === 'catalog') {
     content.innerHTML = renderAdminCatalog();
+    polishUiLabels(content);
     simplifyUiSymbols(content);
     return;
   }
@@ -867,8 +925,18 @@ function activateAdminTab(tab) {
   else if (tab === 'self-service') content.innerHTML = renderAdminBays();
   if (tab === 'queue') content.innerHTML = `<div class="queue-toolbar"><div><p class="eyebrow">PENGELOLAAN AREA CUCI</p><h2>Pantau setiap kendaraan.</h2></div><button class="button button-dark" data-action="walkin">+ Walk-in baru</button></div>${renderQueueColumns(true)}`;
   else if (tab === 'reports') { content.innerHTML = renderReports(); content.insertAdjacentHTML('beforeend', renderReportDetails()); }
-  else if (tab === 'customers') content.innerHTML = renderAdminCustomers();
+  else if (tab === 'customers') {
+    content.innerHTML = renderAdminCustomers();
+    const searchField = content.querySelector('#customer-search');
+    searchField?.addEventListener('input', () => {
+      const query = searchField.value.trim().toLocaleLowerCase('id-ID');
+      content.querySelectorAll('.customer-card').forEach(card => {
+        card.hidden = !card.dataset.customerSearch.includes(query);
+      });
+    });
+  }
   else if (tab === 'catalog') content.innerHTML = `<div class="catalog-toolbar"><div><p class="eyebrow">KATALOG DAN PERSEDIAAN</p><h2>Kelola layanan dan produk.</h2></div><button class="button button-dark" data-action="add-item">+ Tambah item</button></div><div class="catalog-table"><div class="catalog-row catalog-head"><span>ITEM</span><span>JENIS</span><span>HARGA</span><span>STOK / DURASI</span><span>STATUS</span></div>${db.services_products.map(item => `<div class="catalog-row"><span class="catalog-name"><img src="${catalogItem(item).image || PHOTOS.car}" alt=""><strong>${escapeHtml(item.name)}</strong></span><span>${item.item_type === 'PRODUCT' ? 'PRODUK' : item.item_type === 'ADD_ON' ? 'TAMBAHAN' : 'LAYANAN'}</span><span>${money(item.price)}</span><span>${item.item_type === 'PRODUCT' ? `<b class="${item.stock <= item.min_stock ? 'stock-low' : ''}">${item.stock} / min ${item.min_stock}</b>` : `${item.duration || 0} menit`}</span><button class="toggle-active" data-edit-item="${item.id}">${item.active === false ? 'NONAKTIF' : 'AKTIF'} · Ubah</button></div>`).join('')}</div>`;
+  polishUiLabels(content);
   simplifyUiSymbols(content);
 }
 function showToast(message, type = 'success') { const element = document.createElement('div'); element.className = `toast toast-${type}`; element.textContent = message; document.getElementById('toast-region').append(element); setTimeout(() => element.remove(), 4500); }

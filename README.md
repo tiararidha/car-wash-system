@@ -35,4 +35,4 @@ Jika Supabase belum dapat dihubungi, website menampilkan error state dan tidak m
 
 Walk-in CASH dicatat lunas. Booking cash dan metode cashless tetap `PENDING` sampai dibayar; metode QRIS, E-Wallet, dan Card memerlukan payment gateway untuk konfirmasi otomatis, yang belum disertakan.
 
-Foto Pexels berada pada konstanta `PHOTOS` di `app.js`; URL dapat diganti dengan foto aset usaha sendiri.
+Foto `assets/self-service-bay.jpg`: G. Edward Johnson, [Glo Car Wash, Pahrump, NV](https://commons.wikimedia.org/wiki/File:Car_Wash_Pahrump_NV_2026-04-03_15-05-36.jpg), dilisensikan di bawah [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Versi lokal diubah ukuran untuk penggunaan web.
