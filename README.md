@@ -18,7 +18,7 @@ Buka `http://localhost:3000`.
 2. Isi `SUPABASE_URL` dengan Project URL (`https://xxxxx.supabase.co`) dan `SUPABASE_PUBLISHABLE_KEY` dengan publishable key proyek.
 3. Jalankan `sql/schema.sql` melalui Supabase SQL Editor. Schema membuat tepat empat tabel: `customers`, `vehicles`, `services_products`, dan `transactions`, beserta indeks, constraints, RLS, RPC aman, dan data awal operasional.
 4. Jalankan `sql/rls-authenticated-access.sql` untuk memperbarui izin authenticated dan RPC. Muat ulang aplikasi. Data katalog, metrik publik, riwayat, pelanggan, kendaraan, transaksi, dan status bay harus berasal dari Supabase; kegagalan akses ditampilkan sebagai error, bukan diganti data seed.
-5. Jalankan `sql/self-service-bay-live-migration.sql`, lalu `sql/business-flow-hardening.sql`. Migrasi terakhir memperketat relasi dan nominal transaksi, pembayaran sebelum pengerjaan, pembatalan/refund, alamat pelanggan, Antar-Jemput Professional Wash, serta rekonsiliasi otomatis setiap menit. Migrasi hanya menambah kolom dan fungsi pada tabel yang ada; tidak membuat tabel baru.
+5. Jalankan `sql/self-service-bay-live-migration.sql`, lalu `sql/business-flow-hardening.sql`. Migrasi terakhir memperketat relasi dan nominal transaksi, pembayaran sebelum pengerjaan, pembatalan/refund, serta rekonsiliasi otomatis setiap menit. Migrasi hanya menambah kolom dan fungsi pada tabel yang ada; tidak membuat tabel baru. Kolom dan RPC pickup lama tetap dipertahankan untuk data historis dan belum dihapus dari database.
 
 Jangan masukkan `service_role` atau secret key ke browser. Aplikasi memakai REST API dan Supabase Auth langsung dengan publishable key.
 
@@ -34,11 +34,11 @@ Data pelanggan dan transaksi tidak dibuka untuk pembacaan anon. Pencarian histor
 
 Jika Supabase belum dapat dihubungi, website menampilkan error state dan tidak mengganti data aktif dengan data preview. localStorage hanya menyimpan keranjang; sessionStorage hanya menyimpan sesi login sementara.
 
-Harga jasa final: Professional Car Wash Rp50.000, Professional Motorcycle Wash Rp20.000, Self-Service Car Rp30.000, dan Self-Service Motorcycle Rp10.000. Antar-Jemput sekali pulang-pergi maksimal 3 km: mobil Rp10.000 dan motor Rp5.000.
+Harga jasa final: Professional Car Wash Rp50.000, Professional Motorcycle Wash Rp20.000, Self-Service Car Rp30.000, dan Self-Service Motorcycle Rp10.000.
 
 Walk-in tunai menunggu konfirmasi Admin setelah uang diterima. Booking hanya memakai QRIS, E-Wallet, atau Card dan tidak memiliki konfirmasi manual; booking tetap belum dibayar sampai payment gateway memanggil `confirm_booking_payment` setelah pembayaran benar-benar berhasil. Gateway belum terhubung, jadi transaksi cashless tidak otomatis menjadi Lunas. Pembatalan booking sebelum waktu mulai melepas slot; dana yang telah dibayar tercatat menunggu pengembalian manual. Status pengembalian selesai hanya dicatat Admin setelah dana benar-benar dikembalikan di luar aplikasi.
 
-Antar-Jemput tersedia sebagai add-on Booking Professional Wash mobil maupun motor, bukan Walk-in atau Self-Service. Jarak pulang-pergi wajib diisi dan dibatasi maksimal 3 km. Alamat diambil dari data pelanggan; pelanggan baru dapat memasukkannya saat memesan. Alamat pelanggan lama yang belum tercatat perlu dilengkapi Admin terlebih dahulu.
+Antar-Jemput telah dinonaktifkan di aplikasi: tidak tersedia di booking, katalog, atau RPC yang dipanggil aplikasi. Kolom, RPC, dan transaksi historis terkait masih ada di Supabase karena perubahan skema/database tidak dijalankan. RPC database lama masih dapat menerima pemanggilan langsung sampai penghapusannya diaudit dan disetujui secara terpisah.
 
 Rekonsiliasi Self-Service tetap memakai `pg_cron` setiap menit dan kini mengatur seluruh layanan yang sudah dibayar. Perubahan status tersimpan otomatis tanpa halaman atau tindakan admin; pembaruan status persisten dapat tertunda sampai tick cron berikutnya.
 
