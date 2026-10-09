@@ -54,13 +54,15 @@ const PHOTOS = {
 };
 
 const CATALOG_COPY = {
-  'svc-car': { name: 'Regular Car Wash', description: 'Cuci tangan menyeluruh dengan busa, bilas bertekanan, dan pengeringan rapi.', image: PHOTOS.car },
-  'svc-moto': { name: 'Regular Motorcycle Wash', description: 'Pembersihan bodi, roda, dan sela mesin agar motor siap digunakan kembali.', image: PHOTOS.motorcycle },
+  'svc-car': { name: 'Professional Car Wash', description: 'Cuci tangan menyeluruh dengan busa, bilas bertekanan, dan pengeringan rapi.', image: PHOTOS.car },
+  'svc-moto': { name: 'Professional Motorcycle Wash', description: 'Pembersihan bodi, roda, dan sela mesin agar motor siap digunakan kembali.', image: PHOTOS.motorcycle },
   'svc-self-car': { name: 'Self-Service Car', description: 'Cuci mobil sendiri di bay khusus dengan foam dan semprotan bertekanan.', image: PHOTOS.selfCar },
   'svc-self-moto': { name: 'Self-Service Motorcycle', description: 'Cuci motor sendiri di bay khusus dengan peralatan yang siap digunakan.', image: PHOTOS.selfMotorcycle },
   'addon-vacuum': { name: 'Interior Vacuum', description: 'Pembersihan debu dan kotoran dari karpet serta kabin kendaraan.', image: PHOTOS.addonVacuum },
   'addon-wax': { name: 'Spray Wax', description: 'Lapisan kilap tambahan untuk membantu menjaga hasil cuci.', image: PHOTOS.addonWax },
   'addon-tire': { name: 'Tire Dressing', description: 'Finishing satin untuk tampilan ban yang bersih.', image: PHOTOS.addonTire },
+  'addon-pickup': { name: 'Antar-Jemput Mobil', description: 'Penjemputan dan pengantaran mobil, maksimal 3 km pulang-pergi.', image: PHOTOS.car },
+  'addon-pickup-moto': { name: 'Antar-Jemput Motor', description: 'Penjemputan dan pengantaran motor, maksimal 3 km pulang-pergi.', image: PHOTOS.motorcycle },
   'prd-shampoo': { name: 'Sampo Cuci Mobil pH Netral', category: 'CUCI & PERAWATAN', description: 'Sampo kendaraan pH netral untuk perawatan rutin tanpa mengganggu lapisan wax.', image: PHOTOS.shampoo },
   'prd-cloth': { name: 'Kain Microfiber Premium', category: 'PERLENGKAPAN', description: 'Kain microfiber lembut dengan daya serap tinggi · 40 × 40 cm.', image: PHOTOS.microfiber },
   'prd-tire': { name: 'Semir Ban Satin', category: 'PERLINDUNGAN', description: 'Perawatan ban dengan hasil hitam satin dan tampilan rapi · 250 ml.', image: PHOTOS.tireShine },
@@ -75,78 +77,80 @@ function catalogItem(item) {
 }
 
 const SERVICES = [
-  { id: 'svc-car', name: 'Regular Car Wash', type: 'CAR', category: 'REGULAR', price: 80000, duration: 50, description: 'Cuci busa menyeluruh, bilas tekanan tinggi, dan pengeringan rapi untuk mobil harian Anda.', image: PHOTOS.car },
-  { id: 'svc-moto', name: 'Regular Motorcycle Wash', type: 'MOTOR', category: 'REGULAR', price: 35000, duration: 35, description: 'Pembersihan bodi, velg, sela mesin, dan bagian motor yang sulit dijangkau.', image: PHOTOS.motorcycle },
+  { id: 'svc-car', name: 'Professional Car Wash', type: 'CAR', category: 'REGULAR', price: 50000, duration: 50, description: 'Cuci busa menyeluruh, bilas tekanan tinggi, dan pengeringan rapi untuk mobil harian Anda.', image: PHOTOS.car },
+  { id: 'svc-moto', name: 'Professional Motorcycle Wash', type: 'MOTOR', category: 'REGULAR', price: 20000, duration: 35, description: 'Pembersihan bodi, velg, sela mesin, dan bagian motor yang sulit dijangkau.', image: PHOTOS.motorcycle },
   { id: 'svc-self-car', name: 'Self-Service Car', type: 'CAR', category: 'SELF_SERVICE', price: 30000, duration: 30, description: 'Cuci mobil sendiri di bay khusus dengan foam dan semprotan bertekanan.', image: PHOTOS.selfCar },
-  { id: 'svc-self-moto', name: 'Self-Service Motorcycle', type: 'MOTOR', category: 'SELF_SERVICE', price: 20000, duration: 25, description: 'Cuci motor sendiri di bay khusus dengan peralatan yang siap digunakan.', image: PHOTOS.selfMotorcycle }
+  { id: 'svc-self-moto', name: 'Self-Service Motorcycle', type: 'MOTOR', category: 'SELF_SERVICE', price: 10000, duration: 25, description: 'Cuci motor sendiri di bay khusus dengan peralatan yang siap digunakan.', image: PHOTOS.selfMotorcycle }
 ];
 const ADDONS = [
   { id: 'addon-vacuum', name: 'Interior Vacuum', price: 20000, duration: 15, image: PHOTOS.addonVacuum },
   { id: 'addon-wax', name: 'Spray Wax', price: 25000, duration: 10, image: PHOTOS.addonWax },
-  { id: 'addon-tire', name: 'Tire Dressing', price: 15000, duration: 8, image: PHOTOS.addonTire }
+  { id: 'addon-tire', name: 'Tire Dressing', price: 15000, duration: 8, image: PHOTOS.addonTire },
+  { id: 'addon-pickup', name: 'Antar-Jemput Mobil', price: 10000, duration: 0, image: PHOTOS.car },
+  { id: 'addon-pickup-moto', name: 'Antar-Jemput Motor', price: 5000, duration: 0, image: PHOTOS.motorcycle }
 ];
 const SEED = {
   customers: [
-    { id: 'c-1', full_name: 'Demo Customer 01', phone: '00000000001', email: 'demo01@example.com', address: 'Alamat simulasi 01, Semarang' },
-    { id: 'c-2', full_name: 'Demo Customer 02', phone: '00000000002', email: 'demo02@example.com', address: 'Alamat simulasi 02, Semarang' },
-    { id: 'c-3', full_name: 'Demo Customer 03', phone: '00000000003', email: 'demo03@example.com', address: 'Alamat simulasi 03, Semarang' },
-    { id: 'c-4', full_name: 'Demo Customer 04', phone: '00000000004', email: 'demo04@example.com', address: 'Alamat simulasi 04, Semarang' },
-    { id: 'c-5', full_name: 'Demo Customer 05', phone: '00000000005', email: 'demo05@example.com', address: 'Alamat simulasi 05, Semarang' },
-    { id: 'c-6', full_name: 'Demo Customer 06', phone: '00000000006', email: 'demo06@example.com', address: 'Alamat simulasi 06, Semarang' },
-    { id: 'c-7', full_name: 'Demo Customer 07', phone: '00000000007', email: 'demo07@example.com', address: 'Alamat simulasi 07, Semarang' },
-    { id: 'c-8', full_name: 'Demo Customer 08', phone: '00000000008', email: 'demo08@example.com', address: 'Alamat simulasi 08, Semarang' },
-    { id: 'c-9', full_name: 'Demo Customer 09', phone: '00000000009', email: 'demo09@example.com', address: 'Alamat simulasi 09, Semarang' },
-    { id: 'c-10', full_name: 'Demo Customer 10', phone: '00000000010', email: 'demo10@example.com', address: 'Alamat simulasi 10, Semarang' },
-    { id: 'c-11', full_name: 'Demo Customer 11', phone: '00000000011', email: 'demo11@example.com', address: 'Alamat simulasi 11, Semarang' },
-    { id: 'c-12', full_name: 'Demo Customer 12', phone: '00000000012', email: 'demo12@example.com', address: 'Alamat simulasi 12, Semarang' }
+    { id: 'c-1', full_name: 'Fajar Pratama', phone: '081200000001', email: 'fajar.pratama@rinse.id', address: 'Jl. Pahlawan 12, Semarang' },
+    { id: 'c-2', full_name: 'Nanda Putri', phone: '081200000002', email: 'nanda.putri@rinse.id', address: 'Jl. Gajah Mada 45, Semarang' },
+    { id: 'c-3', full_name: 'Rizky Hidayat', phone: '081200000003', email: 'rizky.hidayat@rinse.id', address: 'Jl. Imam Bonjol 67, Semarang' },
+    { id: 'c-4', full_name: 'Siti Rahma', phone: '081200000004', email: 'siti.rahma@rinse.id', address: 'Jl. Sudirman 88, Semarang' },
+    { id: 'c-5', full_name: 'Dimas Adi', phone: '081200000005', email: 'dimas.adi@rinse.id', address: 'Jl. Diponegoro 19, Semarang' },
+    { id: 'c-6', full_name: 'Arif Wijaya', phone: '081200000006', email: 'arif.wijaya@rinse.id', address: 'Jl. Sriwijaya 23, Semarang' },
+    { id: 'c-7', full_name: 'Melya Sari', phone: '081200000007', email: 'melya.sari@rinse.id', address: 'Jl. Merdeka 31, Semarang' },
+    { id: 'c-8', full_name: 'Bayu Saputra', phone: '081200000008', email: 'bayu.saputra@rinse.id', address: 'Jl. Taman Siswa 15, Semarang' },
+    { id: 'c-9', full_name: 'Aulia Rahman', phone: '081200000009', email: 'aulia.rahman@rinse.id', address: 'Jl. Kenanga 9, Semarang' },
+    { id: 'c-10', full_name: 'Kezia Lestari', phone: '081200000010', email: 'kezia.lestari@rinse.id', address: 'Jl. Beringin 54, Semarang' },
+    { id: 'c-11', full_name: 'Farhan Nugroho', phone: '081200000011', email: 'farhan.nugroho@rinse.id', address: 'Jl. Cendrawasih 17, Semarang' },
+    { id: 'c-12', full_name: 'Indah Permata', phone: '081200000012', email: 'indah.permata@rinse.id', address: 'Jl. Setiabudi 76, Semarang' }
   ],
   vehicles: [
-    { id: 'v-1', customer_id: 'c-1', type: 'CAR', plate: 'DEMO-C01', model: 'Honda HR-V' },
-    { id: 'v-2', customer_id: 'c-2', type: 'MOTOR', plate: 'DEMO-M02', model: 'Vespa Sprint' },
-    { id: 'v-3', customer_id: 'c-3', type: 'CAR', plate: 'DEMO-C03', model: 'Toyota Yaris' },
-    { id: 'v-4', customer_id: 'c-4', type: 'CAR', plate: 'DEMO-C04', model: 'Toyota Avanza' },
-    { id: 'v-5', customer_id: 'c-4', type: 'MOTOR', plate: 'DEMO-M05', model: 'Honda Vario' },
-    { id: 'v-6', customer_id: 'c-5', type: 'CAR', plate: 'DEMO-C06', model: 'Daihatsu Sigra' },
-    { id: 'v-7', customer_id: 'c-6', type: 'MOTOR', plate: 'DEMO-M07', model: 'Yamaha NMAX' },
-    { id: 'v-8', customer_id: 'c-7', type: 'CAR', plate: 'DEMO-C08', model: 'Mitsubishi Xpander' },
-    { id: 'v-9', customer_id: 'c-8', type: 'CAR', plate: 'DEMO-C09', model: 'Suzuki Ertiga' },
-    { id: 'v-10', customer_id: 'c-8', type: 'MOTOR', plate: 'DEMO-M10', model: 'Kawasaki KLX' },
-    { id: 'v-11', customer_id: 'c-9', type: 'CAR', plate: 'DEMO-C11', model: 'Honda Jazz' },
-    { id: 'v-12', customer_id: 'c-10', type: 'MOTOR', plate: 'DEMO-M12', model: 'Vespa GTS' },
-    { id: 'v-13', customer_id: 'c-11', type: 'CAR', plate: 'DEMO-C13', model: 'Toyota Fortuner' },
-    { id: 'v-14', customer_id: 'c-12', type: 'MOTOR', plate: 'DEMO-M14', model: 'Yamaha Mio' }
+    { id: 'v-1', customer_id: 'c-1', type: 'CAR', plate: 'AB 2345 CD', model: 'Honda HR-V' },
+    { id: 'v-2', customer_id: 'c-2', type: 'MOTOR', plate: 'B 7701 QL', model: 'Vespa Sprint' },
+    { id: 'v-3', customer_id: 'c-3', type: 'CAR', plate: 'AB 6712 KL', model: 'Toyota Yaris' },
+    { id: 'v-4', customer_id: 'c-4', type: 'CAR', plate: 'AB 9154 HP', model: 'Toyota Avanza' },
+    { id: 'v-5', customer_id: 'c-4', type: 'MOTOR', plate: 'B 4611 XA', model: 'Honda Vario' },
+    { id: 'v-6', customer_id: 'c-5', type: 'CAR', plate: 'AB 3098 RT', model: 'Daihatsu Sigra' },
+    { id: 'v-7', customer_id: 'c-6', type: 'MOTOR', plate: 'B 1902 SZ', model: 'Yamaha NMAX' },
+    { id: 'v-8', customer_id: 'c-7', type: 'CAR', plate: 'AB 7440 OR', model: 'Mitsubishi Xpander' },
+    { id: 'v-9', customer_id: 'c-8', type: 'CAR', plate: 'AB 5026 TM', model: 'Suzuki Ertiga' },
+    { id: 'v-10', customer_id: 'c-8', type: 'MOTOR', plate: 'B 8024 NG', model: 'Kawasaki KLX' },
+    { id: 'v-11', customer_id: 'c-9', type: 'CAR', plate: 'AB 1198 YN', model: 'Honda Jazz' },
+    { id: 'v-12', customer_id: 'c-10', type: 'MOTOR', plate: 'B 2347 CU', model: 'Vespa GTS' },
+    { id: 'v-13', customer_id: 'c-11', type: 'CAR', plate: 'AB 5410 MP', model: 'Toyota Fortuner' },
+    { id: 'v-14', customer_id: 'c-12', type: 'MOTOR', plate: 'B 8703 LM', model: 'Yamaha Mio' }
   ],
   services_products: [
     ...SERVICES.map(item => ({ ...item, item_type: 'SERVICE', active: true })),
     ...ADDONS.map(item => ({ ...item, item_type: 'ADD_ON', category: 'ADD_ON', active: true })),
     { id: 'prd-shampoo', item_type: 'PRODUCT', name: 'Sampo Cuci Mobil pH Netral', category: 'WASH & CARE', price: 45000, stock: 22, min_stock: 6, active: true, image: PHOTOS.shampoo, description: 'Sampo khusus kendaraan, aman untuk lapisan wax · 500 ml.' },
-    { id: 'prd-cloth', item_type: 'PRODUCT', name: 'Kain Premium Microfiber', category: 'TOOLS', price: 40000, stock: 13, min_stock: 5, active: true, image: PHOTOS.microfiber, description: 'Serat lembut dan tebal untuk mengeringkan bodi tanpa goresan · 40 × 40 cm.' },
+    { id: 'prd-cloth', item_type: 'PRODUCT', name: 'Kain Premium Microfiber', category: 'TOOLS', price: 45000, stock: 13, min_stock: 5, active: true, image: PHOTOS.microfiber, description: 'Serat lembut dan tebal untuk mengeringkan bodi tanpa goresan · 40 × 40 cm.' },
     { id: 'prd-tire', item_type: 'PRODUCT', name: 'Semir Ban Satin', category: 'PROTECTION', price: 60000, stock: 9, min_stock: 4, active: true, image: PHOTOS.tireShine, description: 'Perawatan ban dengan hasil hitam satin, bukan licin berminyak · 250 ml.' },
     { id: 'prd-wax', item_type: 'PRODUCT', name: 'Liquid Wax Kilap Dalam', category: 'PROTECTION', price: 115000, stock: 8, min_stock: 4, active: true, image: PHOTOS.wax, description: 'Wax cair untuk kilap dan perlindungan cat · 250 ml.' },
     { id: 'prd-interior', item_type: 'PRODUCT', name: 'Pembersih Interior', category: 'INTERIOR CARE', price: 50000, stock: 11, min_stock: 4, active: true, image: PHOTOS.interior, description: 'Pembersih jok dan trim interior untuk perawatan rutin · 300 ml.' },
     { id: 'prd-glass', item_type: 'PRODUCT', name: 'Pembersih Kaca Otomotif', category: 'GLASS CARE', price: 40000, stock: 10, min_stock: 4, active: true, image: PHOTOS.glass, description: 'Pembersih kaca untuk hasil bening tanpa bekas lap · 300 ml.' }
   ],
   transactions: [
-    { id: 't-1', code: 'RS-260929-1042', customer_id: 'c-1', vehicle_id: 'v-1', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Regular Car Wash', quantity: 1, amount: 80000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-29', booking_time: '09:20', duration_minutes: 50, created_at: '2026-09-29T09:20:00' },
-    { id: 't-2', code: 'RS-260930-1088', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-self-moto', item_type: 'SERVICE', item_name: 'Self-Service Motorcycle Bay', quantity: 1, amount: 20000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', queue_status: 'WASHING', booking_date: '2026-09-30', booking_time: '10:05', duration_minutes: 25, bay_number: 2, created_at: '2026-09-30T10:05:00' },
-    { id: 't-3', code: 'RS-261001-0107', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car Bay', quantity: 1, amount: 30000, payment_method: 'E_WALLET', payment_status: 'PENDING', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-01', booking_time: '14:30', duration_minutes: 30, bay_number: 1, created_at: '2026-09-30T10:15:00' },
-    { id: 't-4', code: 'RS-260929-0781', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Regular Motorcycle Wash', quantity: 1, amount: 35000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-29', booking_time: '16:40', duration_minutes: 35, created_at: '2026-09-29T16:40:00' },
+    { id: 't-1', code: 'RS-260929-1042', customer_id: 'c-1', vehicle_id: 'v-1', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-29', booking_time: '09:20', duration_minutes: 50, created_at: '2026-09-29T09:20:00' },
+    { id: 't-2', code: 'RS-260930-1088', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-self-moto', item_type: 'SERVICE', item_name: 'Self-Service Motorcycle', quantity: 1, amount: 10000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'ACTIVE', queue_status: 'WASHING', booking_date: '2026-09-30', booking_time: '10:05', duration_minutes: 25, bay_number: 2, created_at: '2026-09-30T10:05:00' },
+    { id: 't-3', code: 'RS-261001-0107', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car', quantity: 1, amount: 30000, payment_method: 'E_WALLET', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-01', booking_time: '14:30', duration_minutes: 30, bay_number: 1, created_at: '2026-09-30T10:15:00' },
+    { id: 't-4', code: 'RS-260929-0781', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Professional Motorcycle Wash', quantity: 1, amount: 20000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-29', booking_time: '16:40', duration_minutes: 35, created_at: '2026-09-29T16:40:00' },
     { id: 't-5', code: 'RS-260928-0551', customer_id: 'c-1', vehicle_id: null, item_id: 'prd-shampoo', item_type: 'PRODUCT', item_name: 'Sampo Cuci Mobil pH Netral', quantity: 2, amount: 90000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'SHOP', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-28', booking_time: '11:10', duration_minutes: 0, created_at: '2026-09-28T11:10:00' },
-    { id: 't-6', code: 'RS-260927-0332', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Regular Car Wash', quantity: 1, amount: 80000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-27', booking_time: '15:25', duration_minutes: 50, created_at: '2026-09-27T15:25:00' },
-    { id: 't-7', code: 'RS-261002-0216', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Regular Motorcycle Wash', quantity: 1, amount: 35000, payment_method: 'CARD', payment_status: 'PENDING', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-02', booking_time: '10:30', duration_minutes: 35, created_at: '2026-09-30T10:30:00' },
-    { id: 't-8', code: 'RS-260930-1134', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Regular Car Wash', quantity: 1, amount: 80000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', queue_status: 'WAITING', booking_date: '2026-09-30', booking_time: '10:30', duration_minutes: 50, created_at: '2026-09-30T10:27:00' },
-    { id: 't-9', code: 'RS-260926-0972', customer_id: 'c-1', vehicle_id: null, item_id: 'prd-cloth', item_type: 'PRODUCT', item_name: 'Kain Premium Microfiber', quantity: 1, amount: 40000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'SHOP', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-26', booking_time: '12:05', duration_minutes: 0, created_at: '2026-09-26T12:05:00' },
-    { id: 't-10', code: 'RS-260925-0821', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car Bay', quantity: 1, amount: 30000, payment_method: 'E_WALLET', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-25', booking_time: '17:15', duration_minutes: 30, created_at: '2026-09-25T17:15:00' },
-    { id: 't-11', code: '', customer_id: 'c-4', vehicle_id: 'v-4', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Regular Car Wash', quantity: 1, amount: 80000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '', booking_time: '08:40', duration_minutes: 50 },
-    { id: 't-12', code: '', customer_id: 'c-5', vehicle_id: 'v-6', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car Bay', quantity: 1, amount: 30000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '', booking_time: '10:15', duration_minutes: 30, bay_number: 3 },
-    { id: 't-13', code: '', customer_id: 'c-6', vehicle_id: 'v-7', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Regular Motorcycle Wash', quantity: 1, amount: 35000, payment_method: 'E_WALLET', payment_status: 'PENDING', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '', booking_time: '11:20', duration_minutes: 35 },
-    { id: 't-14', code: '', customer_id: 'c-7', vehicle_id: 'v-8', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Regular Car Wash', quantity: 1, amount: 80000, payment_method: 'CARD', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', queue_status: 'WASHING', booking_date: '', booking_time: '13:05', duration_minutes: 50 },
-    { id: 't-15', code: '', customer_id: 'c-8', vehicle_id: 'v-10', item_id: 'svc-self-moto', item_type: 'SERVICE', item_name: 'Self-Service Motorcycle Bay', quantity: 1, amount: 20000, payment_method: 'CASH', payment_status: 'PENDING', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '', booking_time: '15:10', duration_minutes: 25, bay_number: 2 },
-    { id: 't-16', code: '', customer_id: 'c-9', vehicle_id: 'v-11', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car Bay', quantity: 1, amount: 30000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '', booking_time: '16:35', duration_minutes: 30, bay_number: 4 },
-    { id: 't-17', code: '', customer_id: 'c-10', vehicle_id: 'v-12', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Regular Motorcycle Wash', quantity: 1, amount: 35000, payment_method: 'QRIS', payment_status: 'PENDING', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '', booking_time: '09:45', duration_minutes: 35 },
-    { id: 't-18', code: '', customer_id: 'c-11', vehicle_id: 'v-13', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Regular Car Wash', quantity: 1, amount: 80000, payment_method: 'E_WALLET', payment_status: 'PENDING', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '', booking_time: '12:25', duration_minutes: 50 },
-    { id: 't-19', code: '', customer_id: 'c-12', vehicle_id: 'v-14', item_id: 'svc-self-moto', item_type: 'SERVICE', item_name: 'Self-Service Motorcycle Bay', quantity: 1, amount: 20000, payment_method: 'CARD', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '', booking_time: '14:50', duration_minutes: 25, bay_number: 1 },
-    { id: 't-20', code: '', customer_id: 'c-1', vehicle_id: 'v-1', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Regular Car Wash', quantity: 1, amount: 80000, payment_method: 'CASH', payment_status: 'PENDING', transaction_type: 'BOOKING', transaction_status: 'CANCELLED', queue_status: 'COMPLETED', booking_date: '', booking_time: '17:10', duration_minutes: 50 }
+    { id: 't-6', code: 'RS-260927-0332', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-27', booking_time: '15:25', duration_minutes: 50, created_at: '2026-09-27T15:25:00' },
+    { id: 't-7', code: 'RS-261002-0216', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Professional Motorcycle Wash', quantity: 1, amount: 20000, payment_method: 'CARD', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-02', booking_time: '10:30', duration_minutes: 35, created_at: '2026-09-30T10:30:00' },
+    { id: 't-8', code: 'RS-260930-1134', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', queue_status: 'WAITING', booking_date: '2026-09-30', booking_time: '10:30', duration_minutes: 50, created_at: '2026-09-30T10:27:00' },
+    { id: 't-9', code: 'RS-260926-0972', customer_id: 'c-1', vehicle_id: null, item_id: 'prd-cloth', item_type: 'PRODUCT', item_name: 'Kain Premium Microfiber', quantity: 1, amount: 45000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'SHOP', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-26', booking_time: '12:05', duration_minutes: 0, created_at: '2026-09-26T12:05:00' },
+    { id: 't-10', code: 'RS-260925-0821', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car', quantity: 1, amount: 30000, payment_method: 'E_WALLET', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-25', booking_time: '17:15', duration_minutes: 30, bay_number: 4, created_at: '2026-09-25T17:15:00' },
+    { id: 't-11', code: 'RS-261004-1171', customer_id: 'c-4', vehicle_id: 'v-4', item_id: 'svc-car', addon_id: 'addon-pickup', pickup_distance_km: 2.4, item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 60000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-04', booking_time: '08:40', duration_minutes: 50 },
+    { id: 't-12', code: 'RS-261005-1388', customer_id: 'c-5', vehicle_id: 'v-6', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car', quantity: 1, amount: 30000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-10-05', booking_time: '10:15', duration_minutes: 30, bay_number: 3 },
+    { id: 't-13', code: 'RS-261006-1457', customer_id: 'c-6', vehicle_id: 'v-7', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Professional Motorcycle Wash', quantity: 1, amount: 20000, payment_method: 'E_WALLET', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-06', booking_time: '11:20', duration_minutes: 35 },
+    { id: 't-14', code: 'RS-261005-1514', customer_id: 'c-7', vehicle_id: 'v-8', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'CARD', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', queue_status: 'WASHING', booking_date: '2026-10-05', booking_time: '13:05', duration_minutes: 50 },
+    { id: 't-15', code: 'RS-261006-1606', customer_id: 'c-8', vehicle_id: 'v-10', item_id: 'svc-self-moto', item_type: 'SERVICE', item_name: 'Self-Service Motorcycle', quantity: 1, amount: 10000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-06', booking_time: '15:10', duration_minutes: 25, bay_number: 2 },
+    { id: 't-16', code: 'RS-261007-1832', customer_id: 'c-9', vehicle_id: 'v-11', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car', quantity: 1, amount: 30000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-10-07', booking_time: '16:35', duration_minutes: 30, bay_number: 4 },
+    { id: 't-17', code: 'RS-261003-1960', customer_id: 'c-10', vehicle_id: 'v-12', item_id: 'svc-moto', addon_id: 'addon-pickup-moto', pickup_distance_km: 2.0, item_type: 'SERVICE', item_name: 'Professional Motorcycle Wash', quantity: 1, amount: 25000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-03', booking_time: '09:45', duration_minutes: 35 },
+    { id: 't-18', code: 'RS-261008-2019', customer_id: 'c-11', vehicle_id: 'v-13', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'E_WALLET', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-08', booking_time: '12:25', duration_minutes: 50 },
+    { id: 't-19', code: 'RS-261004-2286', customer_id: 'c-12', vehicle_id: 'v-14', item_id: 'svc-self-moto', item_type: 'SERVICE', item_name: 'Self-Service Motorcycle', quantity: 1, amount: 10000, payment_method: 'CARD', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-10-04', booking_time: '14:50', duration_minutes: 25, bay_number: 1 },
+    { id: 't-20', code: 'RS-261009-2417', customer_id: 'c-1', vehicle_id: 'v-1', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'CASH', payment_status: 'REFUNDED', transaction_type: 'BOOKING', transaction_status: 'CANCELLED', queue_status: 'COMPLETED', booking_date: '2026-10-09', booking_time: '17:10', duration_minutes: 50 }
   ]
 };
 const seedToday = getJakartaDateString();
@@ -179,6 +183,14 @@ SEED.transactions.forEach((transaction, index) => {
       : new Date(`${transaction.booking_date}T${transaction.booking_time}:00+07:00`).toISOString();
   }
 });
+SEED.transactions.filter(transaction => transaction.item_type === 'SERVICE').forEach(transaction => {
+  const service = SEED.services_products.find(item => item.id === transaction.item_id);
+  const addon = SEED.services_products.find(item => item.id === transaction.addon_id);
+  if (!service) return;
+  const serviceAmount = service.price;
+  transaction.amount = serviceAmount + Number(addon?.price || 0);
+  transaction.item_name = `${service.name}${addon ? ` + ${addon.name}` : ''}`;
+});
 
 const SUPABASE_URL = 'https://cvnzbfbzgmjlepbsjinl.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_vzeEcRxxXJaMfE7JyKWOeg_KLx8XqnH';
@@ -189,7 +201,6 @@ const EMPTY_DB = { customers: [], vehicles: [], services_products: [], transacti
 let db = structuredClone(EMPTY_DB);
 let page = 'home';
 let cart = JSON.parse(localStorage.getItem(CART_KEY) || '{}');
-let demoPaymentStatuses = {};
 let supabaseSession = readAuthSession();
 let adminUser = null;
 let databaseConnected = false;
@@ -200,6 +211,7 @@ let adminDataError = '';
 let publicWashCount = 0;
 let publicBays = [];
 let publicRefreshInProgress = false;
+let activeAdminTab = 'overview';
 
 function isSupabaseConfigured() {
   return SUPABASE_URL.startsWith('https://') && SUPABASE_PUBLISHABLE_KEY.length > 20 && !SUPABASE_URL.includes('PASTE_') && !SUPABASE_PUBLISHABLE_KEY.includes('PASTE_');
@@ -269,8 +281,41 @@ function addDaysToJakartaDate(dateString, offsetDays) {
 }
 function getVehicle(tx) { return db.vehicles.find(item => item.id === tx.vehicle_id); }
 function getCustomer(tx) { return db.customers.find(item => item.id === tx.customer_id); }
+function normalizeOperationalTransaction(tx = {}) {
+  const normalized = { ...tx };
+  if (normalized.item_type === 'SERVICE' && normalized.transaction_type === 'BOOKING'
+    && ['PENDING', 'BOOKED', 'ACTIVE', 'COMPLETED'].includes(normalized.transaction_status)
+    && normalized.booking_date && normalized.booking_time) {
+    const startsAt = parseJakartaDateTime(normalized.booking_date, normalized.booking_time).getTime();
+    const endsAt = startsAt + Math.max(Number(normalized.duration_minutes) || 0, 0) * 60000;
+    if (normalized.payment_status !== 'PAID' && startsAt <= Date.now()) {
+      normalized.transaction_status = 'EXPIRED';
+      normalized.queue_status = 'COMPLETED';
+      return normalized;
+    }
+    if (endsAt <= Date.now()) {
+      normalized.transaction_status = normalized.transaction_status === 'ACTIVE'
+        && ['WASHING', 'FINISHING', 'COMPLETED'].includes(normalized.queue_status) ? 'COMPLETED' : 'EXPIRED';
+      normalized.queue_status = 'COMPLETED';
+    } else if (normalized.payment_status === 'PAID' && normalized.transaction_status === 'BOOKED' && startsAt <= Date.now()) {
+      normalized.transaction_status = 'ACTIVE';
+      normalized.queue_status = normalized.queue_status || 'WAITING';
+    } else if (normalized.payment_status !== 'PAID' && ['BOOKED', 'ACTIVE', 'COMPLETED'].includes(normalized.transaction_status)) {
+      normalized.transaction_status = 'PENDING';
+      normalized.queue_status = 'WAITING';
+    }
+  }
+  return normalized;
+}
+function getOperationalTransactions(records = []) {
+  return records.map(tx => normalizeOperationalTransaction(tx));
+}
+function isRevenueTransaction(tx) {
+  return tx.payment_status === 'PAID' && !['CANCELLED', 'EXPIRED'].includes(tx.transaction_status)
+    && tx.refund_status !== 'PENDING' && tx.refund_status !== 'COMPLETED';
+}
 function statusLabel(value) {
-  return ({ AVAILABLE: 'TERSEDIA', OCCUPIED: 'DIGUNAKAN', RESERVED: 'DIPESAN', PAID: 'LUNAS', PENDING: 'BELUM DIBAYAR', FAILED: 'GAGAL', REFUNDED: 'DIKEMBALIKAN', COMPLETED: 'SELESAI', BOOKED: 'DIPESAN', ACTIVE: 'AKTIF', CANCELLED: 'DIBATALKAN', WAITING: 'MENUNGGU', WASHING: 'DICUCI', FINISHING: 'TAHAP AKHIR', CASH: 'Tunai', QRIS: 'QRIS', E_WALLET: 'Dompet digital', CARD: 'Kartu' })[value] || String(value || '').replaceAll('_', ' ');
+  return ({ AVAILABLE: 'Tersedia', OCCUPIED: 'Digunakan', RESERVED: 'Dipesan', PAID: 'Lunas', PENDING: 'Belum Dibayar', FAILED: 'Gagal', REFUNDED: 'Pengembalian Dana', COMPLETED: 'Selesai', BOOKED: 'Terkonfirmasi', ACTIVE: 'Sedang Berlangsung', CANCELLED: 'Dibatalkan', EXPIRED: 'Hangus', WAITING: 'Menunggu', WASHING: 'Dicuci', FINISHING: 'Tahap Akhir', CASH: 'Tunai', QRIS: 'QRIS', E_WALLET: 'Dompet digital', CARD: 'Kartu' })[value] || String(value || '').replaceAll('_', ' ');
 }
 function statusBadge(value) { return `<span class="status status-${String(value).toLowerCase().replaceAll('_', '-')}">${statusLabel(value)}</span>`; }
 function isBayTransactionCurrent(tx, now = Date.now()) {
@@ -278,7 +323,7 @@ function isBayTransactionCurrent(tx, now = Date.now()) {
   const start = parseJakartaDateTime(tx.booking_date, tx.booking_time).getTime();
   const end = start + Math.max(Number(tx.duration_minutes) || 0, 0) * 60000;
   if (tx.transaction_status === 'ACTIVE') return start <= now && end > now;
-  return tx.transaction_status === 'BOOKED' && tx.booking_date === getJakartaDateString(new Date(now)) && start >= now;
+  return tx.transaction_status === 'BOOKED' && tx.booking_date === getJakartaDateString(new Date(now)) && end > now;
 }
 function bayMinutesLeft(tx) {
   const start = parseJakartaDateTime(tx.booking_date, tx.booking_time).getTime();
@@ -404,7 +449,7 @@ function dailyPaidRevenue(transactions, dayCount = 7) {
     return {
       key,
       label: date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
-      amount: transactions.filter(tx => tx.payment_status === 'PAID' && tx.booking_date === key).reduce((sum, tx) => sum + Number(tx.amount), 0)
+      amount: transactions.filter(tx => isRevenueTransaction(tx) && tx.booking_date === key).reduce((sum, tx) => sum + Number(tx.amount), 0)
     };
   });
 }
@@ -429,32 +474,35 @@ function renderRevenueLineChart(rows, className = '') {
   return `<svg class="revenue-line-chart ${className}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Tren pendapatan harian tujuh hari terakhir">${guides}<path class="chart-area" d="${path} L${points.at(-1)?.x || pad.left},${pad.top + plotHeight} L${points[0]?.x || pad.left},${pad.top + plotHeight} Z"/><path class="chart-line" d="${path}"/>${dots}</svg>`;
 }
 function reportTransactions() {
-  return [...db.transactions, ...SEED.transactions.map(tx => ({ ...tx, is_demo: true, payment_status: demoPaymentStatuses[tx.id] || tx.payment_status }))];
+  return getOperationalTransactions(db.transactions);
 }
 function reportVehicle(transaction) {
-  return transaction.is_demo ? SEED.vehicles.find(vehicle => vehicle.id === transaction.vehicle_id) : getVehicle(transaction);
+  return getVehicle(transaction);
 }
 function renderAdminMetrics() {
   if (!document.querySelector('.metric-grid')) return;
   const transactions = reportTransactions();
   const today = getJakartaDateString();
   const todays = transactions.filter(tx => tx.booking_date === today);
-  const paidToday = todays.filter(tx => tx.payment_status === 'PAID');
+  const paidToday = todays.filter(isRevenueTransaction);
   const lowStock = db.services_products.filter(item => item.item_type === 'PRODUCT' && item.stock <= item.min_stock).length;
-  const washed = todays.filter(tx => tx.item_type !== 'PRODUCT' && tx.transaction_status === 'COMPLETED').length;
-  const bookings = todays.filter(tx => tx.transaction_type === 'BOOKING').length;
-  const selfService = todays.filter(tx => tx.item_type !== 'PRODUCT' && db.services_products.find(item => item.id === tx.item_id)?.category === 'SELF_SERVICE').length;
-  const paid = transactions.filter(tx => tx.payment_status === 'PAID');
-  const serviceRevenue = paid.filter(tx => tx.item_type !== 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
-  const productRevenue = paid.filter(tx => tx.item_type === 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const washed = new Set(todays.filter(tx => tx.item_type === 'SERVICE' && isRevenueTransaction(tx) && tx.transaction_status === 'COMPLETED').map(tx => tx.vehicle_id).filter(Boolean)).size;
+  const bookings = todays.filter(tx => tx.transaction_type === 'BOOKING' && isRevenueTransaction(tx)).length;
+  const selfService = todays.filter(tx => tx.item_type === 'SERVICE' && isRevenueTransaction(tx) && db.services_products.find(item => item.id === tx.item_id)?.category === 'SELF_SERVICE').length;
+  const paid = transactions.filter(isRevenueTransaction);
+  const weeklyRows = dailyPaidRevenue(transactions);
+  const weeklyDates = new Set(weeklyRows.map(row => row.key));
+  const weeklyPaid = paid.filter(tx => weeklyDates.has(tx.booking_date));
+  const serviceRevenue = weeklyPaid.filter(tx => tx.item_type !== 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const productRevenue = weeklyPaid.filter(tx => tx.item_type === 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
   const metrics = [
-    ['PENDAPATAN HARI INI', money(paidToday.reduce((sum, tx) => sum + Number(tx.amount), 0)), `${paidToday.length} transaksi lunas`, 'primary'],
-    ['TRANSAKSI', transactions.length.toString().padStart(2, '0'), `${transactions.filter(tx => tx.transaction_type === 'BOOKING').length} booking tercatat`, 'primary'],
-    ['KENDARAAN DICUCI', String(washed).padStart(2, '0'), 'Transaksi selesai hari ini', 'primary'],
-    ['BOOKING HARI INI', String(bookings).padStart(2, '0'), 'Jadwal kunjungan', 'primary']
+    ['Pendapatan Hari Ini', money(paidToday.reduce((sum, tx) => sum + Number(tx.amount), 0)), `${paidToday.length} transaksi lunas`, 'primary'],
+    ['Transaksi', transactions.length.toString().padStart(2, '0'), `${transactions.filter(tx => tx.transaction_type === 'BOOKING' && tx.transaction_status !== 'CANCELLED').length} booking tercatat`, 'primary'],
+    ['Kendaraan Dilayani', String(washed).padStart(2, '0'), 'Transaksi selesai hari ini', 'primary'],
+    ['Booking Hari Ini', String(bookings).padStart(2, '0'), 'Jadwal kunjungan', 'primary']
   ];
   document.querySelector('.metric-grid').innerHTML = metrics.map(([label, value, note, primary]) => `<article class="metric-card ${primary ? 'metric-primary' : ''}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join('');
-  const secondaryMetrics = `<div class="metric-secondary-grid"><div><span>PEMAKAIAN BAY</span><strong>${String(selfService).padStart(2, '0')}</strong><small>Sesi mandiri hari ini</small></div><div><span>PENDAPATAN JASA</span><strong>${money(serviceRevenue)}</strong><small>Transaksi lunas</small></div><div><span>PENDAPATAN PRODUK</span><strong>${money(productRevenue)}</strong><small>Transaksi lunas</small></div><div><span>STOK MENIPIS</span><strong>${String(lowStock).padStart(2, '0')}</strong><small>Produk di bawah minimum</small></div></div>`;
+  const secondaryMetrics = `<div class="metric-secondary-grid"><div><span>Sesi Self-Service Hari Ini</span><strong>${String(selfService).padStart(2, '0')}</strong><small>Sesi lunas hari ini</small></div><div><span>Pendapatan Jasa · Tujuh Hari</span><strong>${money(serviceRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Pendapatan Produk · Tujuh Hari</span><strong>${money(productRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Pelanggan</span><strong>${String(db.customers.length).padStart(2, '0')}</strong><small>Data pelanggan terdaftar</small></div></div>`;
   let secondaryGrid = document.querySelector('.metric-secondary-grid');
   if (!secondaryGrid) {
     document.querySelector('.metric-grid').insertAdjacentHTML('afterend', secondaryMetrics);
@@ -464,7 +512,7 @@ function renderAdminMetrics() {
 
   const totalRevenue = serviceRevenue + productRevenue;
   const revenuePanel = document.querySelector('.revenue-panel');
-  if (revenuePanel) revenuePanel.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">TREN PENDAPATAN</p><h2>Pendapatan studio</h2></div><strong class="dashboard-revenue-total">${money(totalRevenue)}</strong></div><p class="dashboard-chart-context">Transaksi lunas · tujuh hari terakhir</p>${renderRevenueLineChart(dailyPaidRevenue(transactions))}<div class="dashboard-revenue-split"><div><span>Jasa</span><strong>${money(serviceRevenue)}</strong></div><div><span>Produk</span><strong>${money(productRevenue)}</strong></div></div>`;
+  if (revenuePanel) revenuePanel.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">TREN PENDAPATAN</p><h2>Pendapatan Periode</h2></div><strong class="dashboard-revenue-total">${money(totalRevenue)}</strong></div><p class="dashboard-chart-context">Transaksi lunas · tujuh hari terakhir</p>${renderRevenueLineChart(weeklyRows)}<div class="dashboard-revenue-split"><div><span>Jasa · tujuh hari</span><strong>${money(serviceRevenue)}</strong></div><div><span>Produk · tujuh hari</span><strong>${money(productRevenue)}</strong></div></div>`;
 
   const lowStockItems = db.services_products.filter(item => item.item_type === 'PRODUCT' && item.stock <= item.min_stock);
   const lowStockPanel = document.querySelector('.low-stock-panel');
@@ -476,7 +524,7 @@ function renderAdminMetrics() {
   const activityGrid = document.querySelector('.admin-content-grid');
   if (activityGrid) {
     const recent = [...transactions].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 4);
-    const activity = `<section class="admin-panel activity-panel"><div class="panel-heading"><div><p class="eyebrow">AKTIVITAS TERBARU</p><h2>Transaksi terbaru</h2></div><span>${transactions.length} total</span></div><div class="activity-list">${recent.map(tx => `<div class="activity-row"><div><strong>${escapeHtml(tx.code)}</strong><span>${escapeHtml(tx.item_name)}${tx.is_demo ? ' · SAMPLE' : ''}</span></div><div><strong>${money(tx.amount)}</strong><span>${escapeHtml(statusLabel(tx.payment_status))} · ${escapeHtml(tx.booking_date)}</span></div></div>`).join('') || '<p class="report-empty">Belum ada transaksi.</p>'}</div></section>`;
+    const activity = `<section class="admin-panel activity-panel"><div class="panel-heading"><div><p class="eyebrow">AKTIVITAS TERBARU</p><h2>Transaksi terbaru</h2></div><span>${transactions.length} total</span></div><div class="activity-list">${recent.map(tx => `<div class="activity-row"><div><strong>${escapeHtml(tx.code)}</strong><span>${escapeHtml(tx.item_name)}</span></div><div><strong>${money(tx.amount)}</strong><span>${escapeHtml(statusLabel(tx.payment_status))} · ${escapeHtml(tx.booking_date)}</span></div></div>`).join('') || '<p class="report-empty">Belum ada transaksi.</p>'}</div></section>`;
     let activityPanel = activityGrid.querySelector('.activity-panel');
     if (activityPanel) activityPanel.outerHTML = activity;
     else activityGrid.insertAdjacentHTML('beforeend', activity);
@@ -500,7 +548,8 @@ function productCard(sourceProduct) {
   return `<article class="product-card"><button class="product-image" data-product="${product.id}" aria-label="Tambahkan ${escapeHtml(product.name)} ke keranjang"><img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy"><span class="product-add">+</span></button><div class="product-info"><span class="eyebrow">${escapeHtml(product.category || 'PRODUK PERAWATAN')}</span><h3>${escapeHtml(product.name)}</h3><p>${escapeHtml(product.description || '')}</p><div class="product-price-row"><strong>${money(product.price)}</strong><span class="stock-note ${low ? 'low-stock' : ''}">${low ? 'STOK MENIPIS' : `STOK ${product.stock}`}</span></div><button class="product-buy" data-product="${product.id}">Tambah ke keranjang <span>↗</span></button></div></article>`;
 }
 function renderServices() {
-  return `<section class="page-hero page-hero-blue"><div><p class="eyebrow eyebrow-light">PROFESSIONAL WASH</p><h1>Professional Wash</h1><p>Tim Rinse Society mencuci kendaraan Anda dengan hasil yang konsisten, rapi, dan terpercaya.</p></div><span class="page-hero-number">02<br><small>PILIHAN</small></span></section><section class="section services-list"><div class="section-heading compact-heading"><div><p class="eyebrow">PILIHAN PERAWATAN</p><h2>Temukan layanan <em>yang tepat.</em></h2></div><span class="availability"><i class="live-dot"></i> Datang langsung atau booking</span></div><div class="service-grid">${regularServices().map(serviceCard).join('')}</div><div class="addons-row"><div><p class="eyebrow">SENTUHAN AKHIR</p><h3>Perawatan ekstra.<br><em>Hasil lebih bersih.</em></h3></div>${ADDONS.map(addon => `<button class="addon-item" data-addon="${addon.id}"><img src="${addon.image}" width="54" height="54" alt="${escapeHtml(addon.name)}" loading="lazy"><span><strong>${addon.name}</strong><small>${money(addon.price)} · ${addon.duration} menit</small></span><b>↗</b></button>`).join('')}</div></section>`;
+  const catalogAddons = ADDONS.filter(addon => !['addon-pickup', 'addon-pickup-moto'].includes(addon.id));
+  return `<section class="page-hero page-hero-blue"><div><p class="eyebrow eyebrow-light">PROFESSIONAL WASH</p><h1>Professional Wash</h1><p>Tim Rinse Society mencuci kendaraan Anda dengan hasil yang konsisten, rapi, dan terpercaya.</p></div><span class="page-hero-number">02<br><small>PILIHAN</small></span></section><section class="section services-list"><div class="section-heading compact-heading"><div><p class="eyebrow">PILIHAN PERAWATAN</p><h2>Temukan layanan <em>yang tepat.</em></h2></div><span class="availability"><i class="live-dot"></i> Datang langsung atau booking</span></div><div class="service-grid">${regularServices().map(serviceCard).join('')}</div><div class="addons-row"><div><p class="eyebrow">SENTUHAN AKHIR</p><h3>Perawatan ekstra.<br><em>Hasil lebih bersih.</em></h3></div>${catalogAddons.map(addon => `<button class="addon-item" data-addon="${addon.id}"><img src="${addon.image}" width="54" height="54" alt="${escapeHtml(addon.name)}" loading="lazy"><span><strong>${addon.name}</strong><small>${money(addon.price)} · ${addon.duration} menit</small></span><b>↗</b></button>`).join('')}</div></section>`;
 }
 function renderBays() {
   const bays = (publicBays.length ? publicBays : Array.from({ length: 4 }, (_, index) => ({ bay_number: index + 1, bay_status: 'AVAILABLE', vehicle_type: null, duration_minutes: 0, minutes_remaining: 0, booking_time: null }))).map(row => ({ number: row.bay_number, state: row.bay_status || 'AVAILABLE', type: row.vehicle_type || null, duration: Number(row.duration_minutes || 0), remaining: Number(row.minutes_remaining || 0), time: row.booking_time || null }));
@@ -523,12 +572,19 @@ function renderHistory() {
 }
 function renderHistoryResults(records) {
   if (!records.length) return `<div class="empty-state"><h3>Belum ada kunjungan yang cocok.</h3><p>Periksa kembali kode booking, nomor HP, atau plat kendaraan.</p></div>`;
-  return `<div class="history-list">${records.map(tx => { const itemName = tx.bay_number ? `Self-Service · B-${String(tx.bay_number).padStart(2, '0')}` : tx.item_name || 'Pembelian produk'; return `<article class="history-item"><div class="history-date"><strong>${new Date(`${tx.booking_date}T12:00:00`).toLocaleDateString('id-ID', { day: '2-digit' })}</strong><span>${new Date(`${tx.booking_date}T12:00:00`).toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })}</span></div><div class="history-main"><span class="eyebrow">${escapeHtml(tx.code)} · ${escapeHtml(transactionTypeLabel(tx.transaction_type))}</span><h3>${escapeHtml(itemName)}</h3><p>${escapeHtml(tx.vehicle_model || '')} · ${escapeHtml(tx.vehicle_plate || 'Pembelian produk')} · ${escapeHtml(tx.customer_name || '')}</p></div><div class="history-meta"><strong>${money(tx.amount)}</strong><span>${escapeHtml(statusLabel(tx.payment_method))} · ${tx.duration_minutes || 0} menit</span></div><div class="history-status">${statusBadge(tx.transaction_status)}${statusBadge(tx.payment_status)}</div></article>`; }).join('')}</div>`;
+  const search = document.getElementById('history-query')?.value.trim() || '';
+  return `<div class="history-list">${records.map(tx => {
+    const itemName = tx.bay_number ? `Self-Service · B-${String(tx.bay_number).padStart(2, '0')}` : tx.item_name || 'Pembelian produk';
+    const canCancel = tx.transaction_type === 'BOOKING' && ['PENDING', 'BOOKED'].includes(tx.transaction_status)
+      && parseJakartaDateTime(tx.booking_date, tx.booking_time).getTime() > Date.now();
+    const refundNote = tx.refund_status === 'PENDING' ? '<span>Pengembalian Dana: menunggu proses manual</span>' : tx.refund_status === 'COMPLETED' ? '<span>Pengembalian Dana: selesai</span>' : '';
+    return `<article class="history-item"><div class="history-date"><strong>${new Date(`${tx.booking_date}T12:00:00`).toLocaleDateString('id-ID', { day: '2-digit' })}</strong><span>${new Date(`${tx.booking_date}T12:00:00`).toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })}</span></div><div class="history-main"><span class="eyebrow">${escapeHtml(tx.code)} · ${escapeHtml(transactionTypeLabel(tx.transaction_type))}</span><h3>${escapeHtml(itemName)}</h3><p>${escapeHtml(tx.vehicle_model || '')} · ${escapeHtml(tx.vehicle_plate || 'Pembelian produk')} · ${escapeHtml(tx.customer_name || '')}</p></div><div class="history-meta"><strong>${money(tx.amount)}</strong><span>${escapeHtml(statusLabel(tx.payment_method))} · ${tx.duration_minutes || 0} menit</span>${refundNote}</div><div class="history-status">${statusBadge(tx.transaction_status)}${statusBadge(tx.payment_status)}${canCancel ? `<button class="payment-mark-paid" type="button" data-cancel-booking="${escapeHtml(tx.transaction_id)}" data-cancel-search="${escapeHtml(search)}">Batalkan booking</button>` : ''}</div></article>`;
+  }).join('')}</div>`;
 }
 function renderAdminLegacy() {
   const today = getJakartaDateString();
   const todayRows = db.transactions.filter(tx => tx.booking_date === today);
-  const paid = db.transactions.filter(tx => tx.payment_status === 'PAID');
+  const paid = db.transactions.filter(isRevenueTransaction);
   const todayRevenue = todayRows.filter(tx => tx.payment_status === 'PAID').reduce((sum, tx) => sum + Number(tx.amount), 0);
   const serviceRevenue = paid.filter(tx => tx.item_type !== 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
   const productRevenue = paid.filter(tx => tx.item_type === 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
@@ -537,11 +593,13 @@ function renderAdminLegacy() {
   const vehiclesWashed = todayRows.filter(tx => tx.item_type !== 'PRODUCT' && tx.transaction_status === 'COMPLETED').length;
   const bookingsToday = todayRows.filter(tx => tx.transaction_type === 'BOOKING').length;
   const selfServiceToday = todayRows.filter(tx => tx.item_type !== 'PRODUCT' && db.services_products.find(item => item.id === tx.item_id)?.category === 'SELF_SERVICE').length;
-  return `<div class="admin-shell"><aside class="admin-sidebar"><div class="admin-brand"><span class="brand-mark">R</span><span>rinse<span class="brand-light">society</span><small>STUDIO CONSOLE</small></span></div><p class="admin-nav-label">WORKSPACE</p><button class="admin-nav active" data-admin-tab="overview">◫ &nbsp; Overview</button><button class="admin-nav" data-admin-tab="queue">≋ &nbsp; Wash queue <b>${db.transactions.filter(tx => tx.queue_status !== 'COMPLETED').length}</b></button><button class="admin-nav" data-admin-tab="catalog">▦ &nbsp; Services & products</button><button class="admin-nav" data-admin-tab="customers">◎ &nbsp; Customers & vehicles</button><button class="admin-nav" data-admin-tab="reports">↗ &nbsp; Revenue reports</button><div class="sidebar-bottom"><span class="sidebar-avatar">RS</span><span><strong>Rinse Studio</strong><small>Semarang · Studio 01</small></span><button data-action="settings" aria-label="Database settings">⚙</button></div></aside><div class="admin-main"><header class="admin-topbar"><div><p class="eyebrow">STUDIO CONSOLE · ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}</p><h1 id="admin-heading">Studio overview</h1></div><div class="admin-top-actions"><span class="connection-indicator ${supabaseConfig().url ? 'connected' : ''}"><i></i>${supabaseConfig().url ? 'SUPABASE CONNECTED' : 'LOCAL DEMO DATA'}</span><button class="button button-dark button-small" data-action="walkin">+ New walk-in</button></div></header><div id="admin-content"><div class="metric-grid"><article class="metric-card metric-primary"><span>REVENUE · ALL TIME</span><strong>${money(total)}</strong><small>From ${paid.length} paid transactions</small><i>↗</i></article><article class="metric-card"><span>TRANSACTIONS</span><strong>${db.transactions.length.toString().padStart(2, '0')}</strong><small>${db.transactions.filter(tx => tx.transaction_type === 'BOOKING').length} bookings on record</small></article><article class="metric-card"><span>SERVICE REVENUE</span><strong>${money(serviceRevenue)}</strong><small>Wash, self-service & add-ons</small></article><article class="metric-card"><span>PRODUCT REVENUE</span><strong>${money(productRevenue)}</strong><small>Retail sales · ${db.transactions.filter(tx => tx.item_type === 'PRODUCT').length} line items</small></article></div><div class="admin-content-grid"><section class="admin-panel revenue-panel"><div class="panel-heading"><div><p class="eyebrow">PAID TRANSACTIONS</p><h2>Revenue mix</h2></div><span class="panel-period">ALL TIME</span></div><div class="revenue-total">${money(total)}<span>Total collected</span></div><div class="revenue-bars"><div class="revenue-bar-row"><span>Wash & service</span><div><i style="width:${total ? Math.max(4, serviceRevenue / total * 100) : 0}%"></i></div><strong>${money(serviceRevenue)}</strong></div><div class="revenue-bar-row"><span>Studio goods</span><div><i class="bar-green" style="width:${total ? Math.max(4, productRevenue / total * 100) : 0}%"></i></div><strong>${money(productRevenue)}</strong></div></div><div class="chart-footnote"><span>● Service revenue</span><span>● Product revenue</span></div></section><section class="admin-panel low-stock-panel"><div class="panel-heading"><div><p class="eyebrow">STOCK WATCH</p><h2>Needs a top-up</h2></div><span class="low-stock-count">${lowStock.length} LOW</span></div>${lowStock.length ? lowStock.map(item => `<div class="stock-row"><img src="${item.image}" alt=""><span><strong>${escapeHtml(item.name)}</strong><small>Minimum ${item.min_stock} units</small></span><b>${item.stock} left</b></div>`).join('') : '<div class="stock-clear">All studio shelves are looking good.</div>'}<button class="text-link" data-admin-tab="catalog">Manage inventory <span>↗</span></button></section></div><section class="admin-panel queue-preview"><div class="panel-heading"><div><p class="eyebrow">THE FLOOR, RIGHT NOW</p><h2>Wash queue</h2></div><button class="text-link" data-admin-tab="queue">Open queue <span>↗</span></button></div>${renderQueueColumns(false)}</section></div></div></div>`;
+  return `<div class="admin-shell"><aside class="admin-sidebar"><div class="admin-brand"><span class="brand-mark">R</span><span>rinse<span class="brand-light">society</span><small>STUDIO CONSOLE</small></span></div><p class="admin-nav-label">WORKSPACE</p><button class="admin-nav active" data-admin-tab="overview">◫ &nbsp; Overview</button><button class="admin-nav" data-admin-tab="queue">≋ &nbsp; Wash queue <b>${db.transactions.filter(tx => tx.queue_status !== 'COMPLETED').length}</b></button><button class="admin-nav" data-admin-tab="catalog">▦ &nbsp; Services & products</button><button class="admin-nav" data-admin-tab="customers">◎ &nbsp; Customers & vehicles</button><button class="admin-nav" data-admin-tab="reports">↗ &nbsp; Revenue reports</button><div class="sidebar-bottom"><span class="sidebar-avatar">RS</span><span><strong>Rinse Studio</strong><small>Semarang · Studio 01</small></span><button data-action="settings" aria-label="Database settings">⚙</button></div></aside><div class="admin-main"><header class="admin-topbar"><div><p class="eyebrow">STUDIO CONSOLE · ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}</p><h1 id="admin-heading">Studio overview</h1></div><div class="admin-top-actions"><span class="connection-indicator ${supabaseConfig().url ? 'connected' : ''}"><i></i>${supabaseConfig().url ? 'SUPABASE CONNECTED' : 'DATA LOKAL'}</span><button class="button button-dark button-small" data-action="walkin">+ New walk-in</button></div></header><div id="admin-content"><div class="metric-grid"><article class="metric-card metric-primary"><span>REVENUE · ALL TIME</span><strong>${money(total)}</strong><small>From ${paid.length} paid transactions</small><i>↗</i></article><article class="metric-card"><span>TRANSACTIONS</span><strong>${db.transactions.length.toString().padStart(2, '0')}</strong><small>${db.transactions.filter(tx => tx.transaction_type === 'BOOKING').length} bookings on record</small></article><article class="metric-card"><span>SERVICE REVENUE</span><strong>${money(serviceRevenue)}</strong><small>Wash, self-service & add-ons</small></article><article class="metric-card"><span>PRODUCT REVENUE</span><strong>${money(productRevenue)}</strong><small>Retail sales · ${db.transactions.filter(tx => tx.item_type === 'PRODUCT').length} line items</small></article></div><div class="admin-content-grid"><section class="admin-panel revenue-panel"><div class="panel-heading"><div><p class="eyebrow">PAID TRANSACTIONS</p><h2>Revenue mix</h2></div><span class="panel-period">ALL TIME</span></div><div class="revenue-total">${money(total)}<span>Total collected</span></div><div class="revenue-bars"><div class="revenue-bar-row"><span>Wash & service</span><div><i style="width:${total ? Math.max(4, serviceRevenue / total * 100) : 0}%"></i></div><strong>${money(serviceRevenue)}</strong></div><div class="revenue-bar-row"><span>Studio goods</span><div><i class="bar-green" style="width:${total ? Math.max(4, productRevenue / total * 100) : 0}%"></i></div><strong>${money(productRevenue)}</strong></div></div><div class="chart-footnote"><span>● Service revenue</span><span>● Product revenue</span></div></section><section class="admin-panel low-stock-panel"><div class="panel-heading"><div><p class="eyebrow">STOCK WATCH</p><h2>Needs a top-up</h2></div><span class="low-stock-count">${lowStock.length} LOW</span></div>${lowStock.length ? lowStock.map(item => `<div class="stock-row"><img src="${item.image}" alt=""><span><strong>${escapeHtml(item.name)}</strong><small>Minimum ${item.min_stock} units</small></span><b>${item.stock} left</b></div>`).join('') : '<div class="stock-clear">All studio shelves are looking good.</div>'}<button class="text-link" data-admin-tab="catalog">Manage inventory <span>↗</span></button></section></div><section class="admin-panel queue-preview"><div class="panel-heading"><div><p class="eyebrow">THE FLOOR, RIGHT NOW</p><h2>Wash queue</h2></div><button class="text-link" data-admin-tab="queue">Open queue <span>↗</span></button></div>${renderQueueColumns(false)}</section></div></div></div>`;
 }
 function renderAdmin() {
   const today = getJakartaDateString();
-  const waiting = db.transactions.filter(tx => tx.item_type !== 'PRODUCT' && tx.queue_status !== 'COMPLETED').length;
+  const waiting = getOperationalTransactions(db.transactions).filter(tx => tx.item_type === 'SERVICE'
+    && isRevenueTransaction(tx) && tx.queue_status !== 'COMPLETED'
+    && (tx.transaction_type !== 'BOOKING' || ['ACTIVE', 'COMPLETED'].includes(tx.transaction_status))).length;
   return `<div class="admin-shell"><aside class="admin-sidebar"><div class="admin-brand"><span class="brand-mark">R</span><span>rinse<span class="brand-light">society</span><small>DASHBOARD STUDIO</small></span></div><p class="admin-nav-label">MENU STUDIO</p><button class="admin-nav active" data-admin-tab="overview"><span>◫</span> Ringkasan</button><button class="admin-nav" data-admin-tab="transactions"><span>▤</span> Transaksi</button><button class="admin-nav" data-admin-tab="bookings"><span>▣</span> Booking</button><button class="admin-nav" data-admin-tab="queue"><span>≋</span> Antrean cuci <b>${waiting}</b></button><button class="admin-nav" data-admin-tab="self-service"><span>⌂</span> Cuci mandiri</button><button class="admin-nav" data-admin-tab="customers"><span>◎</span> Pelanggan & kendaraan</button><button class="admin-nav" data-admin-tab="catalog"><span>▦</span> Layanan & produk</button><button class="admin-nav" data-admin-tab="reports"><span>↗</span> Laporan</button><button class="admin-nav" data-action="settings"><span>⚙</span> Pengaturan</button><button class="admin-nav" data-action="logout"><span>↪</span> Keluar</button><div class="sidebar-bottom"><span class="sidebar-avatar">RS</span><span><strong>${escapeHtml(adminUser?.email || 'Admin studio')}</strong><small>Semarang · Studio 01</small></span></div></aside><div class="admin-main"><header class="admin-topbar"><div><p class="eyebrow">RINGKASAN STUDIO · ${new Date(`${today}T12:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase()}</p><h1 id="admin-heading">Ringkasan operasional</h1></div><div class="admin-top-actions"><span class="connection-indicator ${databaseConnected ? 'connected' : ''}"><i></i>${databaseConnected ? 'SUPABASE TERHUBUNG' : 'DATABASE TERPUTUS'}</span><button class="button button-dark button-small" data-action="walkin">+ Walk-in baru</button></div></header><div id="admin-content"><div class="metric-grid">${Array.from({ length: 8 }, () => '<article class="metric-card"><span>MEMUAT DATA</span><strong>—</strong><small>Dari transaksi Supabase</small></article>').join('')}</div><div class="admin-content-grid"><section class="admin-panel revenue-panel"><div class="panel-heading"><div><p class="eyebrow">TRANSAKSI LUNAS</p><h2>Pendapatan studio</h2></div><span class="panel-period">SEMUA WAKTU</span></div><div class="revenue-total">${money(0)}<span>Total pemasukan</span></div><div class="revenue-bars"><div class="revenue-bar-row"><span>Pendapatan jasa</span><div><i style="width:0%"></i></div><strong>${money(0)}</strong></div><div class="revenue-bar-row"><span>Pendapatan produk</span><div><i class="bar-green" style="width:0%"></i></div><strong>${money(0)}</strong></div></div><div class="chart-footnote"><span>● Pendapatan jasa</span><span>● Pendapatan produk</span></div></section><section class="admin-panel low-stock-panel"><div class="panel-heading"><div><p class="eyebrow">PANTAU STOK</p><h2>Perlu ditambah</h2></div><span class="low-stock-count">0 MENIPIS</span></div><div class="stock-clear">Memuat persediaan dari Supabase.</div><button class="text-link" data-admin-tab="catalog">Kelola persediaan <span>↗</span></button></section></div><section class="admin-panel queue-preview"><div class="panel-heading"><div><p class="eyebrow">KONDISI AREA CUCI</p><h2>Antrean saat ini</h2></div><button class="text-link" data-admin-tab="queue">Buka antrean <span>↗</span></button></div>${renderQueueColumns(false)}</section></div></div></div>`;
 }
 function queueCard(tx) {
@@ -550,7 +608,7 @@ function queueCard(tx) {
 }
 function renderQueueColumns(large) {
   const stages = ['WAITING', 'WASHING', 'FINISHING', 'COMPLETED'];
-  const washTransactions = db.transactions.filter(tx => tx.item_type !== 'PRODUCT');
+  const washTransactions = getOperationalTransactions(db.transactions).filter(tx => tx.item_type === 'SERVICE' && isRevenueTransaction(tx) && (tx.transaction_type !== 'BOOKING' || ['ACTIVE', 'COMPLETED'].includes(tx.transaction_status)));
   return `<div class="queue-columns ${large ? 'queue-columns-large' : ''}">${stages.map(stage => `<div class="queue-column"><div class="queue-column-head"><span>${statusLabel(stage)}</span><b>${washTransactions.filter(tx => (tx.queue_status || 'WAITING') === stage).length}</b></div>${washTransactions.filter(tx => (tx.queue_status || 'WAITING') === stage).map(queueCard).join('') || '<div class="queue-empty">Belum ada kendaraan</div>'}</div>`).join('')}</div>`;
 }
 
@@ -558,7 +616,7 @@ function openDialog(kind, serviceId) {
   const dialog = document.getElementById('flow-dialog');
   const content = document.getElementById('dialog-content');
   const service = db.services_products.find(item => item.id === serviceId);
-  if (['booking', 'walkin', 'self-service', 'cart', 'product-checkout'].includes(kind) && !databaseConnected) {
+  if (['booking-choice', 'booking', 'walkin', 'self-service', 'cart', 'product-checkout'].includes(kind) && !databaseConnected) {
     showToast('Layanan sedang tidak tersedia. Silakan coba lagi.', 'error');
     return;
   }
@@ -594,8 +652,63 @@ function renderBookingChoiceDialog(content) {
 function renderTransactionForm(content, kind, selectedService) {
   const walkin = kind === 'walkin';
   const service = catalogItem(selectedService || SERVICES[0]);
-  const allowedVehicles = db.vehicles.filter(vehicle => vehicle.type === service.type);
+  const allowedVehicles = [];
   content.innerHTML = `<p class=\"eyebrow\">${walkin ? 'WALK-IN · TANPA BOOKING' : 'BOOKING · LANGKAH 1'}</p><h2>${walkin ? 'Langsung datang.<br><em>Kami siap melayani.</em>' : 'Jadwalkan cuci<br><em>kendaraan Anda.</em>'}</h2><p class=\"dialog-intro\">${escapeHtml(service.name)} · ${money(service.price)} · ${service.duration} menit</p><form id=\"transaction-form\" class=\"dialog-form\"><input type=\"hidden\" name=\"flow\" value=\"${kind}\"><label>Layanan cuci<select name=\"service_id\" required>${db.services_products.filter(isRegularServiceItem).map(item => `<option value=\"${item.id}\" ${item.id === service.id ? 'selected' : ''}>${escapeHtml(item.name)} · ${money(item.price)}</option>`).join('')}</select></label><div class=\"form-two\"><label>Nama lengkap<input name=\"name\" required placeholder=\"Nama pelanggan\"></label><label>Nomor HP<input name=\"phone\" required type=\"tel\" placeholder=\"08…\"></label></div><label>Kendaraan terdaftar<select name=\"vehicle_id\"><option value=\"\">Tambahkan detail kendaraan di bawah</option>${allowedVehicles.map(vehicle => `<option value=\"${vehicle.id}\">${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.plate)}</option>`).join('')}</select></label><div class=\"form-two\"><label>Model kendaraan<input name=\"model\" placeholder=\"Contoh: Honda HR-V\"></label><label>Nomor polisi<input name=\"plate\" required placeholder=\"H 1234 NP\"></label></div><label>Layanan tambahan<select name=\"addon_id\"><option value=\"\">Tanpa layanan tambahan</option>${ADDONS.map(addon => `<option value=\"${addon.id}\">${escapeHtml(addon.name)} · ${money(addon.price)}</option>`).join('')}</select></label><div class=\"form-two\"><label>${walkin ? 'Waktu datang' : 'Tanggal kunjungan'}<input name=\"date\" type=\"${walkin ? 'time' : 'date'}\" required value=\"${walkin ? getJakartaTimeString() : getJakartaDateString()}\" ${walkin ? '' : `min=\"${getJakartaDateString()}\"`}></label><label>Jam layanan<input name=\"time\" type=\"time\" required value=\"${getJakartaTimeString()}\"></label></div><div class=\"dialog-total\"><span>Estimasi total</span><strong id=\"flow-total\">${money(service.price)}</strong></div><button class=\"button button-dark button-full\" type=\"submit\">Lanjut ke review <span>↗</span></button></form>`;
+  const paymentLabel = document.createElement('label');
+  paymentLabel.textContent = 'Metode pembayaran';
+  const paymentSelect = document.createElement('select');
+  paymentSelect.name = 'payment';
+  paymentSelect.required = true;
+  (walkin ? [['CASH', 'Tunai'], ['QRIS', 'QRIS'], ['E_WALLET', 'Dompet digital'], ['CARD', 'Kartu']] : [['QRIS', 'QRIS'], ['E_WALLET', 'Dompet digital'], ['CARD', 'Kartu']]).forEach(([value, label]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    paymentSelect.append(option);
+  });
+  paymentLabel.append(paymentSelect);
+  const paymentNote = document.createElement('small');
+  paymentNote.textContent = walkin
+    ? 'Tunai baru tercatat lunas setelah Admin menerima dan mengonfirmasi pembayaran.'
+    : 'Booking wajib dibayar di muka. Pembayaran online belum terhubung; booking tetap belum terkonfirmasi sampai pembayaran diverifikasi.';
+  paymentLabel.append(paymentNote);
+  content.querySelector('#flow-total')?.closest('.dialog-total')?.before(paymentLabel);
+  const addonSelect = content.querySelector('[name="addon_id"]');
+  const pickupAddressLabel = document.createElement('label');
+  pickupAddressLabel.hidden = true;
+  pickupAddressLabel.style.display = 'none';
+  pickupAddressLabel.textContent = 'Alamat Antar-Jemput';
+  const pickupAddressInput = document.createElement('input');
+  pickupAddressInput.name = 'pickup_address';
+  pickupAddressInput.placeholder = 'Alamat sesuai data pelanggan';
+  pickupAddressLabel.append(pickupAddressInput);
+  addonSelect?.closest('label')?.after(pickupAddressLabel);
+  const pickupDistanceLabel = document.createElement('label');
+  pickupDistanceLabel.hidden = true;
+  pickupDistanceLabel.style.display = 'none';
+  pickupDistanceLabel.textContent = 'Jarak pulang-pergi (km)';
+  const pickupDistanceInput = document.createElement('input');
+  pickupDistanceInput.name = 'pickup_distance_km';
+  pickupDistanceInput.type = 'number';
+  pickupDistanceInput.min = '0.1';
+  pickupDistanceInput.max = '3';
+  pickupDistanceInput.step = '0.1';
+  pickupDistanceInput.placeholder = 'Maksimal 3 km';
+  pickupDistanceLabel.append(pickupDistanceInput);
+  pickupAddressLabel.after(pickupDistanceLabel);
+  const updatePickupAddressField = () => {
+    const pickupSelected = ['addon-pickup', 'addon-pickup-moto'].includes(addonSelect?.value);
+    pickupAddressLabel.hidden = !pickupSelected;
+    pickupAddressLabel.style.display = pickupSelected ? 'grid' : 'none';
+    pickupDistanceLabel.hidden = !pickupSelected;
+    pickupDistanceLabel.style.display = pickupSelected ? 'grid' : 'none';
+    pickupAddressInput.required = pickupSelected;
+    pickupDistanceInput.required = pickupSelected;
+    if (!pickupSelected) {
+      pickupAddressInput.value = '';
+      pickupDistanceInput.value = '';
+    }
+  };
+  updatePickupAddressField();
   const form = content.querySelector('#transaction-form');
   content.querySelectorAll('[name="service_id"] option').forEach(option => {
     const item = db.services_products.find(serviceItem => serviceItem.id === option.value);
@@ -604,6 +717,26 @@ function renderTransactionForm(content, kind, selectedService) {
   const serviceSelect = content.querySelector('[name="service_id"]');
   const vehicleSelect = content.querySelector('[name="vehicle_id"]');
   const phoneInput = content.querySelector('[name="phone"]');
+  const pickupCarOption = addonSelect?.querySelector('[value="addon-pickup"]');
+  const pickupMotorcycleOption = addonSelect?.querySelector('[value="addon-pickup-moto"]');
+  const updatePickupAvailability = () => {
+    const selectedService = db.services_products.find(item => item.id === serviceSelect.value);
+    const professionalWash = !walkin && selectedService?.category === 'REGULAR';
+    const carPickupAvailable = professionalWash && selectedService.type === 'CAR';
+    const motorcyclePickupAvailable = professionalWash && selectedService.type === 'MOTOR';
+    if (pickupCarOption) {
+      pickupCarOption.hidden = !carPickupAvailable;
+      pickupCarOption.disabled = !carPickupAvailable;
+    }
+    if (pickupMotorcycleOption) {
+      pickupMotorcycleOption.hidden = !motorcyclePickupAvailable;
+      pickupMotorcycleOption.disabled = !motorcyclePickupAvailable;
+    }
+    if ((addonSelect?.value === 'addon-pickup' && !carPickupAvailable)
+      || (addonSelect?.value === 'addon-pickup-moto' && !motorcyclePickupAvailable)) addonSelect.value = '';
+    updatePickupAddressField();
+  };
+  updatePickupAvailability();
   let matchingVehicles = allowedVehicles;
   const updateVehicleChoices = async () => {
     const phone = phoneInput.value.trim();
@@ -611,6 +744,11 @@ function renderTransactionForm(content, kind, selectedService) {
     try {
       const rows = await customerByPhone(phone);
       matchingVehicles = rows.filter(row => row.vehicle_id).map(row => ({ id: row.vehicle_id, type: row.vehicle_type, plate: row.vehicle_plate, model: row.vehicle_model }));
+      const pickupCustomer = rows.find(row => row.customer_id);
+      if (pickupAddressInput) {
+        pickupAddressInput.readOnly = !!pickupCustomer?.customer_address;
+        pickupAddressInput.value = pickupCustomer?.customer_address || '';
+      }
       const type = db.services_products.find(item => item.id === serviceSelect.value)?.type;
       const choices = matchingVehicles.filter(vehicle => vehicle.type === type);
       vehicleSelect.innerHTML = `<option value="">${choices.length ? 'Pilih kendaraan terdaftar' : 'Tambahkan detail kendaraan di bawah'}</option>${choices.map(vehicle => `<option value="${vehicle.id}">${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.plate)}</option>`).join('')}`;
@@ -620,6 +758,15 @@ function renderTransactionForm(content, kind, selectedService) {
   };
   phoneInput.addEventListener('blur', updateVehicleChoices);
   phoneInput.addEventListener('change', updateVehicleChoices);
+  vehicleSelect.addEventListener('change', () => {
+    const vehicle = matchingVehicles.find(item => item.id === vehicleSelect.value);
+    const modelField = content.querySelector('[name="model"]');
+    const plateField = content.querySelector('[name="plate"]');
+    modelField.value = vehicle?.model || '';
+    plateField.value = vehicle?.plate || '';
+    modelField.readOnly = !!vehicle;
+    plateField.readOnly = !!vehicle;
+  });
   const recalculate = () => {
     const chosen = db.services_products.find(item => item.id === serviceSelect.value);
     const duration = Number(content.querySelector('[name="duration"]')?.value || chosen.duration || 30);
@@ -633,9 +780,10 @@ function renderTransactionForm(content, kind, selectedService) {
     vehicleSelect.innerHTML = `<option value="">${choices.length ? 'Pilih kendaraan terdaftar' : 'Tambahkan detail kendaraan di bawah'}</option>${choices.map(vehicle => `<option value="${vehicle.id}">${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.plate)}</option>`).join('')}`;
     const durationField = content.querySelector('[name="duration"]');
     if (durationField) durationField.value = chosen.duration;
+    updatePickupAvailability();
     recalculate();
   });
-  content.querySelector('[name="addon_id"]').addEventListener('change', recalculate);
+  addonSelect?.addEventListener('change', () => { recalculate(); updatePickupAddressField(); });
   content.querySelector('[name="duration"]')?.addEventListener('change', recalculate);
 }
 function renderSelfServiceTransactionForm(content) {
@@ -643,7 +791,7 @@ function renderSelfServiceTransactionForm(content) {
   const todayDate = getJakartaDateString();
   const nowTime = getJakartaFutureTimeString();
   const bayOptions = Array.from({ length: 4 }, (_, index) => `<option value="${index + 1}">B-${String(index + 1).padStart(2, '0')}</option>`).join('');
-  const durationOptions = [20, 30, 45, 60].map(value => `<option value="${value}" ${value === Number(defaultService.duration || 30) ? 'selected' : ''}>${value} menit</option>`).join('');
+  const durationOptions = [20, 25, 30, 45, 60].map(value => `<option value="${value}" ${value === Number(defaultService.duration || 30) ? 'selected' : ''}>${value} menit</option>`).join('');
   content.innerHTML = `<p class="eyebrow">CUCI MANDIRI · BOOKING</p><h2>Cuci sendiri di<br><em>bay pilihan Anda.</em></h2><p class="dialog-intro">4 bay universal untuk mobil dan sepeda motor. Pastikan jadwal, bay, dan durasi sesuai kebutuhan Anda.</p><form id="transaction-form" class="dialog-form"><input type="hidden" name="flow" value="self-service"><input type="hidden" name="service_id" value="${defaultService.id}"><div class="form-two"><label>Jenis kendaraan<select name="vehicle_type" required><option value="CAR" selected>Mobil</option><option value="MOTOR">Sepeda Motor</option></select></label><label>Bay<select name="bay_number" required>${bayOptions}</select></label></div><div class="form-two"><label>Nama lengkap<input name="name" required placeholder="Nama pelanggan"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label></div><div class="form-two"><label>Model kendaraan<input name="model" placeholder="Contoh: Honda HR-V"></label><label>Nomor polisi<input name="plate" required placeholder="H 1234 NP"></label></div><div class="form-two"><label>Tanggal<select name="date" required>${Array.from({ length: 7 }, (_, index) => {
       const value = addDaysToJakartaDate(todayDate, index);
       return `<option value="${value}" ${index === 0 ? 'selected' : ''}>${new Date(`${value}T12:00:00+07:00`).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })}</option>`;
@@ -652,15 +800,65 @@ function renderSelfServiceTransactionForm(content) {
   const bayField = content.querySelector('[name="bay_number"]');
   const durationField = content.querySelector('[name="duration"]');
   const totalField = content.querySelector('#flow-total');
+  const customerNameField = content.querySelector('[name="name"]');
+  const customerPhoneField = content.querySelector('[name="phone"]');
+  const vehicleModelField = content.querySelector('[name="model"]');
+  const vehiclePlateField = content.querySelector('[name="plate"]');
+  const vehicleSelectLabel = document.createElement('label');
+  vehicleSelectLabel.textContent = 'Kendaraan terdaftar';
+  const vehicleSelect = document.createElement('select');
+  vehicleSelect.name = 'vehicle_id';
+  vehicleSelect.innerHTML = '<option value="">Tambahkan kendaraan baru</option>';
+  vehicleSelectLabel.append(vehicleSelect);
+  customerPhoneField.closest('.form-two')?.after(vehicleSelectLabel);
+  let customerVehicles = [];
+  const updateSelfServiceVehicleChoices = () => {
+    const choices = customerVehicles.filter(vehicle => vehicle.type === vehicleTypeField.value);
+    vehicleSelect.innerHTML = `<option value="">${choices.length ? 'Pilih kendaraan pelanggan' : 'Tambahkan kendaraan baru'}</option>${choices.map(vehicle => `<option value="${escapeHtml(vehicle.id)}">${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.plate)}</option>`).join('')}`;
+    vehicleModelField.readOnly = false;
+    vehiclePlateField.readOnly = false;
+    vehicleModelField.value = '';
+    vehiclePlateField.value = '';
+  };
+  const loadSelfServiceCustomer = async () => {
+    if (customerPhoneField.value.replace(/\D/g, '').length < 7) return;
+    try {
+      const rows = await customerByPhone(customerPhoneField.value.trim());
+      customerVehicles = rows.filter(row => row.vehicle_id).map(row => ({
+        id: row.vehicle_id,
+        type: row.vehicle_type,
+        model: row.vehicle_model,
+        plate: row.vehicle_plate
+      }));
+      if (rows[0]?.full_name) customerNameField.value = rows[0].full_name;
+      updateSelfServiceVehicleChoices();
+    } catch (error) {
+      showToast(`Data kendaraan belum dapat dimuat: ${error.message}`, 'error');
+    }
+  };
+  customerPhoneField.addEventListener('blur', loadSelfServiceCustomer);
+  customerPhoneField.addEventListener('change', loadSelfServiceCustomer);
+  vehicleSelect.addEventListener('change', () => {
+    const vehicle = customerVehicles.find(item => item.id === vehicleSelect.value);
+    vehicleModelField.value = vehicle?.model || '';
+    vehiclePlateField.value = vehicle?.plate || '';
+    vehicleModelField.readOnly = !!vehicle;
+    vehiclePlateField.readOnly = !!vehicle;
+  });
+  const selfServicePayment = content.querySelector('[name="payment"]');
+  selfServicePayment.querySelector('option[value="CASH"]')?.remove();
+  const selfServicePaymentNote = document.createElement('small');
+  selfServicePaymentNote.textContent = 'Booking wajib dibayar di muka. Pembayaran online belum terhubung dan bay belum aktif sebelum pembayaran diverifikasi.';
+  selfServicePayment.closest('label')?.append(selfServicePaymentNote);
   const updateSelfServiceTotal = () => {
     const vehicleType = vehicleTypeField.value;
     const service = db.services_products.find(item => item.category === 'SELF_SERVICE' && item.type === vehicleType) || db.services_products.find(item => item.category === 'SELF_SERVICE');
     const duration = Number(durationField.value || service.duration || 30);
-    const total = Math.round((Number(service.price || 0) * duration) / Number(service.duration || duration));
+    const total = Number(service.price || 0);
     totalField.textContent = money(total);
     content.querySelector('[name="service_id"]').value = service.id;
   };
-  vehicleTypeField.addEventListener('change', updateSelfServiceTotal);
+  vehicleTypeField.addEventListener('change', () => { updateSelfServiceTotal(); updateSelfServiceVehicleChoices(); });
   durationField.addEventListener('change', updateSelfServiceTotal);
   bayField.value = '1';
   updateSelfServiceTotal();
@@ -673,7 +871,7 @@ function renderCartDialog(content) {
 }
 function renderProductCheckout(content) {
   const total = Object.entries(cart).reduce((sum, [id, row]) => sum + (db.services_products.find(item => item.id === id)?.price || 0) * row.quantity, 0);
-  content.innerHTML = `<p class="eyebrow">PEMBAYARAN PRODUK</p><h2>Perawatan pilihan<br><em>segera di tangan Anda.</em></h2><form id="product-checkout-form" class="dialog-form"><label>Nama lengkap<input name="name" required placeholder="Nama lengkap"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label><fieldset class="payment-options"><legend>Metode pembayaran</legend>${['CASH', 'QRIS', 'E_WALLET', 'CARD'].map((method, index) => `<label><input type="radio" name="payment" value="${method}" ${index === 0 ? 'checked' : ''}><span>${method === 'E_WALLET' ? 'E-Wallet' : method}</span></label>`).join('')}</fieldset><div class="dialog-total"><span>Total pembayaran</span><strong>${money(total)}</strong></div><button class="button button-dark button-full" type="submit">Buat pesanan <span>↗</span></button><small>Pembayaran tunai dicatat lunas. Pembayaran cashless menunggu konfirmasi penyedia pembayaran.</small></form>`;
+  content.innerHTML = `<p class="eyebrow">PEMBAYARAN PRODUK</p><h2>Perawatan pilihan<br><em>segera di tangan Anda.</em></h2><form id="product-checkout-form" class="dialog-form"><label>Nama lengkap<input name="name" required placeholder="Nama lengkap"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label><fieldset class="payment-options"><legend>Metode pembayaran</legend>${['CASH', 'QRIS', 'E_WALLET', 'CARD'].map((method, index) => `<label><input type="radio" name="payment" value="${method}" ${index === 0 ? 'checked' : ''}><span>${method === 'E_WALLET' ? 'E-Wallet' : method}</span></label>`).join('')}</fieldset><div class="dialog-total"><span>Total pembayaran</span><strong>${money(total)}</strong></div><button class="button button-dark button-full" type="submit">Buat pesanan <span>↗</span></button><small>Semua transaksi baru menunggu konfirmasi pembayaran sebelum dianggap lunas.</small></form>`;
   simplifyUiSymbols(content);
 }
 function makeCode() { return `RS-${getJakartaDateString().slice(2).replaceAll('-', '')}-${Math.floor(1000 + Math.random() * 9000)}`; }
@@ -681,13 +879,13 @@ async function customerByPhone(phone) {
   if (!databaseConnected) throw new Error('Data pelanggan belum dapat dimuat. Silakan coba lagi.');
   return rpcRequest('lookup_customer_by_phone', { p_phone: phone });
 }
-async function findOrCreateCustomer(name, phone) {
+async function findOrCreateCustomer(name, phone, address = '') {
   const matches = await customerByPhone(phone);
   if (matches.length) {
     const first = matches[0];
-    return { customer: { id: first.customer_id, full_name: first.full_name, phone: first.phone }, vehicles: matches.filter(row => row.vehicle_id).map(row => ({ id: row.vehicle_id, customer_id: row.customer_id, type: row.vehicle_type, plate: row.vehicle_plate, model: row.vehicle_model })) };
+    return { customer: { id: first.customer_id, full_name: first.full_name, phone: first.phone, address: first.customer_address || '' }, vehicles: matches.filter(row => row.vehicle_id).map(row => ({ id: row.vehicle_id, customer_id: row.customer_id, type: row.vehicle_type, plate: row.vehicle_plate, model: row.vehicle_model })) };
   }
-  const customer = { id: crypto.randomUUID(), full_name: String(name).trim(), phone: String(phone).trim() };
+  const customer = { id: crypto.randomUUID(), full_name: String(name).trim(), phone: String(phone).trim(), address: String(address || '').trim() };
   await insertRow('customers', customer);
   return { customer, vehicles: [] };
 }
@@ -699,11 +897,12 @@ function isBayScheduledForWindow(bayNumber, dateString, timeString, durationMinu
   const durationMs = Math.max(Number(durationMinutes) || 0, 0) * 60000;
   const endUtc = startUtc + durationMs;
   return db.transactions.some(tx => {
-    if (!tx || tx.item_type === 'PRODUCT' || !Number.isFinite(Number(tx.bay_number)) || Number(tx.bay_number) !== Number(bayNumber)) return false;
-    if (!['ACTIVE', 'BOOKED'].includes(tx.transaction_status)) return false;
-    if (!tx.booking_date || !tx.booking_time) return false;
-    const txStartUtc = parseJakartaDateTime(tx.booking_date, tx.booking_time).getTime();
-    const txDurationMs = Math.max(Number(tx.duration_minutes) || 0, 0) * 60000;
+    const normalized = normalizeOperationalTransaction(tx);
+    if (!normalized || normalized.item_type === 'PRODUCT' || normalized.payment_status !== 'PAID' || !Number.isFinite(Number(normalized.bay_number)) || Number(normalized.bay_number) !== Number(bayNumber)) return false;
+    if (!['ACTIVE', 'BOOKED'].includes(normalized.transaction_status)) return false;
+    if (!normalized.booking_date || !normalized.booking_time) return false;
+    const txStartUtc = parseJakartaDateTime(normalized.booking_date, normalized.booking_time).getTime();
+    const txDurationMs = Math.max(Number(normalized.duration_minutes) || 0, 0) * 60000;
     const txEndUtc = txStartUtc + txDurationMs;
     return !(endUtc <= txStartUtc || startUtc >= txEndUtc);
   });
@@ -722,7 +921,6 @@ async function persistTransaction(tx) {
   } else {
     const result = await rpcRequest('record_service_transaction', { p_transaction: tx, p_addon_id: tx.addon_id || null });
     if (result && typeof result === 'object') Object.assign(tx, result);
-    delete tx.addon_id;
   }
   db.transactions.unshift(tx);
 }
@@ -767,20 +965,36 @@ async function submitService(form) {
   const addonId = String(data.get('addon_id') || '');
   const addon = addonId ? db.services_products.find(item => item.id === addonId && item.item_type === 'ADD_ON' && item.active !== false) : null;
   if (addonId && !addon) throw new Error('Add-on tidak tersedia. Pilih add-on lain.');
+  const pickupSelected = ['addon-pickup', 'addon-pickup-moto'].includes(addonId);
+  const pickupAddress = String(data.get('pickup_address') || '').trim();
+  const pickupDistance = Number(data.get('pickup_distance_km'));
+  if (pickupSelected && (isSelfService || flowType === 'walkin' || service.category !== 'REGULAR')) {
+    throw new Error('Antar-Jemput hanya tersedia untuk Booking Professional Wash.');
+  }
+  if (addonId === 'addon-pickup' && service.type !== 'CAR') throw new Error('Pilih add-on Antar-Jemput Mobil untuk layanan mobil.');
+  if (addonId === 'addon-pickup-moto' && service.type !== 'MOTOR') throw new Error('Pilih add-on Antar-Jemput Motor untuk layanan motor.');
+  if (pickupSelected && !pickupAddress) throw new Error('Alamat Antar-Jemput wajib diisi.');
+  if (pickupSelected && (!Number.isFinite(pickupDistance) || pickupDistance <= 0 || pickupDistance > 3)) {
+    throw new Error('Jarak Antar-Jemput pulang-pergi maksimal 3 km.');
+  }
   const bayNumber = service.category === 'SELF_SERVICE' ? Number(data.get('bay_number') || firstAvailableBay(bookingDate, bookingTime, duration)) : null;
   if (service.category === 'SELF_SERVICE' && (!Number.isInteger(bayNumber) || bayNumber < 1 || bayNumber > 4)) throw new Error('Pilih salah satu dari empat bay Self-Service.');
   if (service.category === 'SELF_SERVICE' && !bayNumber) throw new Error('Semua bay Self-Service sedang digunakan atau dipesan.');
   if (service.category === 'SELF_SERVICE' && isBayScheduledForWindow(bayNumber, bookingDate, bookingTime, duration)) {
     throw new Error('Bay yang dipilih sudah dipesan untuk slot waktu itu.');
   }
-  const customerResult = await findOrCreateCustomer(customerName, phone);
+  const customerResult = await findOrCreateCustomer(customerName, phone, pickupSelected ? pickupAddress : '');
   const customer = customerResult.customer;
+  if (pickupSelected && customer.address && customer.address.trim() !== pickupAddress) {
+    throw new Error('Gunakan alamat Antar-Jemput yang tersimpan pada data pelanggan.');
+  }
+  if (pickupSelected && !customer.address) throw new Error('Alamat Antar-Jemput belum tersimpan pada data pelanggan.');
   const existingVehicle = customerResult.vehicles.find(item => item.id === data.get('vehicle_id'));
   const vehicle = existingVehicle || makeVehicle(customer.id, service.type, data.get('model'), plate);
   if (vehicle.type !== service.type) throw new Error('Jenis kendaraan tidak sesuai dengan layanan yang dipilih.');
   if (!existingVehicle) await insertRow('vehicles', vehicle);
-  const washPrice = service.category === 'SELF_SERVICE' ? Math.round(Number(service.price) * duration / Number(service.duration || duration)) : Number(service.price);
-  const tx = { id: crypto.randomUUID(), code: makeCode(), customer_id: customer.id, vehicle_id: vehicle.id, item_id: service.id, item_type: 'SERVICE', item_name: `${service.name}${addon ? ` + ${addon.name}` : ''}`, addon_id: addon?.id || null, amount: washPrice + Number(addon?.price || 0), payment_method: paymentMethod, payment_status: paymentMethod === 'CASH' && !isBooking && !isSelfService ? 'PAID' : 'PENDING', transaction_type: isSelfService || isBooking ? 'BOOKING' : 'WALK_IN', transaction_status: isSelfService || isBooking ? 'BOOKED' : 'ACTIVE', queue_status: 'WAITING', booking_date: bookingDate, booking_time: bookingTime, duration_minutes: duration + Number(addon?.duration || 0), bay_number: bayNumber, created_at: new Date().toISOString() };
+  const washPrice = Number(service.price);
+  const tx = { id: crypto.randomUUID(), code: makeCode(), customer_id: customer.id, vehicle_id: vehicle.id, item_id: service.id, item_type: 'SERVICE', item_name: `${service.name}${addon ? ` + ${addon.name}` : ''}`, addon_id: addon?.id || null, pickup_distance_km: pickupSelected ? pickupDistance : null, amount: washPrice + Number(addon?.price || 0), payment_method: paymentMethod, payment_status: 'PENDING', transaction_type: isSelfService || isBooking ? 'BOOKING' : 'WALK_IN', transaction_status: 'PENDING', queue_status: 'WAITING', booking_date: bookingDate, booking_time: bookingTime, duration_minutes: duration + Number(addon?.duration || 0), bay_number: bayNumber, created_at: new Date().toISOString() };
   await persistTransaction(tx);
   try { await loadPublicData(); }
   catch (_) { showToast('Transaksi tersimpan, tetapi data terbaru belum dapat dimuat.', 'error'); }
@@ -788,7 +1002,8 @@ async function submitService(form) {
   render();
 }
 function showConfirmation(tx) {
-  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">${tx.transaction_type === 'BOOKING' ? 'BOOKING TERCATAT' : 'MASUK KE ANTREAN'}</p><h2>${tx.transaction_type === 'BOOKING' ? 'Kami siapkan<br><em>kunjungan Anda.</em>' : 'Kendaraan Anda<br><em>segera kami tangani.</em>'}</h2><p class="dialog-intro">${tx.transaction_type === 'BOOKING' ? 'Booking berhasil disimpan. Tunjukkan kode ini saat tiba di studio.' : 'Transaksi berhasil disimpan dan kendaraan masuk ke antrean cuci.'}</p><div class="pass-card"><div><span>KODE BOOKING</span><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(tx.item_name)} · ${tx.booking_date} · ${tx.booking_time}</small></div><img class="fake-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=144x144&data=${encodeURIComponent(tx.code)}" alt="QR untuk kode ${escapeHtml(tx.code)}"></div><div class="confirmation-details"><span>${money(tx.amount)}</span>${statusBadge(tx.payment_status)}${statusBadge(tx.payment_method)}</div><button class="button button-dark button-full" data-action="close-dialog">Selesai <span>↗</span></button></div>`;
+  const isBooking = tx.transaction_type === 'BOOKING';
+  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">${isBooking ? 'BOOKING TERCATAT' : 'TRANSAKSI TERCATAT'}</p><h2>${isBooking ? 'Kami siapkan<br><em>kunjungan Anda.</em>' : 'Kendaraan Anda<br><em>menunggu konfirmasi pembayaran.</em>'}</h2><p class="dialog-intro">${isBooking ? 'Booking sudah dibuat dan menunggu pembayaran dikonfirmasi sebelum sesi dimulai.' : 'Transaksi dibuat. Pembayaran harus dikonfirmasi lunas sebelum kendaraan masuk antrean atau proses cuci.'}</p><div class="pass-card"><div><span>KODE BOOKING</span><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(tx.item_name)} · ${tx.booking_date} · ${tx.booking_time}</small></div><img class="fake-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=144x144&data=${encodeURIComponent(tx.code)}" alt="QR untuk kode ${escapeHtml(tx.code)}"></div><div class="confirmation-details"><span>${money(tx.amount)}</span>${statusBadge(tx.payment_status)}${statusBadge(tx.payment_method)}</div><button class="button button-dark button-full" data-action="close-dialog">Selesai <span>↗</span></button></div>`;
 }
 async function submitProducts(form) {
   const data = new FormData(form);
@@ -810,7 +1025,7 @@ async function submitProducts(form) {
     const product = db.services_products.find(item => item.id === id);
     const quantity = Number(row.quantity);
     try {
-      await persistTransaction({ id: crypto.randomUUID(), code: makeCode(), customer_id: customer.id, vehicle_id: null, item_id: id, item_type: 'PRODUCT', item_name: product.name, quantity, amount: product.price * quantity, payment_method: data.get('payment'), payment_status: data.get('payment') === 'CASH' ? 'PAID' : 'PENDING', transaction_type: 'SHOP', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: getJakartaDateString(), booking_time: getJakartaTimeString(), duration_minutes: 0, created_at: new Date().toISOString() });
+      await persistTransaction({ id: crypto.randomUUID(), code: makeCode(), customer_id: customer.id, vehicle_id: null, item_id: id, item_type: 'PRODUCT', item_name: product.name, quantity, amount: product.price * quantity, payment_method: data.get('payment'), payment_status: 'PENDING', transaction_type: 'SHOP', transaction_status: 'PENDING', queue_status: 'WAITING', booking_date: getJakartaDateString(), booking_time: getJakartaTimeString(), duration_minutes: 0, created_at: new Date().toISOString() });
       completedIds.push(id);
     } catch (error) {
       if (!completedIds.length) throw error;
@@ -826,11 +1041,11 @@ async function submitProducts(form) {
   localStorage.removeItem(CART_KEY);
   try { await loadPublicData(); }
   catch (_) { showToast('Pesanan tersimpan, tetapi katalog belum dapat diperbarui.', 'error'); }
-  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">PESANAN TERCATAT</p><h2>Produk pilihan<br><em>siap untuk Anda.</em></h2><p class="dialog-intro">Pembayaran telah dicatat. Terima kasih telah berbelanja di Rinse Society.</p><button class="button button-dark button-full" data-action="close-dialog">Kembali ke studio <span>↗</span></button></div>`;
+  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">PESANAN TERCATAT</p><h2>Produk pilihan<br><em>menunggu konfirmasi pembayaran.</em></h2><p class="dialog-intro">Pesanan belum lunas dan belum dapat diselesaikan. Admin akan mengonfirmasi pembayaran setelah diterima.</p><button class="button button-dark button-full" data-action="close-dialog">Kembali ke studio <span>↗</span></button></div>`;
   render();
 }
 function renderReportsLegacy() {
-  const paid = db.transactions.filter(tx => tx.payment_status === 'PAID');
+  const paid = db.transactions.filter(isRevenueTransaction);
   const serviceRows = paid.filter(tx => tx.item_type !== 'PRODUCT');
   const productRows = paid.filter(tx => tx.item_type === 'PRODUCT');
   const serviceRevenue = serviceRows.reduce((sum, tx) => sum + tx.amount, 0);
@@ -839,42 +1054,48 @@ function renderReportsLegacy() {
 }
 function renderReports() {
   const transactions = reportTransactions();
-  const paid = transactions.filter(tx => tx.payment_status === 'PAID');
+  const paid = transactions.filter(isRevenueTransaction);
   const services = paid.filter(tx => tx.item_type !== 'PRODUCT');
   const products = paid.filter(tx => tx.item_type === 'PRODUCT');
   const serviceRevenue = services.reduce((sum, tx) => sum + Number(tx.amount), 0);
   const productRevenue = products.reduce((sum, tx) => sum + Number(tx.amount), 0);
   const totalRevenue = serviceRevenue + productRevenue;
-  const vehiclesServed = new Set(transactions.filter(tx => tx.item_type !== 'PRODUCT' && tx.transaction_status === 'COMPLETED').map(tx => tx.vehicle_id).filter(Boolean)).size;
-  return `<header class="reports-heading"><div><p class="eyebrow">LAPORAN PENDAPATAN</p><h2>Laporan Pendapatan</h2><p>Hanya transaksi lunas yang masuk perhitungan pendapatan; sample demo ditandai.</p></div><span class="report-period">${transactions.length} transaksi · seluruh tanggal</span></header><div class="report-grid report-summary-grid"><article class="report-card report-card-primary"><span>TOTAL PENDAPATAN</span><strong>${money(totalRevenue)}</strong><small>Transaksi lunas · semua metode</small></article><article class="report-card"><span>PENDAPATAN JASA</span><strong>${money(serviceRevenue)}</strong><small>${services.length} transaksi lunas</small></article><article class="report-card"><span>PENDAPATAN PRODUK</span><strong>${money(productRevenue)}</strong><small>${products.length} baris penjualan</small></article><article class="report-card"><span>JUMLAH TRANSAKSI</span><strong>${transactions.length}</strong><small>Semua status</small></article><article class="report-card report-card-quiet"><span>TRANSAKSI LUNAS</span><strong>${paid.length}</strong><small>Lunas</small></article><article class="report-card report-card-quiet"><span>KENDARAAN DILAYANI</span><strong>${vehiclesServed}</strong><small>Kendaraan unik · selesai</small></article></div>`;
+  const vehiclesServed = new Set(transactions.filter(tx => tx.item_type === 'SERVICE' && isRevenueTransaction(tx) && tx.transaction_status === 'COMPLETED').map(tx => tx.vehicle_id).filter(Boolean)).size;
+  return `<header class="reports-heading"><div><p class="eyebrow">LAPORAN PENDAPATAN</p><h2>Laporan Pendapatan</h2><p>Hanya transaksi lunas yang masuk perhitungan pendapatan.</p></div><span class="report-period">${transactions.length} transaksi · seluruh tanggal</span></header><div class="report-grid report-summary-grid"><article class="report-card report-card-primary"><span>TOTAL PENDAPATAN</span><strong>${money(totalRevenue)}</strong><small>Transaksi lunas · semua metode</small></article><article class="report-card"><span>PENDAPATAN JASA</span><strong>${money(serviceRevenue)}</strong><small>${services.length} transaksi lunas</small></article><article class="report-card"><span>PENDAPATAN PRODUK</span><strong>${money(productRevenue)}</strong><small>${products.length} baris penjualan</small></article><article class="report-card"><span>JUMLAH TRANSAKSI</span><strong>${transactions.length}</strong><small>Semua status</small></article><article class="report-card report-card-quiet"><span>TRANSAKSI LUNAS</span><strong>${paid.length}</strong><small>Lunas</small></article><article class="report-card report-card-quiet"><span>KENDARAAN DILAYANI</span><strong>${vehiclesServed}</strong><small>Kendaraan unik · selesai</small></article></div>`;
 }
 function renderAdminTransactionList(records, title, eyebrow) {
-  const transactions = [...records, ...SEED.transactions.map(tx => ({ ...tx, is_demo: true, payment_status: demoPaymentStatuses[tx.id] || tx.payment_status }))]
+  const transactions = getOperationalTransactions(records)
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  const paidCount = transactions.filter(tx => tx.payment_status === 'PAID').length;
+  const paidCount = transactions.filter(isRevenueTransaction).length;
   const pendingCount = transactions.filter(tx => tx.payment_status === 'PENDING').length;
   const rows = transactions.map(tx => {
-    const customer = tx.is_demo ? SEED.customers.find(item => item.id === tx.customer_id) : getCustomer(tx);
-    const vehicle = tx.is_demo ? SEED.vehicles.find(item => item.id === tx.vehicle_id) : getVehicle(tx);
-    const paymentAction = tx.payment_status === 'PENDING' ? `<button class="payment-mark-paid" type="button" ${tx.is_demo ? 'data-demo-payment-paid' : 'data-payment-paid'}="${escapeHtml(tx.id)}">Tandai sebagai Lunas</button>` : '';
-    return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${tx.is_demo ? 'SAMPLE · DEVELOPMENT' : escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small></span><span class="transaction-item">${escapeHtml(tx.item_name)}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${paymentAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${statusLabel(tx.transaction_status)}</span><span class="transaction-amount">${money(tx.amount)}</span></div>`;
+    const customer = getCustomer(tx);
+    const vehicle = getVehicle(tx);
+    const canConfirmCash = tx.payment_status === 'PENDING' && tx.payment_method === 'CASH'
+      && ['WALK_IN', 'SHOP'].includes(tx.transaction_type) && tx.transaction_status !== 'CANCELLED';
+    const paymentAction = canConfirmCash ? `<button class="payment-mark-paid" type="button" data-payment-paid="${escapeHtml(tx.id)}">Konfirmasi Lunas</button>` : '';
+    const refundAction = tx.refund_status === 'PENDING' ? `<button class="payment-mark-paid" type="button" data-refund-complete="${escapeHtml(tx.id)}">Catat Pengembalian Dana</button>` : '';
+    const refundStatus = tx.refund_status === 'PENDING' ? '<small>Pengembalian Dana: menunggu proses manual</small>' : tx.refund_status === 'COMPLETED' ? '<small>Pengembalian Dana: selesai</small>' : '';
+    const pickupAddress = ['addon-pickup', 'addon-pickup-moto'].includes(tx.addon_id) && customer?.address ? `<small>Alamat Antar-Jemput: ${escapeHtml(customer.address)}</small><small>Jarak pulang-pergi: ${escapeHtml(tx.pickup_distance_km)} km</small>` : '';
+    return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small>${pickupAddress}</span><span class="transaction-item">${escapeHtml(tx.item_name)}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${refundStatus}${paymentAction}${refundAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${statusLabel(tx.transaction_status)}</span><span class="transaction-amount">${money(tx.amount)}</span></div>`;
   }).join('');
-  return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Sample development ditandai dan pembayaran demo hanya berlaku selama sesi ini.</p></div><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
+  return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Data operasional studio dengan status pembayaran dan jadwal yang konsisten.</p></div><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
 }
 function renderAdminBookings() {
-  const bookings = db.transactions.filter(tx => tx.transaction_type === 'BOOKING').sort((a, b) => `${a.booking_date} ${a.booking_time}`.localeCompare(`${b.booking_date} ${b.booking_time}`));
+  const bookings = getOperationalTransactions(db.transactions).filter(tx => tx.transaction_type === 'BOOKING' && tx.transaction_status !== 'CANCELLED').sort((a, b) => `${a.booking_date} ${a.booking_time}`.localeCompare(`${b.booking_date} ${b.booking_time}`));
   const today = getJakartaDateString();
-  const upcoming = bookings.filter(tx => tx.booking_date >= today);
-  const rows = upcoming.length ? upcoming : bookings;
-  return `<div class="booking-board"><div class="booking-summary"><div><span>BOOKING MENDATANG</span><strong>${upcoming.length}</strong></div><div><span>MENUNGGU PEMBAYARAN</span><strong>${bookings.filter(tx => tx.payment_status === 'PENDING').length}</strong></div><div><span>BOOKING HARI INI</span><strong>${bookings.filter(tx => tx.booking_date === today).length}</strong></div></div><div class="booking-board-heading"><div><p class="eyebrow">JADWAL KUNJUNGAN</p><h2>${upcoming.length ? 'Booking berikutnya' : 'Riwayat booking'}</h2></div><span>${rows.length} jadwal</span></div><div class="booking-list">${rows.length ? rows.map(tx => { const customer = getCustomer(tx), vehicle = getVehicle(tx); const date = new Date(`${tx.booking_date}T12:00:00`); return `<article class="booking-row"><div class="booking-date"><strong>${date.toLocaleDateString('id-ID', { day: '2-digit' })}</strong><span>${date.toLocaleDateString('id-ID', { month: 'short' })}</span></div><div class="booking-main"><strong>${escapeHtml(tx.item_name)}</strong><span>${escapeHtml(customer?.full_name || 'Pelanggan')} · ${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</span><small>${escapeHtml(tx.code)}</small></div><div class="booking-time"><strong>${escapeHtml(tx.booking_time)}</strong><span>${tx.duration_minutes} menit</span></div><div class="booking-status"><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${statusLabel(tx.transaction_status)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span></div><strong class="booking-amount">${money(tx.amount)}</strong></article>`; }).join('') : '<p class="report-empty">Belum ada booking tercatat.</p>'}</div></div>`;
+  const upcoming = bookings.filter(tx => tx.booking_date >= today && isRevenueTransaction(tx));
+  const rows = bookings.filter(tx => tx.booking_date >= today).length ? bookings.filter(tx => tx.booking_date >= today) : bookings;
+  const confirmedToday = bookings.filter(tx => tx.booking_date === today && isRevenueTransaction(tx)).length;
+  return `<div class="booking-board"><div class="booking-summary"><div><span>BOOKING MENDATANG</span><strong>${upcoming.length}</strong></div><div><span>MENUNGGU PEMBAYARAN</span><strong>${bookings.filter(tx => tx.payment_status === 'PENDING').length}</strong></div><div><span>BOOKING HARI INI</span><strong>${confirmedToday}</strong></div></div><div class="booking-board-heading"><div><p class="eyebrow">JADWAL KUNJUNGAN</p><h2>${rows.some(tx => tx.booking_date >= today) ? 'Booking berikutnya' : 'Riwayat booking'}</h2></div><span>${rows.length} jadwal</span></div><div class="booking-list">${rows.length ? rows.map(tx => { const customer = getCustomer(tx), vehicle = getVehicle(tx); const date = new Date(`${tx.booking_date}T12:00:00`); return `<article class="booking-row"><div class="booking-date"><strong>${date.toLocaleDateString('id-ID', { day: '2-digit' })}</strong><span>${date.toLocaleDateString('id-ID', { month: 'short' })}</span></div><div class="booking-main"><strong>${escapeHtml(tx.item_name)}</strong><span>${escapeHtml(customer?.full_name || 'Pelanggan')} · ${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</span><small>${escapeHtml(tx.code)}</small></div><div class="booking-time"><strong>${escapeHtml(tx.booking_time)}</strong><span>${tx.duration_minutes} menit</span></div><div class="booking-status"><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${statusLabel(tx.transaction_status)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span></div><strong class="booking-amount">${money(tx.amount)}</strong></article>`; }).join('') : '<p class="report-empty">Belum ada booking tercatat.</p>'}</div></div>`;
 }
 function renderAdminCustomers() {
   return `<div class="customer-toolbar"><div><p class="eyebrow">DATA PELANGGAN</p><h2>Pelanggan & Kendaraan</h2><p>Ringkasan kunjungan dan kendaraan terdaftar.</p></div><label class="customer-search" for="customer-search">Cari nama, nomor HP, atau plat<input id="customer-search" type="search" placeholder="Nama, nomor HP, atau plat"></label><span>${db.customers.length} pelanggan · ${db.vehicles.length} kendaraan</span></div><div class="customer-grid">${db.customers.map(customer => {
     const vehicles = db.vehicles.filter(vehicle => vehicle.customer_id === customer.id);
     const transactions = db.transactions.filter(tx => tx.customer_id === customer.id);
     const initials = customer.full_name.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase();
-    const searchText = [customer.full_name, customer.phone, customer.email, ...vehicles.flatMap(vehicle => [vehicle.plate, vehicle.model])].filter(Boolean).join(' ').toLocaleLowerCase('id-ID');
-    return `<article class="customer-card" data-customer-search="${escapeHtml(searchText)}"><div class="customer-card-heading"><span class="customer-avatar">${escapeHtml(initials)}</span><div><h3>${escapeHtml(customer.full_name)}</h3><p>${escapeHtml(customer.phone)}</p>${customer.email ? `<p class="customer-email">${escapeHtml(customer.email)}</p>` : ''}</div></div><div class="customer-stats"><span><strong>${transactions.length}</strong> transaksi</span><span><strong>${vehicles.length}</strong> kendaraan</span></div><div class="customer-vehicles">${vehicles.map(vehicle => `<div class="customer-vehicle"><span class="vehicle-type">${vehicle.type === 'MOTOR' ? 'Motor' : 'Mobil'}</span><strong>${escapeHtml(vehicle.plate)}</strong><small>${escapeHtml(vehicle.model)}</small></div>`).join('') || '<span class="report-empty">Belum ada kendaraan terdaftar.</span>'}</div></article>`;
+    const searchText = [customer.full_name, customer.phone, customer.email, customer.address, ...vehicles.flatMap(vehicle => [vehicle.plate, vehicle.model])].filter(Boolean).join(' ').toLocaleLowerCase('id-ID');
+    return `<article class="customer-card" data-customer-search="${escapeHtml(searchText)}"><div class="customer-card-heading"><span class="customer-avatar">${escapeHtml(initials)}</span><div><h3>${escapeHtml(customer.full_name)}</h3><p>${escapeHtml(customer.phone)}</p>${customer.email ? `<p class="customer-email">${escapeHtml(customer.email)}</p>` : ''}${customer.address ? `<p class="customer-address">${escapeHtml(customer.address)}</p>` : ''}</div></div><div class="customer-stats"><span><strong>${transactions.length}</strong> transaksi</span><span><strong>${vehicles.length}</strong> kendaraan</span></div><button class="text-link" type="button" data-edit-customer-address="${escapeHtml(customer.id)}">Ubah alamat</button><div class="customer-vehicles">${vehicles.map(vehicle => `<div class="customer-vehicle"><span class="vehicle-type">${vehicle.type === 'MOTOR' ? 'Motor' : 'Mobil'}</span><strong>${escapeHtml(vehicle.plate)}</strong><small>${escapeHtml(vehicle.model)}</small></div>`).join('') || '<span class="report-empty">Belum ada kendaraan terdaftar.</span>'}</div></article>`;
   }).join('')}</div>`;
 }
 function adminDescription(tab) {
@@ -894,13 +1115,14 @@ function setAdminDescription(tab) {
 }
 function renderAdminBays() {
   const bays = [1, 2, 3, 4].map(number => {
-    const tx = db.transactions.find(item => item.bay_number === number && isBayTransactionCurrent(item));
+    const tx = getOperationalTransactions(db.transactions).find(item => item.bay_number === number && isRevenueTransaction(item) && isBayTransactionCurrent(item));
     const vehicle = tx && getVehicle(tx);
-    const status = !tx ? 'AVAILABLE' : tx.transaction_status === 'ACTIVE' ? 'OCCUPIED' : 'RESERVED';
+    const started = tx && parseJakartaDateTime(tx.booking_date, tx.booking_time).getTime() <= Date.now();
+    const status = !tx ? 'AVAILABLE' : tx.transaction_status === 'ACTIVE' || started ? 'OCCUPIED' : 'RESERVED';
     const statusLabelText = !tx ? 'TERSEDIA' : status === 'OCCUPIED' ? 'DIGUNAKAN' : 'DIPESAN';
     return `<article class="bay-card bay-${status.toLowerCase()}"><div class="bay-card-top"><span>B-${String(number).padStart(2, '0')}</span>${statusBadge(status)}</div><div class="bay-visual"><img src="${PHOTOS.selfBay}" alt="Bay cuci mandiri ${number}"><span class="bay-number">${String(number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><strong>${vehicle ? `${statusLabelText} · ${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.plate)}` : statusLabelText}</strong><span>${tx ? `${tx.duration_minutes} menit · ${vehicle?.type === 'MOTOR' ? 'Sepeda motor' : 'Mobil'}` : 'Belum ada sesi aktif'}</span><span class="bay-time">${status === 'OCCUPIED' ? `${bayMinutesLeft(tx)} menit tersisa` : status === 'RESERVED' ? `${tx.booking_time} · dipesan` : 'Tersedia sekarang'}</span></div></article>`;
   }).join('');
-  return `<div class="catalog-toolbar"><div><p class="eyebrow">AREA CUCI MANDIRI</p><h2>Status bay saat ini.</h2></div><span class="shop-count">${db.transactions.filter(tx => tx.transaction_status === 'ACTIVE' && tx.bay_number && isBayTransactionCurrent(tx)).length} bay digunakan</span></div><div class="bay-grid">${bays}</div>`;
+  return `<div class="catalog-toolbar"><div><p class="eyebrow">AREA CUCI MANDIRI</p><h2>Status bay saat ini.</h2></div><span class="shop-count">${getOperationalTransactions(db.transactions).filter(tx => isRevenueTransaction(tx) && tx.bay_number && isBayTransactionCurrent(tx) && (tx.transaction_status === 'ACTIVE' || parseJakartaDateTime(tx.booking_date, tx.booking_time).getTime() <= Date.now())).length} bay digunakan</span></div><div class="bay-grid">${bays}</div>`;
 }
 function renderReportDetailsLegacy() {
   const paid = db.transactions.filter(tx => tx.payment_status === 'PAID');
@@ -915,7 +1137,7 @@ function renderReportDetailsLegacy() {
 }
 function renderReportDetails() {
   const transactions = reportTransactions();
-  const paid = transactions.filter(tx => tx.payment_status === 'PAID');
+  const paid = transactions.filter(isRevenueTransaction);
   const daily = dailyPaidRevenue(transactions);
   const renderBars = (rows, formatValue = money, valueKey = 'amount') => {
     const maximum = Math.max(1, ...rows.map(row => row.amount));
@@ -963,6 +1185,7 @@ function renderAdminCatalog() {
   }).join('')}</div>`;
 }
 function activateAdminTab(tab) {
+  activeAdminTab = tab;
   document.querySelectorAll('.admin-nav').forEach(button => button.classList.toggle('active', button.dataset.adminTab === tab));
   const heading = document.getElementById('admin-heading');
   const content = document.getElementById('admin-content');
@@ -1170,6 +1393,22 @@ async function loadAdminData() {
       throw new Error(`Gagal memuat data Supabase (${failures.join('; ')}).`);
     }
     const loaded = Object.fromEntries(tables.map((table, index) => [table, results[index].value]));
+    const customersById = new Map(loaded.customers.map(customer => [customer.id, customer]));
+    const vehiclesById = new Map(loaded.vehicles.map(vehicle => [vehicle.id, vehicle]));
+    const itemsById = new Map(loaded.services_products.map(item => [item.id, item]));
+    const inconsistentTransactions = loaded.transactions.filter(tx => {
+      const item = itemsById.get(tx.item_id);
+      const vehicle = tx.vehicle_id ? vehiclesById.get(tx.vehicle_id) : null;
+      return !customersById.has(tx.customer_id)
+        || !item
+        || item.item_type !== tx.item_type
+        || (tx.item_type === 'SERVICE' && !vehicle)
+        || (vehicle && vehicle.customer_id !== tx.customer_id)
+        || (vehicle && tx.item_type === 'SERVICE' && vehicle.type !== item.type);
+    });
+    if (inconsistentTransactions.length) {
+      throw new Error(`${inconsistentTransactions.length} transaksi memiliki relasi pelanggan, kendaraan, atau item yang tidak sesuai.`);
+    }
     if ([...publicCatalogIds].some(id => !loaded.services_products.some(item => item.id === id))) {
       throw new Error('Policy RLS menolak pembacaan katalog oleh role authenticated. Jalankan sql/rls-authenticated-access.sql di Supabase.');
     }
@@ -1244,15 +1483,46 @@ function editCatalogItem(item) {
   document.getElementById('flow-dialog').showModal();
   simplifyUiSymbols(document.getElementById('flow-dialog'));
 }
+function editCustomerAddress(customer) {
+  const content = document.getElementById('dialog-content');
+  content.innerHTML = `<p class="eyebrow">DATA PELANGGAN</p><h2>Alamat <em>${escapeHtml(customer.full_name)}</em></h2><form id="customer-address-form" class="dialog-form"><input type="hidden" name="customer_id" value="${escapeHtml(customer.id)}"><label>Alamat untuk Antar-Jemput<textarea name="address" rows="3" required>${escapeHtml(customer.address || '')}</textarea></label><button class="button button-dark button-full" type="submit">Simpan alamat</button></form>`;
+  document.getElementById('flow-dialog').showModal();
+}
 
 document.addEventListener('click', async event => {
-  const demoPaymentButton = event.target.closest('[data-demo-payment-paid]');
-  if (demoPaymentButton) {
-    const tx = SEED.transactions.find(item => item.id === demoPaymentButton.dataset.demoPaymentPaid);
-    if (!tx || (demoPaymentStatuses[tx.id] || tx.payment_status) !== 'PENDING') return;
-    demoPaymentStatuses[tx.id] = 'PAID';
-    activateAdminTab('transactions');
-    showToast(`${tx.code} ditandai lunas untuk demo.`);
+  const cancelButton = event.target.closest('[data-cancel-booking]');
+  if (cancelButton) {
+    cancelButton.disabled = true;
+    try {
+      await rpcRequest('cancel_transaction', {
+        p_transaction_id: cancelButton.dataset.cancelBooking,
+        p_search: cancelButton.dataset.cancelSearch
+      });
+      showToast('Booking dibatalkan. Periksa riwayat untuk status pengembalian dana.');
+      document.getElementById('history-search')?.requestSubmit();
+    } catch (error) {
+      cancelButton.disabled = false;
+      showToast(error.message || 'Booking belum dapat dibatalkan.', 'error');
+    }
+    return;
+  }
+  const refundButton = event.target.closest('[data-refund-complete]');
+  if (refundButton) {
+    const tx = db.transactions.find(item => item.id === refundButton.dataset.refundComplete);
+    if (!tx || tx.refund_status !== 'PENDING') return;
+    refundButton.disabled = true;
+    try {
+      const updated = await rpcRequest('complete_transaction_refund', { p_transaction_id: tx.id });
+      if (!updated || updated.refund_status !== 'COMPLETED' || updated.payment_status !== 'REFUNDED') {
+        throw new Error('Status pengembalian dana belum tersimpan.');
+      }
+      Object.assign(tx, updated);
+      activateAdminTab('transactions');
+      showToast('Pengembalian dana dicatat selesai. Pastikan dana sudah dikembalikan melalui penyedia pembayaran.');
+    } catch (error) {
+      refundButton.disabled = false;
+      showToast(error.message || 'Status pengembalian dana belum dapat diperbarui.', 'error');
+    }
     return;
   }
   const paymentButton = event.target.closest('[data-payment-paid]');
@@ -1261,13 +1531,13 @@ document.addEventListener('click', async event => {
     if (!tx || tx.payment_status !== 'PENDING') return;
     paymentButton.disabled = true;
     try {
-      const updatedRows = await patchRow('transactions', tx.id, { payment_status: 'PAID' });
-      if (!updatedRows?.some(row => row.id === tx.id && row.payment_status === 'PAID')) {
-        throw new Error('Status pembayaran belum tersimpan. Periksa izin transaksi lalu coba lagi.');
+      const updated = await rpcRequest('confirm_transaction_payment', { p_transaction_id: tx.id });
+      if (!updated || updated.payment_status !== 'PAID') {
+        throw new Error('Status pembayaran belum tersimpan.');
       }
-      tx.payment_status = 'PAID';
+      Object.assign(tx, updated);
       activateAdminTab('transactions');
-      showToast(`${tx.code} ditandai lunas.`);
+      showToast(`${tx.code} dikonfirmasi lunas.`);
     } catch (error) {
       paymentButton.disabled = false;
       showToast(error.message || 'Status pembayaran belum dapat diperbarui.', 'error');
@@ -1320,6 +1590,8 @@ document.addEventListener('click', async event => {
   if (tab) { activateAdminTab(tab.dataset.adminTab); return; }
   const item = event.target.closest('[data-edit-item]');
   if (item) editCatalogItem(db.services_products.find(product => product.id === item.dataset.editItem));
+  const customerAddressButton = event.target.closest('[data-edit-customer-address]');
+  if (customerAddressButton) editCustomerAddress(db.customers.find(customer => customer.id === customerAddressButton.dataset.editCustomerAddress));
   const addon = event.target.closest('[data-addon]');
   if (addon) { openDialog('booking', 'svc-car'); document.querySelector('[name="addon_id"]').value = addon.dataset.addon; document.querySelector('[name="addon_id"]').dispatchEvent(new Event('change', { bubbles: true })); }
 });
@@ -1361,6 +1633,21 @@ document.addEventListener('submit', async event => {
     try { await submitProducts(event.target); }
     catch (error) { showToast(error.message, 'error'); if (submit.isConnected) submit.disabled = false; }
   }
+  if (event.target.id === 'customer-address-form') {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.target));
+    const customer = db.customers.find(item => item.id === data.customer_id);
+    if (!customer) { showToast('Data pelanggan tidak ditemukan.', 'error'); return; }
+    try {
+      await patchRow('customers', customer.id, { address: String(data.address || '').trim() });
+      customer.address = String(data.address || '').trim();
+      document.getElementById('flow-dialog').close();
+      activateAdminTab('customers');
+      showToast('Alamat pelanggan tersimpan.');
+    } catch (error) {
+      showToast(error.message || 'Alamat belum dapat disimpan.', 'error');
+    }
+  }
   if (event.target.id === 'catalog-form') {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.target));
@@ -1381,6 +1668,11 @@ document.addEventListener('submit', async event => {
 document.addEventListener('change', async event => {
   if (event.target.matches('[data-queue-id]')) {
     const tx = db.transactions.find(item => item.id === event.target.dataset.queueId);
+    const current = tx && normalizeOperationalTransaction(tx);
+    if (!tx || !isRevenueTransaction(current) || current.transaction_status === 'BOOKED') {
+      if (tx) event.target.value = tx.queue_status;
+      return;
+    }
     const changes = { queue_status: event.target.value, transaction_status: event.target.value === 'COMPLETED' ? 'COMPLETED' : 'ACTIVE' };
     try { await patchRow('transactions', tx.id, changes); Object.assign(tx, changes); activateAdminTab('queue'); showToast(`${tx.code} dipindahkan ke ${tx.queue_status.toLowerCase()}.`); }
     catch (error) { event.target.value = tx.queue_status; showToast(error.message, 'error'); }
@@ -1391,11 +1683,20 @@ document.getElementById('mobile-menu').addEventListener('click', () => document.
 bootstrapSupabase();
 render();
 window.setInterval(async () => {
-  if (page !== 'self-service' || !databaseConnected || publicRefreshInProgress || document.visibilityState !== 'visible') return;
+  if (!databaseConnected || publicRefreshInProgress || document.visibilityState !== 'visible') return;
   publicRefreshInProgress = true;
   try {
-    await loadPublicData();
-    if (page === 'self-service') render();
+    if (page === 'self-service') {
+      await loadPublicData();
+      if (page === 'self-service') render();
+    } else if (page === 'admin' && adminUser) {
+      const currentTab = activeAdminTab;
+      await loadAdminData();
+      if (page === 'admin' && adminUser) {
+        render();
+        if (currentTab !== 'overview') activateAdminTab(currentTab);
+      }
+    }
   } catch (_) {
   } finally {
     publicRefreshInProgress = false;

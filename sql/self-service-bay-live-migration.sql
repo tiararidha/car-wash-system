@@ -157,11 +157,7 @@ begin
   end if;
   service_duration := total_duration - coalesce(addon.duration, 0);
   if service_duration < 1 then raise exception 'Durasi layanan tidak valid.'; end if;
-  if wash_service.category = 'SELF_SERVICE' then
-    base_price := round(wash_service.price::numeric * service_duration / greatest(wash_service.duration, 1));
-  else
-    base_price := wash_service.price;
-  end if;
+  base_price := wash_service.price;
   final_amount := base_price + coalesce(addon.price, 0);
 
   transaction_kind := p_transaction ->> 'transaction_type';

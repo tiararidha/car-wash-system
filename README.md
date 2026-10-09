@@ -16,8 +16,9 @@ Buka `http://localhost:3000`.
 
 1. Buka bagian konstanta di awal `app.js`.
 2. Isi `SUPABASE_URL` dengan Project URL (`https://xxxxx.supabase.co`) dan `SUPABASE_PUBLISHABLE_KEY` dengan publishable key proyek.
-3. Jalankan `sql/schema.sql` melalui Supabase SQL Editor. Schema membuat tepat empat tabel: `customers`, `vehicles`, `services_products`, dan `transactions`, beserta indeks, constraints, RLS, RPC aman, dan data demo lintas tanggal.
+3. Jalankan `sql/schema.sql` melalui Supabase SQL Editor. Schema membuat tepat empat tabel: `customers`, `vehicles`, `services_products`, dan `transactions`, beserta indeks, constraints, RLS, RPC aman, dan data awal operasional.
 4. Jalankan `sql/rls-authenticated-access.sql` untuk memperbarui izin authenticated dan RPC. Muat ulang aplikasi. Data katalog, metrik publik, riwayat, pelanggan, kendaraan, transaksi, dan status bay harus berasal dari Supabase; kegagalan akses ditampilkan sebagai error, bukan diganti data seed.
+5. Jalankan `sql/self-service-bay-live-migration.sql`, lalu `sql/business-flow-hardening.sql`. Migrasi terakhir memperketat relasi dan nominal transaksi, pembayaran sebelum pengerjaan, pembatalan/refund, alamat pelanggan, Antar-Jemput Professional Wash, serta rekonsiliasi otomatis setiap menit. Migrasi hanya menambah kolom dan fungsi pada tabel yang ada; tidak membuat tabel baru.
 
 Jangan masukkan `service_role` atau secret key ke browser. Aplikasi memakai REST API dan Supabase Auth langsung dengan publishable key.
 
@@ -29,10 +30,16 @@ Jangan masukkan `service_role` atau secret key ke browser. Aplikasi memakai REST
 
 Data pelanggan dan transaksi tidak dibuka untuk pembacaan anon. Pencarian history menggunakan RPC yang hanya mengembalikan kecocokan persis berdasarkan kode booking, nomor HP, atau plat; lookup kendaraan menggunakan nomor HP persis. Penjualan produk memakai RPC yang mengunci stok, mengurangi stok, dan membuat transaksi secara atomik.
 
-## Demo dan Pembayaran
+## Pembayaran dan Operasional
 
 Jika Supabase belum dapat dihubungi, website menampilkan error state dan tidak mengganti data aktif dengan data preview. localStorage hanya menyimpan keranjang; sessionStorage hanya menyimpan sesi login sementara.
 
-Walk-in CASH dicatat lunas. Booking cash dan metode cashless tetap `PENDING` sampai dibayar; metode QRIS, E-Wallet, dan Card memerlukan payment gateway untuk konfirmasi otomatis, yang belum disertakan.
+Harga jasa final: Professional Car Wash Rp50.000, Professional Motorcycle Wash Rp20.000, Self-Service Car Rp30.000, dan Self-Service Motorcycle Rp10.000. Antar-Jemput sekali pulang-pergi maksimal 3 km: mobil Rp10.000 dan motor Rp5.000.
+
+Walk-in tunai menunggu konfirmasi Admin setelah uang diterima. Booking hanya memakai QRIS, E-Wallet, atau Card dan tidak memiliki konfirmasi manual; booking tetap belum dibayar sampai payment gateway memanggil `confirm_booking_payment` setelah pembayaran benar-benar berhasil. Gateway belum terhubung, jadi transaksi cashless tidak otomatis menjadi Lunas. Pembatalan booking sebelum waktu mulai melepas slot; dana yang telah dibayar tercatat menunggu pengembalian manual. Status pengembalian selesai hanya dicatat Admin setelah dana benar-benar dikembalikan di luar aplikasi.
+
+Antar-Jemput tersedia sebagai add-on Booking Professional Wash mobil maupun motor, bukan Walk-in atau Self-Service. Jarak pulang-pergi wajib diisi dan dibatasi maksimal 3 km. Alamat diambil dari data pelanggan; pelanggan baru dapat memasukkannya saat memesan. Alamat pelanggan lama yang belum tercatat perlu dilengkapi Admin terlebih dahulu.
+
+Rekonsiliasi Self-Service tetap memakai `pg_cron` setiap menit dan kini mengatur seluruh layanan yang sudah dibayar. Perubahan status tersimpan otomatis tanpa halaman atau tindakan admin; pembaruan status persisten dapat tertunda sampai tick cron berikutnya.
 
 Foto `assets/self-service-bay.jpg`: G. Edward Johnson, [Glo Car Wash, Pahrump, NV](https://commons.wikimedia.org/wiki/File:Car_Wash_Pahrump_NV_2026-04-03_15-05-36.jpg), dilisensikan di bawah [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Versi lokal diubah ukuran untuk penggunaan web.

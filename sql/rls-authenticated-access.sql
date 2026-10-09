@@ -120,7 +120,7 @@ begin
   where id = p_transaction ->> 'item_id' and item_type = 'PRODUCT' and active = true for update;
   if not found then raise exception 'Produk tidak ditemukan atau tidak aktif.'; end if;
   if product_stock < sale_quantity then raise exception 'Stok produk tidak mencukupi.'; end if;
-  expected_payment_status := case when p_transaction ->> 'payment_method' = 'CASH' then 'PAID' else 'PENDING' end;
+  expected_payment_status := 'PENDING';
   if p_transaction ->> 'payment_status' <> expected_payment_status then raise exception 'Status pembayaran tidak sesuai metode.'; end if;
   update public.services_products set stock = stock - sale_quantity, updated_at = now()
   where id = p_transaction ->> 'item_id' returning stock into new_stock;
@@ -130,7 +130,7 @@ begin
   values (p_transaction ->> 'id', p_transaction ->> 'code', p_transaction ->> 'customer_id', null,
     p_transaction ->> 'item_id', 'PRODUCT', product_name, sale_quantity,
     product_price * sale_quantity, p_transaction ->> 'payment_method', expected_payment_status,
-    'SHOP', 'COMPLETED', 'COMPLETED', (p_transaction ->> 'booking_date')::date,
+    'SHOP', 'PENDING', 'WAITING', (p_transaction ->> 'booking_date')::date,
     (p_transaction ->> 'booking_time')::time, 0, null, coalesce((p_transaction ->> 'created_at')::timestamptz, now()));
   return new_stock;
 end;
@@ -172,11 +172,7 @@ begin
   total_duration := (p_transaction ->> 'duration_minutes')::integer;
   service_duration := total_duration - coalesce(addon.duration, 0);
   if service_duration < 1 then raise exception 'Durasi layanan tidak valid.'; end if;
-  if wash_service.category = 'SELF_SERVICE' then
-    base_price := round(wash_service.price::numeric * service_duration / greatest(wash_service.duration, 1));
-  else
-    base_price := wash_service.price;
-  end if;
+  base_price := wash_service.price;
   final_amount := base_price + coalesce(addon.price, 0);
 
   transaction_kind := p_transaction ->> 'transaction_type';
@@ -185,8 +181,11 @@ begin
     raise exception 'Self-Service harus dibuat sebagai booking.';
   end if;
   payment_method_value := p_transaction ->> 'payment_method';
-  payment_status_value := case when transaction_kind = 'WALK_IN' and payment_method_value = 'CASH' then 'PAID' else 'PENDING' end;
-  transaction_status_value := case when transaction_kind = 'BOOKING' then 'BOOKED' else 'ACTIVE' end;
+  if transaction_kind = 'BOOKING' and payment_method_value = 'CASH' then
+    raise exception 'Booking harus dibayar di muka dengan metode cashless.';
+  end if;
+  payment_status_value := 'PENDING';
+  transaction_status_value := 'PENDING';
   bay := nullif(p_transaction ->> 'bay_number', '')::integer;
 
   if wash_service.category = 'SELF_SERVICE' then

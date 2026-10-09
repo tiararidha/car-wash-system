@@ -4,6 +4,7 @@ create table if not exists public.customers (
   id text primary key,
   full_name text not null check (length(trim(full_name)) > 1),
   phone text not null unique,
+  address text not null default '',
   created_at timestamptz not null default now()
 );
 
@@ -46,14 +47,22 @@ create table if not exists public.transactions (
   payment_method text not null check (payment_method in ('CASH', 'QRIS', 'E_WALLET', 'CARD')),
   payment_status text not null default 'PENDING' check (payment_status in ('PENDING', 'PAID', 'FAILED', 'REFUNDED')),
   transaction_type text not null check (transaction_type in ('BOOKING', 'WALK_IN', 'SHOP')),
-  transaction_status text not null default 'ACTIVE' check (transaction_status in ('PENDING', 'BOOKED', 'ACTIVE', 'COMPLETED', 'CANCELLED')),
+  transaction_status text not null default 'PENDING' check (transaction_status in ('PENDING', 'BOOKED', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'EXPIRED')),
   queue_status text not null default 'WAITING' check (queue_status in ('WAITING', 'WASHING', 'FINISHING', 'COMPLETED')),
   booking_date date not null default current_date,
   booking_time time not null default localtime,
   duration_minutes integer not null default 0 check (duration_minutes >= 0),
   bay_number integer check (bay_number between 1 and 4),
+  addon_id text references public.services_products(id) on delete restrict,
+  pickup_distance_km numeric(4, 2) check (pickup_distance_km is null or pickup_distance_km between 0.01 and 3),
+  completed_at timestamptz,
+  refund_status text not null default 'NONE' check (refund_status in ('NONE', 'PENDING', 'COMPLETED')),
   created_at timestamptz not null default now()
 );
+
+alter table public.transactions drop constraint if exists transactions_transaction_status_check;
+alter table public.transactions add constraint transactions_transaction_status_check
+  check (transaction_status in ('PENDING', 'BOOKED', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'EXPIRED'));
 
 create index if not exists vehicles_customer_idx on public.vehicles(customer_id);
 create index if not exists transactions_customer_idx on public.transactions(customer_id);
@@ -182,7 +191,7 @@ begin
   where id = p_transaction ->> 'item_id' and item_type = 'PRODUCT' and active = true for update;
   if not found then raise exception 'Produk tidak ditemukan atau tidak aktif.'; end if;
   if product_stock < sale_quantity then raise exception 'Stok produk tidak mencukupi.'; end if;
-  expected_payment_status := case when p_transaction ->> 'payment_method' = 'CASH' then 'PAID' else 'PENDING' end;
+  expected_payment_status := 'PENDING';
   if p_transaction ->> 'payment_status' <> expected_payment_status then raise exception 'Status pembayaran tidak sesuai metode.'; end if;
   update public.services_products set stock = stock - sale_quantity, updated_at = now()
   where id = p_transaction ->> 'item_id' returning stock into new_stock;
@@ -192,7 +201,7 @@ begin
   values (p_transaction ->> 'id', p_transaction ->> 'code', p_transaction ->> 'customer_id', null,
     p_transaction ->> 'item_id', 'PRODUCT', product_name, sale_quantity,
     product_price * sale_quantity, p_transaction ->> 'payment_method', expected_payment_status,
-    'SHOP', 'COMPLETED', 'COMPLETED', (p_transaction ->> 'booking_date')::date,
+    'SHOP', 'PENDING', 'WAITING', (p_transaction ->> 'booking_date')::date,
     (p_transaction ->> 'booking_time')::time, 0, null, coalesce((p_transaction ->> 'created_at')::timestamptz, now()));
   return new_stock;
 end;
@@ -234,11 +243,7 @@ begin
   total_duration := (p_transaction ->> 'duration_minutes')::integer;
   service_duration := total_duration - coalesce(addon.duration, 0);
   if service_duration < 1 then raise exception 'Durasi layanan tidak valid.'; end if;
-  if wash_service.category = 'SELF_SERVICE' then
-    base_price := round(wash_service.price::numeric * service_duration / greatest(wash_service.duration, 1));
-  else
-    base_price := wash_service.price;
-  end if;
+  base_price := wash_service.price;
   final_amount := base_price + coalesce(addon.price, 0);
 
   transaction_kind := p_transaction ->> 'transaction_type';
@@ -247,8 +252,11 @@ begin
     raise exception 'Self-Service harus dibuat sebagai booking.';
   end if;
   payment_method_value := p_transaction ->> 'payment_method';
-  payment_status_value := case when transaction_kind = 'WALK_IN' and payment_method_value = 'CASH' then 'PAID' else 'PENDING' end;
-  transaction_status_value := case when transaction_kind = 'BOOKING' then 'BOOKED' else 'ACTIVE' end;
+  if transaction_kind = 'BOOKING' and payment_method_value = 'CASH' then
+    raise exception 'Booking harus dibayar di muka dengan metode cashless.';
+  end if;
+  payment_status_value := 'PENDING';
+  transaction_status_value := 'PENDING';
   bay := nullif(p_transaction ->> 'bay_number', '')::integer;
 
   if wash_service.category = 'SELF_SERVICE' then
@@ -294,10 +302,10 @@ grant execute on function public.get_public_bay_status() to anon, authenticated;
 grant execute on function public.record_product_sale(jsonb) to anon, authenticated;
 grant execute on function public.record_service_transaction(jsonb, text) to anon, authenticated;
 
-insert into public.customers (id, full_name, phone) values
-  ('c-1', 'Nadia Prameswari', '081234567890'),
-  ('c-2', 'Rafi Mahendra', '081298765432'),
-  ('c-3', 'Dimas Wicaksono', '082145670001')
+insert into public.customers (id, full_name, phone, address) values
+  ('c-1', 'Nadia Prameswari', '081234567890', 'Jl. Pahlawan 12, Semarang'),
+  ('c-2', 'Rafi Mahendra', '081298765432', 'Jl. Gajah Mada 45, Semarang'),
+  ('c-3', 'Dimas Wicaksono', '082145670001', 'Jl. Imam Bonjol 67, Semarang')
 on conflict (id) do update set full_name = excluded.full_name, phone = excluded.phone;
 
 insert into public.vehicles (id, customer_id, type, plate, model) values
@@ -314,13 +322,15 @@ where id = 'prd-cloth' and exists (select 1 from public.services_products p wher
   and not exists (select 1 from public.transactions t where t.id = 't-9');
 
 insert into public.services_products (id, item_type, name, category, type, description, price, duration, stock, min_stock, active, image) values
-  ('svc-car', 'SERVICE', 'Regular Car Wash', 'REGULAR', 'CAR', 'Cuci busa menyeluruh, bilas tekanan tinggi, dan pengeringan rapi untuk mobil harian Anda.', 80000, 50, 0, 0, true, 'https://images.pexels.com/photos/6873176/pexels-photo-6873176.jpeg?auto=compress&cs=tinysrgb&w=1000'),
-  ('svc-moto', 'SERVICE', 'Regular Motorcycle Wash', 'REGULAR', 'MOTOR', 'Pembersihan bodi, velg, sela mesin, dan bagian motor yang sulit dijangkau.', 35000, 35, 0, 0, true, 'https://images.pexels.com/photos/36709685/pexels-photo-36709685.jpeg?auto=compress&cs=tinysrgb&w=1000'),
+  ('svc-car', 'SERVICE', 'Professional Car Wash', 'REGULAR', 'CAR', 'Cuci busa menyeluruh, bilas tekanan tinggi, dan pengeringan rapi untuk mobil harian Anda.', 50000, 50, 0, 0, true, 'https://images.pexels.com/photos/6873176/pexels-photo-6873176.jpeg?auto=compress&cs=tinysrgb&w=1000'),
+  ('svc-moto', 'SERVICE', 'Professional Motorcycle Wash', 'REGULAR', 'MOTOR', 'Pembersihan bodi, velg, sela mesin, dan bagian motor yang sulit dijangkau.', 20000, 35, 0, 0, true, 'https://images.pexels.com/photos/36709685/pexels-photo-36709685.jpeg?auto=compress&cs=tinysrgb&w=1000'),
   ('svc-self-car', 'SERVICE', 'Self-Service Car Bay', 'SELF_SERVICE', 'CAR', 'Cuci mobil mandiri dengan foam, semprotan tekanan tinggi, dan ruang kerja pribadi.', 30000, 30, 0, 0, true, 'https://images.pexels.com/photos/14023348/pexels-photo-14023348.jpeg?auto=compress&cs=tinysrgb&w=1000'),
-  ('svc-self-moto', 'SERVICE', 'Self-Service Motorcycle Bay', 'SELF_SERVICE', 'MOTOR', 'Cuci motor mandiri di bay khusus dengan peralatan yang siap digunakan.', 20000, 25, 0, 0, true, 'https://images.pexels.com/photos/20515049/pexels-photo-20515049.jpeg?auto=compress&cs=tinysrgb&w=1000'),
+  ('svc-self-moto', 'SERVICE', 'Self-Service Motorcycle', 'SELF_SERVICE', 'MOTOR', 'Cuci motor mandiri di bay khusus dengan peralatan yang siap digunakan.', 10000, 25, 0, 0, true, 'https://images.pexels.com/photos/20515049/pexels-photo-20515049.jpeg?auto=compress&cs=tinysrgb&w=1000'),
   ('addon-vacuum', 'ADD_ON', 'Vacuum interior', 'ADD_ON', null, 'Pembersihan debu pada karpet, jok, dan sela interior.', 20000, 15, 0, 0, true, 'https://images.pexels.com/photos/17029947/pexels-photo-17029947.jpeg?auto=compress&cs=tinysrgb&w=700'),
   ('addon-wax', 'ADD_ON', 'Lapisan spray wax', 'ADD_ON', null, 'Lapisan wax cepat untuk kilap dan perlindungan tambahan.', 25000, 10, 0, 0, true, 'https://images.pexels.com/photos/20042050/pexels-photo-20042050.jpeg?auto=compress&cs=tinysrgb&w=700'),
   ('addon-tire', 'ADD_ON', 'Tire dressing', 'ADD_ON', null, 'Finishing satin agar ban tampak hitam bersih.', 15000, 8, 0, 0, true, 'https://images.pexels.com/photos/7154623/pexels-photo-7154623.jpeg?auto=compress&cs=tinysrgb&w=700'),
+  ('addon-pickup', 'ADD_ON', 'Antar-Jemput Mobil', 'PICKUP', null, 'Penjemputan dan pengantaran mobil, maksimal 3 km pulang-pergi.', 10000, 0, 0, 0, true, 'https://images.pexels.com/photos/6873176/pexels-photo-6873176.jpeg?auto=compress&cs=tinysrgb&w=700'),
+  ('addon-pickup-moto', 'ADD_ON', 'Antar-Jemput Motor', 'PICKUP', null, 'Penjemputan dan pengantaran motor, maksimal 3 km pulang-pergi.', 5000, 0, 0, 0, true, 'https://images.pexels.com/photos/36709685/pexels-photo-36709685.jpeg?auto=compress&cs=tinysrgb&w=700'),
   ('prd-shampoo', 'PRODUCT', 'Sampo Cuci Mobil pH Netral', 'WASH & CARE', null, 'Sampo khusus kendaraan, aman untuk lapisan wax · 500 ml.', 45000, 0, 22, 6, true, 'https://images.pexels.com/photos/4674366/pexels-photo-4674366.jpeg?auto=compress&cs=tinysrgb&w=700'),
   ('prd-cloth', 'PRODUCT', 'Kain Premium Microfiber', 'TOOLS', null, 'Serat lembut dan tebal untuk mengeringkan bodi tanpa goresan · 40 × 40 cm.', 40000, 0, 13, 5, true, 'https://images.pexels.com/photos/11370616/pexels-photo-11370616.jpeg?auto=compress&cs=tinysrgb&w=700'),
   ('prd-tire', 'PRODUCT', 'Semir Ban Satin', 'PROTECTION', null, 'Perawatan ban dengan hasil hitam satin, bukan licin berminyak · 250 ml.', 60000, 0, 9, 4, true, 'https://images.pexels.com/photos/7154623/pexels-photo-7154623.jpeg?auto=compress&cs=tinysrgb&w=700'),
@@ -332,16 +342,16 @@ on conflict (id) do update set item_type = excluded.item_type, name = excluded.n
   min_stock = excluded.min_stock, active = excluded.active, image = excluded.image, updated_at = now();
 
 insert into public.transactions (id, code, customer_id, vehicle_id, item_id, item_type, item_name, quantity, amount, payment_method, payment_status, transaction_type, transaction_status, queue_status, booking_date, booking_time, duration_minutes, bay_number, created_at) values
-  ('t-1', 'RS-260929-1042', 'c-1', 'v-1', 'svc-car', 'SERVICE', 'Regular Car Wash', 1, 80000, 'QRIS', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED', current_date - 1, '09:20', 50, null, now() - interval '1 day'),
-  ('t-2', 'RS-260930-1088', 'c-2', 'v-2', 'svc-self-moto', 'SERVICE', 'Self-Service Motorcycle Bay', 1, 20000, 'CASH', 'PAID', 'WALK_IN', 'ACTIVE', 'WASHING', current_date, localtime - interval '8 minutes', 25, 2, now() - interval '8 minutes'),
-  ('t-3', 'RS-261001-0107', 'c-3', 'v-3', 'svc-self-car', 'SERVICE', 'Self-Service Car Bay', 1, 30000, 'E_WALLET', 'PENDING', 'BOOKING', 'BOOKED', 'WAITING', current_date + 1, '14:30', 30, 1, now()),
-  ('t-4', 'RS-260929-0781', 'c-2', 'v-2', 'svc-moto', 'SERVICE', 'Regular Motorcycle Wash', 1, 35000, 'CASH', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED', current_date - 1, '16:40', 35, null, now() - interval '1 day'),
+  ('t-1', 'RS-260929-1042', 'c-1', 'v-1', 'svc-car', 'SERVICE', 'Professional Car Wash', 1, 50000, 'QRIS', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED', current_date - 1, '09:20', 50, null, now() - interval '1 day'),
+  ('t-2', 'RS-260930-1088', 'c-2', 'v-2', 'svc-self-moto', 'SERVICE', 'Self-Service Motorcycle', 1, 10000, 'QRIS', 'PAID', 'BOOKING', 'ACTIVE', 'WASHING', current_date, localtime - interval '8 minutes', 25, 2, now() - interval '8 minutes'),
+  ('t-3', 'RS-261001-0107', 'c-3', 'v-3', 'svc-self-car', 'SERVICE', 'Self-Service Car', 1, 30000, 'E_WALLET', 'PAID', 'BOOKING', 'BOOKED', 'WAITING', current_date + 1, '14:30', 30, 1, now()),
+  ('t-4', 'RS-260929-0781', 'c-2', 'v-2', 'svc-moto', 'SERVICE', 'Professional Motorcycle Wash', 1, 20000, 'CASH', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED', current_date - 1, '16:40', 35, null, now() - interval '1 day'),
   ('t-5', 'RS-260928-0551', 'c-1', null, 'prd-shampoo', 'PRODUCT', 'Sampo Cuci Mobil pH Netral', 2, 90000, 'CASH', 'PAID', 'SHOP', 'COMPLETED', 'COMPLETED', current_date - 2, '11:10', 0, null, now() - interval '2 days'),
-  ('t-6', 'RS-260927-0332', 'c-3', 'v-3', 'svc-car', 'SERVICE', 'Regular Car Wash', 1, 80000, 'QRIS', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED', current_date - 3, '15:25', 50, null, now() - interval '3 days'),
-  ('t-7', 'RS-261002-0216', 'c-2', 'v-2', 'svc-moto', 'SERVICE', 'Regular Motorcycle Wash', 1, 35000, 'CARD', 'PENDING', 'BOOKING', 'BOOKED', 'WAITING', current_date + 2, '10:30', 35, null, now()),
-  ('t-8', 'RS-260930-1134', 'c-3', 'v-3', 'svc-car', 'SERVICE', 'Regular Car Wash', 1, 80000, 'CASH', 'PAID', 'WALK_IN', 'ACTIVE', 'WAITING', current_date, localtime - interval '3 minutes', 50, null, now() - interval '3 minutes'),
+  ('t-6', 'RS-260927-0332', 'c-3', 'v-3', 'svc-car', 'SERVICE', 'Professional Car Wash', 1, 50000, 'QRIS', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED', current_date - 3, '15:25', 50, null, now() - interval '3 days'),
+  ('t-7', 'RS-261002-0216', 'c-2', 'v-2', 'svc-moto', 'SERVICE', 'Professional Motorcycle Wash', 1, 20000, 'CARD', 'PAID', 'BOOKING', 'BOOKED', 'WAITING', current_date + 2, '10:30', 35, null, now()),
+  ('t-8', 'RS-260930-1134', 'c-3', 'v-3', 'svc-car', 'SERVICE', 'Professional Car Wash', 1, 50000, 'CASH', 'PAID', 'WALK_IN', 'ACTIVE', 'WAITING', current_date, localtime - interval '3 minutes', 50, null, now() - interval '3 minutes'),
   ('t-9', 'RS-260926-0972', 'c-1', null, 'prd-cloth', 'PRODUCT', 'Kain Premium Microfiber', 1, 40000, 'QRIS', 'PAID', 'SHOP', 'COMPLETED', 'COMPLETED', current_date - 4, '12:05', 0, null, now() - interval '4 days'),
-  ('t-10', 'RS-260925-0821', 'c-3', 'v-3', 'svc-self-car', 'SERVICE', 'Self-Service Car Bay', 1, 30000, 'E_WALLET', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED', current_date - 5, '17:15', 30, null, now() - interval '5 days')
+  ('t-10', 'RS-260925-0821', 'c-3', 'v-3', 'svc-self-car', 'SERVICE', 'Self-Service Car', 1, 30000, 'E_WALLET', 'PAID', 'BOOKING', 'COMPLETED', 'COMPLETED', current_date - 5, '17:15', 30, 4, now() - interval '5 days')
 on conflict (id) do update set code = excluded.code, customer_id = excluded.customer_id, vehicle_id = excluded.vehicle_id,
   item_id = excluded.item_id, item_type = excluded.item_type, item_name = excluded.item_name, quantity = excluded.quantity,
   amount = excluded.amount, payment_method = excluded.payment_method, payment_status = excluded.payment_status,

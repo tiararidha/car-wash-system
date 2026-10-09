@@ -3,15 +3,15 @@ insert into public.services_products (
   stock, min_stock, active, image
 ) values
   (
-    'svc-car', 'SERVICE', 'Regular Car Wash', 'REGULAR', 'CAR',
+    'svc-car', 'SERVICE', 'Professional Car Wash', 'REGULAR', 'CAR',
     'Cuci tangan menyeluruh dengan busa, bilas bertekanan, dan pengeringan rapi.',
-    80000, 50, 0, 0, true,
+    50000, 50, 0, 0, true,
     'https://images.pexels.com/photos/6873176/pexels-photo-6873176.jpeg?auto=compress&cs=tinysrgb&w=1000'
   ),
   (
-    'svc-moto', 'SERVICE', 'Regular Motorcycle Wash', 'REGULAR', 'MOTOR',
+    'svc-moto', 'SERVICE', 'Professional Motorcycle Wash', 'REGULAR', 'MOTOR',
     'Pembersihan bodi, roda, dan sela mesin agar motor siap digunakan kembali.',
-    35000, 35, 0, 0, true,
+    20000, 35, 0, 0, true,
     'https://images.pexels.com/photos/36709685/pexels-photo-36709685.jpeg?auto=compress&cs=tinysrgb&w=1000'
   ),
   (
@@ -23,7 +23,7 @@ insert into public.services_products (
   (
     'svc-self-moto', 'SERVICE', 'Self-Service Motorcycle', 'SELF_SERVICE', 'MOTOR',
     'Cuci motor sendiri di bay khusus dengan peralatan yang siap digunakan.',
-    20000, 25, 0, 0, true,
+    10000, 25, 0, 0, true,
     'https://images.pexels.com/photos/20515049/pexels-photo-20515049.jpeg?auto=compress&cs=tinysrgb&w=1000'
   ),
   (
@@ -43,6 +43,18 @@ insert into public.services_products (
     'Finishing satin untuk tampilan ban yang bersih.',
     15000, 8, 0, 0, true,
     'https://images.pexels.com/photos/7154623/pexels-photo-7154623.jpeg?auto=compress&cs=tinysrgb&w=700'
+  ),
+  (
+    'addon-pickup', 'ADD_ON', 'Antar-Jemput Mobil', 'PICKUP', null,
+    'Penjemputan dan pengantaran mobil, maksimal 3 km pulang-pergi.',
+    10000, 0, 0, 0, true,
+    'https://images.pexels.com/photos/6873176/pexels-photo-6873176.jpeg?auto=compress&cs=tinysrgb&w=700'
+  ),
+  (
+    'addon-pickup-moto', 'ADD_ON', 'Antar-Jemput Motor', 'PICKUP', null,
+    'Penjemputan dan pengantaran motor, maksimal 3 km pulang-pergi.',
+    5000, 0, 0, 0, true,
+    'https://images.pexels.com/photos/36709685/pexels-photo-36709685.jpeg?auto=compress&cs=tinysrgb&w=700'
   ),
   (
     'prd-shampoo', 'PRODUCT', 'Sampo Cuci Mobil pH Netral', 'CUCI & PERAWATAN', null,
