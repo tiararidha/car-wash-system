@@ -1,8 +1,36 @@
 # Rinse Society Wash Studio
 
-Aplikasi wash studio berbasis HTML, CSS, JavaScript, Node.js, dan Supabase PostgreSQL. Tidak menggunakan React/Vue, package.json, atau tabel di luar empat entitas utama.
+Aplikasi operasional wash studio untuk katalog layanan, booking, Self-Service, produk, antrean, transaksi, dan dashboard admin.
 
-## Menjalankan aplikasi
+## Fitur
+
+- Katalog Professional Wash, Self-Service, dan produk dari Supabase.
+- Form order Professional Wash dan Self-Service tanpa pilihan jadwal atau bay manual; jadwal dan alokasi bay Self-Service ditentukan otomatis dari ketersediaan.
+- Keranjang checkout produk; semua order tetap `PENDING` sampai dikonfirmasi oleh proses pembayaran/Admin yang berwenang.
+- Dashboard admin langsung tanpa form login; data dashboard diambil melalui RPC snapshot Supabase.
+- Metrik publik jumlah layanan dan ketersediaan bay.
+
+Form order customer tidak meminta login, OTP email, atau SMS. Order layanan mengirim hanya nama, nomor HP, model/plat kendaraan, layanan, dan metode pembayaran ke RPC atomik; database harus menghitung total, jadwal/bay, ID, dan status. Checkout produk tetap memakai RPC capability. Dashboard Admin dibuka langsung tanpa form login dan membaca snapshot RPC, bukan localStorage atau data demo.
+
+## Teknologi
+
+- HTML5, CSS, JavaScript tanpa framework frontend.
+- Node.js built-in HTTP server; Supabase CLI tersedia sebagai dev dependency lokal untuk administrasi project.
+- Supabase Auth, PostgREST, dan PostgreSQL.
+- Node.js test runner.
+
+## Struktur penting
+
+- `index.html`: shell aplikasi.
+- `app.js`: UI, validasi, request Supabase, dan server lokal.
+- `styles.css`, `polish.css`, `theme.css`: styling.
+- `sql/schema.sql` dan migrasi: schema, RLS, RPC, seed, dan operasional.
+- `sql/*proposal.sql`: file review lokal; proposal belum berarti perubahan sudah diterapkan.
+- `sql/REFERENCE/`: snapshot HTML referensi, bukan halaman aplikasi.
+- `tests/booking-helpers.test.js`: tes helper dan kontrak statis.
+- `assets/`: media aplikasi.
+
+## Menjalankan Lokal
 
 Gunakan Node.js 18 atau lebih baru:
 
@@ -10,36 +38,32 @@ Gunakan Node.js 18 atau lebih baru:
 node app.js
 ```
 
-Buka `http://localhost:3000`.
+Buka `http://localhost:3000`. Tes lokal: `npm test`. Cek sintaks: `npm run check`.
 
-## Menghubungkan Supabase
+## Konfigurasi Supabase
 
-1. Buka bagian konstanta di awal `app.js`.
-2. Isi `SUPABASE_URL` dengan Project URL (`https://xxxxx.supabase.co`) dan `SUPABASE_PUBLISHABLE_KEY` dengan publishable key proyek.
-3. Jalankan `sql/schema.sql` melalui Supabase SQL Editor. Schema membuat tepat empat tabel: `customers`, `vehicles`, `services_products`, dan `transactions`, beserta indeks, constraints, RLS, RPC aman, dan data awal operasional.
-4. Jalankan `sql/rls-authenticated-access.sql` untuk memperbarui izin authenticated dan RPC. Muat ulang aplikasi. Data katalog, metrik publik, riwayat, pelanggan, kendaraan, transaksi, dan status bay harus berasal dari Supabase; kegagalan akses ditampilkan sebagai error, bukan diganti data seed.
-5. Jalankan `sql/self-service-bay-live-migration.sql`, lalu `sql/business-flow-hardening.sql`. Migrasi terakhir memperketat relasi dan nominal transaksi, pembayaran sebelum pengerjaan, pembatalan/refund, serta rekonsiliasi otomatis setiap menit. Migrasi hanya menambah kolom dan fungsi pada tabel yang ada; tidak membuat tabel baru. Kolom dan RPC pickup lama tetap dipertahankan untuk data historis dan belum dihapus dari database.
+Atur `SUPABASE_URL` dan `SUPABASE_PUBLISHABLE_KEY` pada konstanta di `app.js`. Publishable key memang digunakan oleh browser; jangan pernah memasukkan `service_role` atau secret key.
 
-Jangan masukkan `service_role` atau secret key ke browser. Aplikasi memakai REST API dan Supabase Auth langsung dengan publishable key.
+Pada audit 12 Oktober 2026, project Supabase yang dikonfigurasi berisi 22 transaksi dan registry demo kosong. RPC order dan snapshot aktif. Definisi remote menggunakan variabel `existing_customer_id`/`existing_vehicle_id` terpisah dari UUID baru, sehingga klaim terdahulu bahwa `SELECT INTO` menimpa UUID tidak didukung oleh definisi yang terpasang. Order valid berhasil melalui RPC langsung dan form localhost; kegagalan generik/`23502` sebelumnya tidak dapat direproduksi pada kondisi audit ini.
 
-## Akun Admin
+Migration versioned `20261012000000_secure_demo_service_orders.sql` menambahkan idempotency key pada registry private dan menulis order layanan melalui wrapper `SECURITY DEFINER` yang tetap menjalankan trigger integritas. Migration `20261012000001_restrict_legacy_anon_rpcs.sql` mencabut akses `anon` ke lookup PII, cancellation, direct product/service sale, dan insert langsung customer/vehicle, sambil menjaga katalog publik serta grant `authenticated`/`service_role`. Migration `20261012000002_demo_product_checkout.sql` menambahkan checkout produk guest yang mengunci stok, menghitung harga dari katalog, menyimpan transaksi lewat trigger, dan meregistrasikan order secara idempotent. Migration `20261012000003_fix_demo_product_fingerprint.sql` memperbaiki operator precedence yang sempat menghasilkan SQLSTATE `42883`. Keempat migration sudah diterapkan dan tercatat.
 
-1. Buat akun melalui Supabase Authentication; tidak ada tabel `users` atau halaman registrasi pada aplikasi.
-2. Login admin diverifikasi oleh Supabase Auth menggunakan email dan password. Aplikasi tidak memeriksa email tertentu atau metadata role; sesi authenticated memberi akses ke area privat dan data operasional.
-3. Token sesi sementara disimpan pada `sessionStorage`; tombol **Keluar** mengakhiri sesi.
+Snapshot dashboard demo hanya membaca registry dan meredaksi nama, telepon, alamat, plat, dan model. Dashboard demo tetap dapat dibuka tanpa login; ini bukan pengganti autentikasi Admin. Empat belas order uji sintetis ditambahkan sepanjang verifikasi; database kini berisi 36 transaksi termasuk 22 transaksi awal yang tetap utuh. Snapshot menampilkan hanya 14 order demo terdaftar. Checkout produk mengurangi stok `prd-cloth` dari 14 menjadi 11 melalui tiga order uji satuan; transaksi tersebut tercatat sebagai pending.
 
-Data pelanggan dan transaksi tidak dibuka untuk pembacaan anon. Pencarian history menggunakan RPC yang hanya mengembalikan kecocokan persis berdasarkan kode booking, nomor HP, atau plat; lookup kendaraan menggunakan nomor HP persis. Penjualan produk memakai RPC yang mengunci stok, mengurangi stok, dan membuat transaksi secara atomik.
+**Blokir Admin:** database tertaut memiliki satu akun Auth dan nol `app_metadata.rinse_role = 'admin'`. Policy RLS saat ini memberi akses `true` ke seluruh role `authenticated`, dan RPC pembayaran/refund tidak memeriksa klaim Admin di server. Pemeriksaan UI di browser bukan pengganti otorisasi database. Role-gated migration `sql/admin-role-authorization-proposal.sql` mensyaratkan admin break-glass yang diverifikasi serta OTP telepon sebelum penerapan; prasyarat tersebut belum terpenuhi, jadi migration itu tidak diterapkan. Jangan aktifkan operasi mutasi Admin sampai role dan RLS diperbaiki di staging.
 
-## Pembayaran dan Operasional
+Lookup/history capability (`lookup_customer_profile_by_capability`, `lookup_customer_history_with_capability`, dan `create_service_booking_with_capability`) tetap tidak ada pada database tertaut; alur guest demo memakai RPC order khusus dan tidak lagi bergantung pada lookup capability tersebut. Guest checkout produk sudah diuji live hingga order ID tampil dan bertahan setelah refresh. Checkout produk Admin, pembayaran/refund, history capability, dan autentikasi Admin belum diverifikasi.
 
-Jika Supabase belum dapat dihubungi, website menampilkan error state dan tidak mengganti data aktif dengan data preview. localStorage hanya menyimpan keranjang; sessionStorage hanya menyimpan sesi login sementara.
+Urutan file baseline/proposal tetap hanya untuk staging terisolasi dari baseline yang ditinjau: `schema.sql` -> `rls-authenticated-access.sql` -> `self-service-bay-live-migration.sql` -> `business-flow-hardening.sql` -> `catalog-revision.sql` -> (opsional fixture staging: `t-20-seed-reconciliation.sql`, lalu `booking-seed-payment-reconciliation.sql`) -> `admin-role-authorization-proposal.sql` -> `multi-addon-booking-integrity-proposal.sql` -> `customer-capability-booking-migration.sql`. Jangan jalankan ulang baseline atau seluruh proposal terhadap database berisi data. `sql/demo-public-order-dashboard-proposal.sql` adalah artefak historis yang fail-closed; jangan dieksekusi. `pickup-rpc-hardening-proposal.sql` superseded dan tidak boleh dijalankan.
 
-Harga jasa final: Professional Car Wash Rp50.000, Professional Motorcycle Wash Rp20.000, Self-Service Car Rp30.000, dan Self-Service Motorcycle Rp10.000.
+`npm test` menguji helper JavaScript dan kontrak source statis. Verifikasi live mencakup order Professional Wash dan Self-Service, guest product checkout, retry produk dengan ID sama tanpa pengurangan stok kedua, reuse customer/vehicle, input invalid, akses anon ditolak ke RPC legacy, serta snapshot dashboard setelah refresh. Test layanan inactive memakai ID yang tidak ada karena katalog tidak memiliki layanan service inactive. Operasi Admin, pembayaran/refund, dan history capability belum diverifikasi karena klaim Admin/capability belum tersedia.
 
-Walk-in tunai menunggu konfirmasi Admin setelah uang diterima. Booking hanya memakai QRIS, E-Wallet, atau Card dan tidak memiliki konfirmasi manual; booking tetap belum dibayar sampai payment gateway memanggil `confirm_booking_payment` setelah pembayaran benar-benar berhasil. Gateway belum terhubung, jadi transaksi cashless tidak otomatis menjadi Lunas. Pembatalan booking sebelum waktu mulai melepas slot; dana yang telah dibayar tercatat menunggu pengembalian manual. Status pengembalian selesai hanya dicatat Admin setelah dana benar-benar dikembalikan di luar aplikasi.
+## Pembayaran dan Batasan
 
-Antar-Jemput telah dinonaktifkan di aplikasi: tidak tersedia di booking, katalog, atau RPC yang dipanggil aplikasi. Kolom, RPC, dan transaksi historis terkait masih ada di Supabase karena perubahan skema/database tidak dijalankan. RPC database lama masih dapat menerima pemanggilan langsung sampai penghapusannya diaudit dan disetujui secara terpisah.
-
-Rekonsiliasi Self-Service tetap memakai `pg_cron` setiap menit dan kini mengatur seluruh layanan yang sudah dibayar. Perubahan status tersimpan otomatis tanpa halaman atau tindakan admin; pembaruan status persisten dapat tertunda sampai tick cron berikutnya.
+- Booking QRIS/E-Wallet/Card tetap `PENDING` sampai payment gateway tepercaya mengonfirmasi pembayaran. Gateway belum terhubung.
+- Pembayaran tunai hanya dapat dikonfirmasi oleh admin yang berwenang.
+- Refund dicatat admin setelah pengembalian dana dilakukan di luar aplikasi.
+- Capability adalah bearer credential: browser yang menyimpan token dapat mengakses profil terkait. Nomor telepon yang diketik bukan bukti identitas; penautan profil lama harus dilakukan melalui proses Admin tepercaya di luar aplikasi.
+- Antar-Jemput dinonaktifkan di aplikasi; data dan RPC historis di database belum dihapus.
 
 Foto `assets/self-service-bay.jpg`: G. Edward Johnson, [Glo Car Wash, Pahrump, NV](https://commons.wikimedia.org/wiki/File:Car_Wash_Pahrump_NV_2026-04-03_15-05-36.jpg), dilisensikan di bawah [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Versi lokal diubah ukuran untuk penggunaan web.

@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check app.js"
+  },
+  "devDependencies": {
+    "supabase": "^2.120.0"
+  }
+}
