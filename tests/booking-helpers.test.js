@@ -15,6 +15,7 @@ const {
   isValidRequestId,
   isValidServiceOrderResponse,
   isValidDemoProductOrderResponse,
+  normalizeTransactionStatusForDisplay,
   resolveServiceSchedule,
   resolveAutomaticServiceSchedule,
   bookingWindowsOverlap,
@@ -50,6 +51,7 @@ const demoProposalSource = fs.readFileSync(path.join(__dirname, '..', 'sql', 'de
 const demoRpcSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261012000000_secure_demo_service_orders.sql'), 'utf8');
 const anonymousLockdownSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261012000001_restrict_legacy_anon_rpcs.sql'), 'utf8');
 const demoProductSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261012000002_demo_product_checkout.sql'), 'utf8');
+const simulatedPaymentSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261012000004_simulate_demo_payments.sql'), 'utf8');
 const demoSnapshotStart = demoProposalSource.search(/create(?:\s+or\s+replace)?\s+function public\.get_demo_admin_snapshot\(\)/i);
 const demoOrderStart = demoRpcSource.search(/create(?:\s+or\s+replace)?\s+function public\.create_demo_service_order\(p_order jsonb\)/i);
 const demoOrderEnd = demoRpcSource.search(/\nrevoke all on function public\.create_demo_service_order\(jsonb\)/i);
@@ -243,6 +245,21 @@ assert.match(demoProductOrderSource, /insert into public\.transactions\s*\(/);
 assert.match(demoProductOrderSource, /insert into private\.demo_transaction_registry\(transaction_id,request_id,request_fingerprint\)/);
 assert.match(demoProductSource, /grant execute on function public\.create_demo_product_order\(jsonb\) to anon/);
 assert.doesNotMatch(demoProductSource, /grant execute on function public\.create_demo_product_order\(jsonb\) to authenticated/i);
+assert.match(simulatedPaymentSource, /rename to create_demo_service_order_pending/);
+assert.match(simulatedPaymentSource, /rename to create_demo_product_order_pending/);
+assert.match(simulatedPaymentSource, /set_config\('rinse\.payment_update','on',true\)/);
+assert.match(simulatedPaymentSource, /payment_status='PAID'/);
+assert.match(simulatedPaymentSource, /when transaction_type='BOOKING' then 'BOOKED'/);
+assert.match(simulatedPaymentSource, /return private\.simulate_demo_payment/);
+assert.match(simulatedPaymentSource, /if saved_transaction\.payment_status='PAID' then return to_jsonb\(saved_transaction\)/);
+assert.match(simulatedPaymentSource, /where registry\.request_id=p_request_id and transaction_row\.id=p_transaction_id/);
+assert.match(simulatedPaymentSource, /update public\.transactions[\s\S]*payment_status='PAID'[\s\S]*then 'BOOKED'/);
+assert.match(simulatedPaymentSource, /revoke all on function public\.create_demo_service_order_pending\(jsonb\) from public, anon, authenticated/);
+assert.match(simulatedPaymentSource, /revoke all on function public\.create_demo_product_order_pending\(jsonb\) from public, anon, authenticated/);
+assert.match(simulatedPaymentSource, /revoke all on function private\.simulate_demo_payment\(text,uuid\) from public, anon, authenticated/);
+assert.match(simulatedPaymentSource, /grant execute on function public\.create_demo_service_order\(jsonb\) to anon/);
+assert.match(simulatedPaymentSource, /grant execute on function public\.create_demo_product_order\(jsonb\) to anon/);
+assert.doesNotMatch(simulatedPaymentSource, /grant execute on function public\.create_demo_(?:service|product)_order\(jsonb\) to authenticated/i);
 for (const [name, signature] of [
   ['lookup_customer_profile_by_capability', 'text, text'],
   ['create_service_booking_with_capability', 'jsonb, text, text'],
@@ -286,22 +303,22 @@ const validWalkInResponse = {
   customer_id: 'customer-id', vehicle_id: 'vehicle-id', item_id: 'svc-car', item_type: 'SERVICE',
   transaction_type: 'WALK_IN', payment_method: 'QRIS', amount: 50000,
   booking_date: '2026-10-12', booking_time: '09:37:00', duration_minutes: 50,
-  payment_status: 'PENDING', transaction_status: 'PENDING', bay_number: null
+  payment_status: 'PAID', transaction_status: 'PENDING', bay_number: null
 };
 const validWalkInExpectation = {
-  item_id: 'svc-car', transaction_type: 'WALK_IN', payment_method: 'QRIS', amount: 50000, duration_minutes: 50
+  item_id: 'svc-car', transaction_type: 'WALK_IN', transaction_status: 'PENDING', payment_method: 'QRIS', amount: 50000, duration_minutes: 50
 };
 assert.equal(isValidServiceOrderResponse(validWalkInResponse, validWalkInExpectation), true);
 assert.equal(isValidServiceOrderResponse({ ...validWalkInResponse, amount: 1 }, validWalkInExpectation), false);
 assert.equal(isValidServiceOrderResponse({ ...validWalkInResponse, transaction_status: 'BOOKED' }, validWalkInExpectation), false);
 assert.equal(isValidServiceOrderResponse({ ...validWalkInResponse, bay_number: 5 }, validWalkInExpectation), false);
-assert.equal(isValidServiceOrderResponse({ ...validWalkInResponse, transaction_type: 'BOOKING', bay_number: 1 }, {
-  ...validWalkInExpectation, transaction_type: 'BOOKING'
+assert.equal(isValidServiceOrderResponse({ ...validWalkInResponse, transaction_type: 'BOOKING', transaction_status: 'BOOKED', bay_number: 1 }, {
+  ...validWalkInExpectation, transaction_type: 'BOOKING', transaction_status: 'BOOKED'
 }), true);
 const validProductResponse = {
   id: 'a1e096b2-ee77-410b-8a68-e7a68057d9f3', code: 'RS-261012-3950ADC5', customer_id: 'customer-id',
   vehicle_id: null, item_id: 'prd-shampoo', item_type: 'PRODUCT', transaction_type: 'SHOP',
-  payment_method: 'CASH', quantity: 2, amount: 90000, payment_status: 'PENDING',
+  payment_method: 'CASH', quantity: 2, amount: 90000, payment_status: 'PAID',
   transaction_status: 'PENDING', refund_status: 'NONE', queue_status: 'WAITING',
   duration_minutes: 0, bay_number: null, booking_date: '2026-10-12', booking_time: '10:11:00'
 };
@@ -309,6 +326,8 @@ const validProductExpectation = { item_id: 'prd-shampoo', quantity: 2, payment_m
 assert.equal(isValidDemoProductOrderResponse(validProductResponse, validProductExpectation), true);
 assert.equal(isValidDemoProductOrderResponse({ ...validProductResponse, amount: 1 }, validProductExpectation), false);
 assert.equal(isValidDemoProductOrderResponse({ ...validProductResponse, transaction_status: 'PAID' }, validProductExpectation), false);
+assert.equal(normalizeTransactionStatusForDisplay({ payment_status: 'PAID', transaction_status: 'PENDING' }), 'WAITING');
+assert.equal(normalizeTransactionStatusForDisplay({ payment_status: 'PENDING', transaction_status: 'PENDING' }), 'PENDING');
 
 assert.equal(resolveCustomerIdentity({
   name: 'Nadia Prameswari',
@@ -373,8 +392,8 @@ assert.match(persistenceSource, /isValidDemoProductOrderResponse\(result/);
 assert.match(persistenceSource, /request_id: requestId/);
 assert.match(persistenceSource, /isValidServiceOrderResponse\(result/);
 assert.match(persistenceSource, /return tx/);
-assert.match(appSource, /result\.payment_status === 'PENDING'/);
-assert.match(appSource, /result\.transaction_status === 'PENDING'/);
+assert.match(appSource, /result\.payment_status === 'PAID'/);
+assert.match(appSource, /result\.transaction_status === expected\.transaction_status/);
 assert.match(appSource, /const activeSession = adminUser \? supabaseSession : null/);
 assert.match(appSource, /const requestSession = adminUser \? supabaseSession : null/);
 assert.match(appSource, /openDialog\(action === 'booking' \? 'order'/);
@@ -387,8 +406,8 @@ assert.match(serviceFormSource, /name="payment" required/);
 assert.match(serviceFormSource, /id="flow-total"/);
 assert.doesNotMatch(serviceFormSource, /addon|vehicle_id|Kendaraan terdaftar|name="(?:date|time|bay_number)"/i);
 assert.match(appSource, /!publiclyBusy\.has\(bayNumber\) && !isBayScheduledForWindow/);
-assert.match(serviceFormSource, /Self-Service otomatis memilih bay\/waktu terdekat dan tetap menunggu konfirmasi pembayaran/);
-assert.doesNotMatch(serviceFormSource, /tercatat lunas/);
+assert.match(serviceFormSource, /pembayaran simulasi dicatat lunas saat order tersimpan/);
+assert.doesNotMatch(serviceFormSource, /menunggu konfirmasi pembayaran/);
 assert.doesNotMatch(appSource, /lookup_customer_history_with_capability|cancel_customer_booking_with_capability|renderHistory\(/);
 assert.match(capabilitySource, /create schema if not exists private/);
 assert.match(capabilitySource, /revoke all on schema private from public, anon, authenticated/);
@@ -431,7 +450,7 @@ assert.match(productSubmitSource, /customerResult = isAdmin \? await findOrCreat
 assert.match(productSubmitSource, /completedTransactions\.push\(savedTransaction\)/);
 assert.match(productSubmitSource, /escapeHtml\(saved\.code\)/);
 assert.match(productSubmitSource, /statusBadge\(saved\.payment_status\)/);
-assert.match(productSubmitSource, /statusBadge\(saved\.transaction_status\)/);
+assert.match(productSubmitSource, /statusBadge\(transactionStatusLabel\(saved\)\)/);
 assert.match(productFormSource, /getProductRequestId\(id\)/);
 assert.match(productFormSource, /name="request_ids" value="\$\{escapeHtml\(JSON\.stringify\(requestIds\)\)\}"/);
 assert.match(authorizationSource, /revoke all on function public\.lookup_customer_by_phone\(text\) from public, anon/);

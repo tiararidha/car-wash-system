@@ -155,8 +155,8 @@ function isValidServiceOrderResponse(result, expected) {
     && /^\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(result.booking_time || '')
     && Number.isSafeInteger(result.duration_minutes)
     && result.duration_minutes === expected.duration_minutes
-    && result.payment_status === 'PENDING'
-    && result.transaction_status === 'PENDING'
+    && result.payment_status === 'PAID'
+    && result.transaction_status === expected.transaction_status
     && validBay;
 }
 function isValidDemoProductOrderResponse(result, expected) {
@@ -169,7 +169,7 @@ function isValidDemoProductOrderResponse(result, expected) {
     && result.payment_method === expected.payment_method
     && result.quantity === expected.quantity
     && result.amount === expected.amount
-    && result.payment_status === 'PENDING'
+    && result.payment_status === 'PAID'
     && result.transaction_status === 'PENDING'
     && result.refund_status === 'NONE'
     && result.queue_status === 'WAITING'
@@ -178,6 +178,12 @@ function isValidDemoProductOrderResponse(result, expected) {
     && result.duration_minutes === 0
     && /^\d{4}-\d{2}-\d{2}$/.test(result.booking_date || '')
     && /^\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(result.booking_time || '');
+}
+function normalizeTransactionStatusForDisplay(transaction = {}) {
+  const status = String(transaction.transaction_status || 'PENDING').toUpperCase();
+  return status === 'PENDING' && String(transaction.payment_status || '').toUpperCase() === 'PAID'
+    ? 'WAITING'
+    : status;
 }
 function resolveCustomerIdentity({ name, phone, existingCustomers = [] }) {
   const trimmedName = String(name || '').trim();
@@ -344,6 +350,7 @@ if (typeof window === 'undefined') {
     isValidRequestId,
     isValidServiceOrderResponse,
     isValidDemoProductOrderResponse,
+    normalizeTransactionStatusForDisplay,
     resolveCustomerIdentity,
     normalizeBookingStatus,
     applyBookingExpiration,
@@ -755,6 +762,9 @@ function isRevenueTransaction(tx) {
 function statusLabel(value) {
   return ({ AVAILABLE: 'Tersedia', OCCUPIED: 'Digunakan', RESERVED: 'Dipesan', PAID: 'Lunas', PENDING: 'Belum Dibayar', FAILED: 'Gagal', REFUNDED: 'Pengembalian Dana', NONE: 'Tidak ada', COMPLETED: 'Selesai', BOOKED: 'Terkonfirmasi', ACTIVE: 'Sedang Berlangsung', CANCELLED: 'Dibatalkan', EXPIRED: 'Hangus', WAITING: 'Menunggu', WASHING: 'Dicuci', FINISHING: 'Tahap Akhir', CASH: 'Tunai', QRIS: 'QRIS', E_WALLET: 'Dompet digital', CARD: 'Kartu' })[String(value || '').toUpperCase()] || String(value || '').replaceAll('_', ' ');
 }
+function transactionStatusLabel(transaction) {
+  return statusLabel(normalizeTransactionStatusForDisplay(transaction));
+}
 function statusBadge(value) { return `<span class="status status-${String(value).toLowerCase().replaceAll('_', '-')}">${statusLabel(value)}</span>`; }
 function isBayTransactionCurrent(tx, now = Date.now()) {
   if (!tx?.booking_date || !tx?.booking_time) return false;
@@ -799,7 +809,7 @@ function polishUiLabels(root) {
     .replaceAll('Coba Self-Service', 'Pesan Self-Service')
     .replaceAll('Pilih paket sesi', 'Tinjau harga')
     .replaceAll('Mulai sesi dalam tiga langkah', 'Pesan Self-Service')
-    .replaceAll('Booking tetap menunggu konfirmasi pembayaran sebelum sesi dapat dimulai.', 'Pesanan menunggu konfirmasi pembayaran sebelum sesi dapat dimulai.')
+    .replaceAll('Booking tetap menunggu konfirmasi pembayaran sebelum sesi dapat dimulai.', 'Pembayaran simulasi berhasil dicatat setelah pesanan tersimpan.')
     .replaceAll('LAYANAN CUCI', 'PROFESSIONAL WASH')
     .replaceAll('Layanan Cuci', 'Professional Wash')
     .replaceAll('Layanan cuci', 'Professional Wash')
@@ -868,8 +878,8 @@ function polishPublicContent(root, currentPage) {
     }
     const thirdStep = root.querySelector('.guide-steps li:nth-child(3)');
     if (thirdStep) {
-      thirdStep.querySelector('h3').textContent = 'Tunggu konfirmasi pembayaran';
-      thirdStep.querySelector('p').textContent = 'Status pesanan dan pembayaran tetap menunggu konfirmasi yang sebenarnya.';
+      thirdStep.querySelector('h3').textContent = 'Pembayaran berhasil';
+      thirdStep.querySelector('p').textContent = 'Pembayaran simulasi dicatat sebagai lunas di database setelah order tersimpan.';
     }
     const facilityCopy = root.querySelector('.self-service-facilities > p');
     if (facilityCopy) facilityCopy.textContent = 'Status empat bay ditampilkan langsung. Pemilihan waktu dan bay dilakukan otomatis saat pesanan dibuat.';
@@ -1214,7 +1224,7 @@ function renderTransactionForm(content, selectedService) {
     return;
   }
   const serviceOptions = () => services.map(item => `<option value="${escapeHtml(item.id)}" ${item.id === service.id ? 'selected' : ''}>${escapeHtml(item.name)} · ${money(item.price)}</option>`).join('');
-  content.innerHTML = `<p class="eyebrow">ORDER LAYANAN</p><h2>Buat pesanan<br><em>kendaraan Anda.</em></h2><p class="dialog-intro">Waktu kunjungan diatur otomatis. Pesanan menunggu konfirmasi pembayaran.</p><form id="transaction-form" class="dialog-form"><input type="hidden" name="flow" value="order"><input type="hidden" name="request_id" value="${crypto.randomUUID()}"><input type="hidden" name="duration" value="${service.duration}"><label>Pilih layanan<select name="service_id" required>${serviceOptions()}</select></label><div class="form-two"><label>Nama lengkap<input name="name" autocomplete="name" required placeholder="Nama pelanggan"></label><label>Nomor HP<input name="phone" type="tel" autocomplete="tel" required placeholder="08…"></label></div><div class="form-two"><label>Model kendaraan<input name="model" placeholder="Contoh: Honda HR-V"></label><label>Nomor polisi<input name="plate" required placeholder="H 1234 NP"></label></div><label>Metode pembayaran<select name="payment" required></select></label><small id="order-payment-note">Pembayaran dicatat sesuai pilihan dan status awal tetap menunggu konfirmasi.</small><div class="dialog-total"><span>Total pesanan</span><strong id="flow-total">${money(service.price)}</strong></div><button class="button button-dark button-full" type="submit">Kirim pesanan</button></form>`;
+  content.innerHTML = `<p class="eyebrow">ORDER LAYANAN</p><h2>Buat pesanan<br><em>kendaraan Anda.</em></h2><p class="dialog-intro">Waktu kunjungan diatur otomatis. Pembayaran disimulasikan dan disimpan setelah order berhasil.</p><form id="transaction-form" class="dialog-form"><input type="hidden" name="flow" value="order"><input type="hidden" name="request_id" value="${crypto.randomUUID()}"><input type="hidden" name="duration" value="${service.duration}"><label>Pilih layanan<select name="service_id" required>${serviceOptions()}</select></label><div class="form-two"><label>Nama lengkap<input name="name" autocomplete="name" required placeholder="Nama pelanggan"></label><label>Nomor HP<input name="phone" type="tel" autocomplete="tel" required placeholder="08…"></label></div><div class="form-two"><label>Model kendaraan<input name="model" placeholder="Contoh: Honda HR-V"></label><label>Nomor polisi<input name="plate" required placeholder="H 1234 NP"></label></div><label>Metode pembayaran<select name="payment" required></select></label><small id="order-payment-note">Pembayaran simulasi akan dicatat lunas setelah order tersimpan.</small><div class="dialog-total"><span>Total pesanan</span><strong id="flow-total">${money(service.price)}</strong></div><button class="button button-dark button-full" type="submit">Bayar & buat pesanan</button></form>`;
   const form = content.querySelector('#transaction-form');
   const serviceField = form.elements.service_id;
   const paymentField = form.elements.payment;
@@ -1229,8 +1239,8 @@ function renderTransactionForm(content, selectedService) {
       : [['CASH', 'Bayar di tempat'], ['QRIS', 'QRIS'], ['E_WALLET', 'Dompet digital'], ['CARD', 'Kartu']];
     paymentField.innerHTML = methods.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
     paymentNote.textContent = selected.category === 'SELF_SERVICE'
-      ? 'Self-Service otomatis memilih bay/waktu terdekat dan tetap menunggu konfirmasi pembayaran.'
-      : 'Order dicatat sebagai walk-in dengan jadwal otomatis; pembayaran menunggu konfirmasi Admin.';
+      ? 'Bay dan waktu dipilih otomatis; pembayaran simulasi dicatat lunas saat order tersimpan.'
+      : 'Order walk-in; pembayaran simulasi dicatat lunas saat order tersimpan.';
   };
   serviceField.addEventListener('change', updateServiceDetails);
   const rotateRequestIdAfterEdit = () => {
@@ -1284,11 +1294,7 @@ function renderLegacyScheduledTransactionForm(content, kind, selectedService) {
   });
   paymentLabel.append(paymentSelect);
   const paymentNote = document.createElement("small");
-  paymentNote.textContent = simpleOrder
-    ? "Pesanan menunggu Admin mengonfirmasi pembayaran saat diterima."
-    : walkin
-    ? "Tunai baru tercatat lunas setelah Admin menerima dan mengonfirmasi pembayaran."
-    : "Booking menunggu konfirmasi payment gateway sebelum tercatat lunas.";
+  paymentNote.textContent = "Pembayaran disimulasikan berhasil dan dicatat lunas setelah transaksi tersimpan.";
   paymentLabel.append(paymentNote);
   content.querySelector("#flow-total")?.closest(".dialog-total")?.before(paymentLabel);
   const form = content.querySelector("#transaction-form");
@@ -1397,7 +1403,7 @@ function renderLegacyScheduledSelfServiceTransactionForm(content) {
   const selfServicePayment = content.querySelector('[name="payment"]');
   selfServicePayment.querySelector('option[value="CASH"]')?.remove();
   const selfServicePaymentNote = document.createElement('small');
-  selfServicePaymentNote.textContent = 'Booking menunggu konfirmasi payment gateway sebelum tercatat lunas.';
+  selfServicePaymentNote.textContent = 'Pembayaran disimulasikan berhasil dan dicatat lunas setelah booking tersimpan.';
   selfServicePayment.closest('label')?.append(selfServicePaymentNote);
   const updateSelfServiceTotal = () => {
     const vehicleType = vehicleTypeField.value;
@@ -1420,7 +1426,7 @@ function renderCompactSelfServiceOrderForm(content) {
     content.innerHTML = '<div class="empty-state"><h3>Self-Service belum tersedia.</h3><p>Pilih Professional Wash atau coba lagi setelah katalog dimuat.</p></div>';
     return;
   }
-  content.innerHTML = `<p class="eyebrow">PESAN SELF-SERVICE</p><h2>Cuci mandiri<br><em>tanpa pilih slot.</em></h2><p class="dialog-intro">Waktu dan bay terdekat dipilih otomatis. Pesanan menunggu konfirmasi pembayaran sebelum sesi dimulai.</p><form id="transaction-form" class="dialog-form"><input type="hidden" name="flow" value="self-service"><input type="hidden" name="service_id" value="${defaultService.id}"><input type="hidden" name="duration" value="${defaultService.duration}"><div class="form-two"><label>Jenis kendaraan<select name="vehicle_type" required><option value="CAR" selected>Mobil</option><option value="MOTOR">Sepeda motor</option></select></label><label>Nomor HP<input name="phone" type="tel" autocomplete="tel" required placeholder="08…"></label></div><label>Nama lengkap<input name="name" autocomplete="name" required placeholder="Nama pelanggan"></label><div class="form-two"><label>Model kendaraan<input name="model" placeholder="Contoh: Honda HR-V"></label><label>Nomor polisi<input name="plate" required placeholder="H 1234 NP"></label></div><label>Metode pembayaran<select name="payment" required><option value="QRIS">QRIS</option><option value="E_WALLET">Dompet digital</option><option value="CARD">Kartu</option></select></label><small>Transaksi tetap menunggu konfirmasi pembayaran tepercaya.</small><div class="dialog-total"><span>Estimasi total</span><strong id="flow-total">${money(defaultService.price)}</strong></div><button class="button button-dark button-full" type="submit">Buat pesanan</button></form>`;
+  content.innerHTML = `<p class="eyebrow">PESAN SELF-SERVICE</p><h2>Cuci mandiri<br><em>tanpa pilih slot.</em></h2><p class="dialog-intro">Waktu dan bay terdekat dipilih otomatis. Pembayaran disimulasikan setelah booking tersimpan.</p><form id="transaction-form" class="dialog-form"><input type="hidden" name="flow" value="self-service"><input type="hidden" name="service_id" value="${defaultService.id}"><input type="hidden" name="duration" value="${defaultService.duration}"><div class="form-two"><label>Jenis kendaraan<select name="vehicle_type" required><option value="CAR" selected>Mobil</option><option value="MOTOR">Sepeda motor</option></select></label><label>Nomor HP<input name="phone" type="tel" autocomplete="tel" required placeholder="08…"></label></div><label>Nama lengkap<input name="name" autocomplete="name" required placeholder="Nama pelanggan"></label><div class="form-two"><label>Model kendaraan<input name="model" placeholder="Contoh: Honda HR-V"></label><label>Nomor polisi<input name="plate" required placeholder="H 1234 NP"></label></div><label>Metode pembayaran<select name="payment" required><option value="QRIS">QRIS</option><option value="E_WALLET">Dompet digital</option><option value="CARD">Kartu</option></select></label><small>Status LUNAS dicatat database setelah order berhasil.</small><div class="dialog-total"><span>Estimasi total</span><strong id="flow-total">${money(defaultService.price)}</strong></div><button class="button button-dark button-full" type="submit">Bayar & buat pesanan</button></form>`;
   const form = content.querySelector('#transaction-form');
   const vehicleType = form.elements.vehicle_type;
   const serviceId = form.elements.service_id;
@@ -1448,7 +1454,7 @@ function renderCartDialog(content) {
 function renderProductCheckout(content) {
   const total = Object.entries(cart).reduce((sum, [id, row]) => sum + (db.services_products.find(item => item.id === id)?.price || 0) * row.quantity, 0);
   const requestIds = Object.fromEntries(Object.keys(cart).map(id => [id, getProductRequestId(id)]));
-  content.innerHTML = `<p class="eyebrow">PEMBAYARAN PRODUK</p><h2>Perawatan pilihan<br><em>segera di tangan Anda.</em></h2><form id="product-checkout-form" class="dialog-form"><input type="hidden" name="request_ids" value="${escapeHtml(JSON.stringify(requestIds))}"><label>Nama lengkap<input name="name" required placeholder="Nama lengkap"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label><fieldset class="payment-options"><legend>Metode pembayaran</legend>${['CASH', 'QRIS', 'E_WALLET', 'CARD'].map((method, index) => `<label><input type="radio" name="payment" value="${method}" ${index === 0 ? 'checked' : ''}><span>${method === 'E_WALLET' ? 'E-Wallet' : method}</span></label>`).join('')}</fieldset><div class="dialog-total"><span>Total pembayaran</span><strong>${money(total)}</strong></div><button class="button button-dark button-full" type="submit">Buat pesanan <span>↗</span></button><small>Semua transaksi baru menunggu konfirmasi pembayaran sebelum dianggap lunas.</small></form>`;
+  content.innerHTML = `<p class="eyebrow">PEMBAYARAN PRODUK</p><h2>Perawatan pilihan<br><em>segera di tangan Anda.</em></h2><form id="product-checkout-form" class="dialog-form"><input type="hidden" name="request_ids" value="${escapeHtml(JSON.stringify(requestIds))}"><label>Nama lengkap<input name="name" required placeholder="Nama lengkap"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label><fieldset class="payment-options"><legend>Metode pembayaran</legend>${['CASH', 'QRIS', 'E_WALLET', 'CARD'].map((method, index) => `<label><input type="radio" name="payment" value="${method}" ${index === 0 ? 'checked' : ''}><span>${method === 'E_WALLET' ? 'E-Wallet' : method}</span></label>`).join('')}</fieldset><div class="dialog-total"><span>Total pembayaran</span><strong>${money(total)}</strong></div><button class="button button-dark button-full" type="submit">Bayar sekarang <span>↗</span></button><small>Pembayaran disimulasikan dan dicatat lunas setelah pesanan tersimpan.</small></form>`;
   simplifyUiSymbols(content);
 }
 function makeCode() { return `RS-${getJakartaDateString().slice(2).replaceAll('-', '')}-${Math.floor(1000 + Math.random() * 9000)}`; }
@@ -1575,6 +1581,7 @@ async function persistTransaction(tx, ownerToken = null, requestId = null) {
     if (!isValidServiceOrderResponse(result, {
       item_id: tx.item_id,
       transaction_type: expectedTransactionType,
+      transaction_status: expectedTransactionType === 'BOOKING' ? 'BOOKED' : 'PENDING',
       payment_method: tx.payment_method,
       amount: tx.amount,
       duration_minutes: Number(service?.duration)
@@ -1618,7 +1625,7 @@ async function submitService(form) {
 }
 function showConfirmation(tx) {
   const isBooking = tx.transaction_type === 'BOOKING';
-  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">${isBooking ? 'BOOKING TERCATAT' : 'TRANSAKSI TERCATAT'}</p><h2>${isBooking ? 'Kami siapkan<br><em>kunjungan Anda.</em>' : 'Kendaraan Anda<br><em>menunggu konfirmasi pembayaran.</em>'}</h2><p class="dialog-intro">${isBooking ? 'Booking sudah dibuat dan menunggu pembayaran dikonfirmasi sebelum sesi dimulai.' : 'Transaksi dibuat. Pembayaran harus dikonfirmasi lunas sebelum kendaraan masuk antrean atau proses cuci.'}</p><div class="pass-card"><div><span>KODE BOOKING</span><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(tx.item_name)} · ${tx.booking_date} · ${tx.booking_time}</small></div><img class="fake-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=144x144&data=${encodeURIComponent(tx.code)}" alt="QR untuk kode ${escapeHtml(tx.code)}"></div><div class="confirmation-details"><span>${money(tx.amount)}</span>${statusBadge(tx.payment_status)}${statusBadge(tx.payment_method)}</div><button class="button button-dark button-full" data-action="close-dialog">Selesai <span>↗</span></button></div>`;
+  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">${isBooking ? 'BOOKING TERCATAT' : 'TRANSAKSI TERCATAT'}</p><h2>${isBooking ? 'Booking dikonfirmasi.' : 'Pembayaran berhasil.'}</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama order Anda.</p><div class="pass-card"><div><span>KODE ORDER</span><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(tx.item_name)} · ${tx.booking_date} · ${tx.booking_time}</small></div><img class="fake-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=144x144&data=${encodeURIComponent(tx.code)}" alt="Kode order ${escapeHtml(tx.code)}"></div><div class="confirmation-details"><span>${money(tx.amount)}</span>${statusBadge(tx.payment_status)}${statusBadge(tx.payment_method)}</div><button class="button button-dark button-full" data-action="close-dialog">Selesai <span>↗</span></button></div>`;
 }
 async function submitProducts(form) {
   const data = new FormData(form);
@@ -1670,7 +1677,7 @@ async function submitProducts(form) {
       clearProductRequestIds(completedIds);
       localStorage.setItem(CART_KEY, JSON.stringify(cart));
       try { await loadPublicData(); } catch (_) {}
-      document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">!</div><p class="eyebrow">PESANAN SEBAGIAN TERCATAT</p><h2>Produk yang belum diproses<br><em>tetap di keranjang.</em></h2><p class="dialog-intro">Sebagian produk berhasil dipesan. Periksa keranjang sebelum mencoba lagi.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span><span>${statusBadge(saved.payment_status)} ${statusBadge(saved.transaction_status)}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Tutup</button></div>`;
+      document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">!</div><p class="eyebrow">PESANAN SEBAGIAN TERCATAT</p><h2>Produk yang belum diproses<br><em>tetap di keranjang.</em></h2><p class="dialog-intro">Sebagian produk berhasil dipesan. Periksa keranjang sebelum mencoba lagi.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span><span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Tutup</button></div>`;
       render();
       return;
     }
@@ -1680,7 +1687,7 @@ async function submitProducts(form) {
   clearProductRequestIds(lines.map(([id]) => id));
   try { await loadPublicData(); }
   catch (_) { showToast('Pesanan tersimpan, tetapi katalog belum dapat diperbarui.', 'error'); }
-  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">PESANAN TERCATAT</p><h2>Produk pilihan<br><em>menunggu konfirmasi pembayaran.</em></h2><p class="dialog-intro">Pesanan belum lunas dan belum dapat diselesaikan. Admin akan mengonfirmasi pembayaran setelah diterima.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span><span>${statusBadge(saved.payment_status)} ${statusBadge(saved.transaction_status)}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Kembali ke studio <span>↗</span></button></div>`;
+  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">PESANAN TERCATAT</p><h2>Pembayaran berhasil.</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama pesanan produk.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span><span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Kembali ke studio <span>↗</span></button></div>`;
   render();
 }
 function renderReportsLegacy() {
@@ -1716,7 +1723,7 @@ function renderAdminTransactionList(records, title, eyebrow) {
     const refundAction = tx.refund_status === 'PENDING' ? `<button class="payment-mark-paid" type="button" data-refund-complete="${escapeHtml(tx.id)}">Catat Pengembalian Dana</button>` : '';
     const refundStatus = tx.refund_status === 'PENDING' ? '<small>Pengembalian Dana: menunggu proses manual</small>' : tx.refund_status === 'COMPLETED' ? '<small>Pengembalian Dana: selesai</small>' : '';
     const pickupAddress = ['addon-pickup', 'addon-pickup-moto'].includes(tx.addon_id) && customer?.address ? `<small>Alamat Antar-Jemput: ${escapeHtml(customer.address)}</small><small>Jarak pulang-pergi: ${escapeHtml(tx.pickup_distance_km)} km</small>` : '';
-    return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small>${pickupAddress}</span><span class="transaction-item">${escapeHtml(tx.item_name || (tx.item_type === 'PRODUCT' ? 'Pembelian produk' : 'Layanan cuci'))}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${refundStatus}${paymentAction}${refundAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${statusLabel(tx.transaction_status)}</span><span class="transaction-amount">${money(tx.amount)}</span></div>`;
+    return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small>${pickupAddress}</span><span class="transaction-item">${escapeHtml(tx.item_name || (tx.item_type === 'PRODUCT' ? 'Pembelian produk' : 'Layanan cuci'))}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${refundStatus}${paymentAction}${refundAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${transactionStatusLabel(tx)}</span><span class="transaction-amount">${money(tx.amount)}</span></div>`;
   }).join('');
   return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Data operasional studio dengan status pembayaran dan jadwal yang konsisten.</p></div><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
 }
