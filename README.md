@@ -1,16 +1,16 @@
 # Rinse Society Wash Studio
 
-Aplikasi operasional wash studio untuk katalog layanan, booking, Self-Service, produk, antrean, transaksi, dan dashboard admin.
+Aplikasi operasional wash studio untuk katalog layanan, sesi bay Self-Service, produk, antrean, transaksi, dan dashboard admin.
 
 ## Fitur
 
 - Katalog Professional Wash, Self-Service, dan produk dari Supabase.
-- Form order Professional Wash dan Self-Service tanpa pilihan jadwal atau bay manual; jadwal dan alokasi bay Self-Service ditentukan otomatis dari ketersediaan.
+- Form order Professional Wash dan Self-Service tanpa pilihan jadwal atau bay manual; waktu layanan dan alokasi bay Self-Service ditentukan otomatis dari ketersediaan.
 - Order layanan dan checkout produk menyimpan data nyata di Supabase; pembayaran tugas disimulasikan berhasil dan dicatat `PAID` oleh RPC database.
-- Dashboard admin langsung tanpa form login; data dashboard diambil melalui RPC snapshot Supabase.
+- Dashboard snapshot tersedia dalam mode baca saja; mutasi Admin memerlukan sesi Supabase dengan claim `app_metadata.rinse_role = 'admin'`.
 - Metrik publik jumlah layanan dan ketersediaan bay.
 
-Form order customer tidak meminta login, OTP email, atau SMS. Order layanan mengirim hanya nama, nomor HP, model/plat kendaraan, layanan, dan metode pembayaran ke RPC atomik; database harus menghitung total, jadwal/bay, ID, dan status. Checkout produk tetap memakai RPC capability. Dashboard Admin dibuka langsung tanpa form login dan membaca snapshot RPC, bukan localStorage atau data demo.
+Form order customer tidak meminta login, OTP email, atau SMS. Order layanan mengirim hanya nama, nomor HP, model/plat kendaraan, layanan, dan metode pembayaran ke RPC atomik; database harus menghitung total, jadwal/bay, ID, dan status. Checkout produk tetap memakai RPC capability. Dashboard ringkasan membaca snapshot RPC yang disamarkan; masuk Admin menggunakan Supabase Auth dan hanya menerima claim tepercaya.
 
 ## Teknologi
 
@@ -48,9 +48,13 @@ Pada audit 12 Oktober 2026, project Supabase yang dikonfigurasi berisi 22 transa
 
 Migration versioned `20261012000000_secure_demo_service_orders.sql` menambahkan idempotency key pada registry private dan menulis order layanan melalui wrapper `SECURITY DEFINER` yang tetap menjalankan trigger integritas. Migration `20261012000001_restrict_legacy_anon_rpcs.sql` mencabut akses `anon` ke lookup PII, cancellation, direct product/service sale, dan insert langsung customer/vehicle, sambil menjaga katalog publik serta grant `authenticated`/`service_role`. Migration `20261012000002_demo_product_checkout.sql` menambahkan checkout produk guest yang mengunci stok, menghitung harga dari katalog, menyimpan transaksi lewat trigger, dan meregistrasikan order secara idempotent. Migration `20261012000003_fix_demo_product_fingerprint.sql` memperbaiki operator precedence yang sempat menghasilkan SQLSTATE `42883`. Migration `20261012000004_simulate_demo_payments.sql` mencatat status `PAID` dalam transaksi database yang sama dan memindahkan booking Self-Service ke `BOOKED`. Semua migration sudah diterapkan dan tercatat.
 
-Snapshot dashboard demo hanya membaca registry dan meredaksi nama, telepon, alamat, plat, dan model. Dashboard demo tetap dapat dibuka tanpa login; ini bukan pengganti autentikasi Admin. Delapan belas order uji sintetis ditambahkan sepanjang verifikasi; database kini berisi 40 transaksi termasuk 22 transaksi awal yang tetap utuh. Snapshot menampilkan hanya 18 order demo terdaftar. Lima checkout uji satuan mengurangi stok `prd-cloth` dari 14 menjadi 9; semuanya memakai transaksi dan stok database nyata. Order lama tidak diubah saat simulasi pembayaran ditambahkan.
+Snapshot dashboard demo hanya membaca registry dan meredaksi nama, telepon, alamat, plat, dan model. Query database read-only kini mengonfirmasi 43 transaksi: 22 tanpa registry (selaras dengan 22 transaksi historis pada audit sebelumnya) dan 21 order demo terdaftar, tanpa orphan registry rows. Tiga order uji baru dibuat melalui formulir aplikasi dan seluruh 21 order demo sengaja dipertahankan untuk audit serta integritas relasi. Lima checkout sebelumnya menurunkan stok `prd-cloth` dari 14 menjadi 9; pembelian browser tambahan menurunkannya menjadi 8, lalu replay request tidak menurunkan stok lagi.
 
 **Blokir Admin:** database tertaut memiliki satu akun Auth dan nol `app_metadata.rinse_role = 'admin'`. Policy RLS saat ini memberi akses `true` ke seluruh role `authenticated`, dan RPC pembayaran/refund tidak memeriksa klaim Admin di server. Pemeriksaan UI di browser bukan pengganti otorisasi database. Role-gated migration `sql/admin-role-authorization-proposal.sql` mensyaratkan admin break-glass yang diverifikasi serta OTP telepon sebelum penerapan; prasyarat tersebut belum terpenuhi, jadi migration itu tidak diterapkan. Jangan aktifkan operasi mutasi Admin sampai role dan RLS diperbaiki di staging.
+
+Form login hanya memverifikasi akun yang sudah memiliki claim; form ini tidak menetapkan role. Form mutasi disembunyikan saat sesi terverifikasi tidak tersedia, tetapi ini bukan proteksi Data API: live policy inspection menemukan `USING true` dan `WITH CHECK true` untuk role `authenticated` pada customers, vehicles, services_products, dan transactions. Satu akun Auth tanpa claim Admin ditemukan; email/identitas yang dimaksud dan kredensial sign-in tidak tersedia. Jangan anggap CRUD Admin aman atau tetapkan role sampai pemilik project mengidentifikasi Admin/break-glass account dan role-gated RLS diterapkan sesuai proposal.
+
+Navigasi, form kunjungan terjadwal, dan tampilan Admin Booking telah dihapus. Transaksi historis tetap dipertahankan; Self-Service tetap menyimpan sesi dan reservasi bay melalui status transaksi internal.
 
 Lookup/history capability (`lookup_customer_profile_by_capability`, `lookup_customer_history_with_capability`, dan `create_service_booking_with_capability`) tetap tidak ada pada database tertaut; alur guest demo memakai RPC order khusus dan tidak lagi bergantung pada lookup capability tersebut. Guest checkout produk sudah diuji live hingga order ID tampil dan bertahan setelah refresh. Checkout produk Admin, pembayaran/refund, history capability, dan autentikasi Admin belum diverifikasi.
 

@@ -16,109 +16,9 @@ function verifiedPhoneMatchesInput(verifiedPhone, inputPhone) {
 function hasCustomerPhoneChanged(previousPhone, nextPhone) {
   return !!previousPhone && normalizePhone(previousPhone) !== normalizePhone(nextPhone);
 }
-function getBookingWindow() {
-  return { timezone: 'Asia/Jakarta', open: '08:00', close: '21:00', validDates: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] };
-}
 function parseJakartaDateTime(dateString, timeString) {
   if (!dateString || !timeString) return new Date();
   return new Date(`${dateString}T${timeString}:00+07:00`);
-}
-function isWithinOperatingHours(dateString, timeString, durationMinutes = 0, referenceDate = new Date()) {
-  if (!dateString || !timeString) return false;
-  const start = parseJakartaDateTime(dateString, timeString).getTime();
-  const durationMs = Math.max(Number(durationMinutes || 0), 0) * 60000;
-  const end = start + durationMs;
-  const dayStart = parseJakartaDateTime(dateString, getBookingWindow().open).getTime();
-  const dayEnd = parseJakartaDateTime(dateString, getBookingWindow().close).getTime();
-  if (Number.isNaN(start) || Number.isNaN(end)) return false;
-  if (start < referenceDate.getTime()) return false;
-  if (start < dayStart || end > dayEnd) return false;
-  return true;
-}
-function resolveServiceSchedule(isBooking, dateInput, timeInput, todayDate, currentTime) {
-  if (!isBooking) {
-    const bookingTime = String(timeInput || currentTime);
-    if (!/^\d{2}:\d{2}$/.test(bookingTime)) throw new Error('Pilih waktu kedatangan yang valid.');
-    return { bookingDate: todayDate, bookingTime };
-  }
-  const bookingDate = String(dateInput || todayDate);
-  const bookingTime = String(timeInput || currentTime);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(bookingDate)) throw new Error('Pilih tanggal kunjungan yang valid.');
-  if (!/^\d{2}:\d{2}$/.test(bookingTime)) throw new Error('Pilih waktu kunjungan yang valid.');
-  if (bookingDate < todayDate) throw new Error('Pilih tanggal booking hari ini atau setelahnya.');
-  if (bookingDate === todayDate && bookingTime < currentTime) throw new Error('Pilih waktu booking yang belum lewat.');
-  return { bookingDate, bookingTime };
-}
-function jakartaDateTimeParts(date) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hour12: false
-  }).formatToParts(date).reduce((result, part) => {
-    if (part.type !== 'literal') result[part.type] = part.value;
-    return result;
-  }, {});
-  return {
-    date: `${parts.year}-${parts.month}-${parts.day}`,
-    time: `${parts.hour}:${parts.minute}`
-  };
-}
-function resolveAutomaticServiceSchedule(durationMinutes, referenceDate = new Date(), preparationMinutes = 10) {
-  const duration = Number(durationMinutes);
-  if (!Number.isSafeInteger(duration) || duration <= 0) throw new Error('Durasi layanan tidak valid.');
-  const preparation = Number(preparationMinutes);
-  if (!Number.isSafeInteger(preparation) || preparation < 0) throw new Error('Waktu persiapan tidak valid.');
-  const immediate = jakartaDateTimeParts(new Date(referenceDate.getTime() + preparation * 60000));
-  if (isWithinOperatingHours(immediate.date, immediate.time, duration, referenceDate)) {
-    return { bookingDate: immediate.date, bookingTime: immediate.time };
-  }
-  const current = jakartaDateTimeParts(referenceDate);
-  const todayOpen = { bookingDate: current.date, bookingTime: '08:10' };
-  if (isWithinOperatingHours(todayOpen.bookingDate, todayOpen.bookingTime, duration, referenceDate)) {
-    return todayOpen;
-  }
-  const [year, month, day] = current.date.split('-').map(Number);
-  const nextDate = new Date(Date.UTC(year, month - 1, day + 1));
-  const tomorrow = `${nextDate.getUTCFullYear()}-${String(nextDate.getUTCMonth() + 1).padStart(2, '0')}-${String(nextDate.getUTCDate()).padStart(2, '0')}`;
-  const nextOpen = { bookingDate: tomorrow, bookingTime: '08:10' };
-  if (!isWithinOperatingHours(nextOpen.bookingDate, nextOpen.bookingTime, duration, referenceDate)) {
-    throw new Error('Durasi layanan tidak dapat dijadwalkan pada jam operasional.');
-  }
-  return nextOpen;
-}
-function bookingWindowsOverlap(startA, durationA, startB, durationB) {
-  return startA < startB + durationB && startB < startA + durationA;
-}
-function collectAddonIds(addonInput) {
-  const values = Array.isArray(addonInput) ? addonInput : [addonInput];
-  const flattened = values.flatMap(value => {
-    if (Array.isArray(value)) return value;
-    if (typeof value === 'string') return value.split(',');
-    return [value];
-  }).map(value => String(value || '').trim()).filter(Boolean);
-  const seen = new Set();
-  return flattened.filter(value => {
-    if (seen.has(value)) return false;
-    seen.add(value);
-    return true;
-  });
-}
-function resolveBookingAddons(addonInput, addonCatalog = []) {
-  const addonIds = collectAddonIds(addonInput);
-  const catalog = new Map(addonCatalog
-    .filter(addon => addon && addon.active !== false && (!addon.item_type || addon.item_type === 'ADD_ON'))
-    .map(addon => [addon.id, addon]));
-  const selected = addonIds.map(id => catalog.get(id));
-  if (selected.some(addon => !addon)) throw new Error('Layanan tambahan tidak tersedia. Pilih add-on lain.');
-  return selected;
-}
-function calculateBookingAmount(service, addonCatalog = [], addonInput = []) {
-  const base = Number(service?.price || 0);
-  const selected = resolveBookingAddons(addonInput, addonCatalog);
-  const totalAddon = selected.reduce((sum, addon) => sum + Number(addon.price || 0), 0);
-  return base + totalAddon;
-}
-function calculateServiceDuration(serviceDuration, selectedAddons = []) {
-  return Number(serviceDuration || 0) + selectedAddons.reduce((sum, addon) => sum + Number(addon.duration || 0), 0);
 }
 function mergePersistedTransaction(transaction, savedTransaction) {
   if (savedTransaction && typeof savedTransaction === 'object') Object.assign(transaction, savedTransaction);
@@ -126,7 +26,7 @@ function mergePersistedTransaction(transaction, savedTransaction) {
 }
 function validateServicePaymentMethod(paymentMethod, transactionType) {
   if (!['CASH', 'QRIS', 'E_WALLET', 'CARD'].includes(paymentMethod)) throw new Error('Pilih metode pembayaran.');
-  if (transactionType === 'BOOKING' && paymentMethod === 'CASH') throw new Error('Booking dan Self-Service wajib menggunakan metode bayar digital yang tervalidasi.');
+  if (transactionType === 'BOOKING' && paymentMethod === 'CASH') throw new Error('Self-Service wajib menggunakan metode bayar digital.');
   return paymentMethod;
 }
 function isValidIndonesianPlate(value = '') {
@@ -196,34 +96,6 @@ function resolveCustomerIdentity({ name, phone, existingCustomers = [] }) {
     return { customer: null, mismatch: true, reason: 'Customer name mismatch' };
   }
   return { customer: candidate, mismatch: false, reason: 'Matched customer' };
-}
-function normalizeBookingStatus(status) {
-  const normalized = String(status || '').toUpperCase();
-  return ['PENDING', 'PAID', 'FAILED', 'REFUNDED'].includes(normalized) ? normalized : 'PENDING';
-}
-function applyBookingExpiration(transactions = [], now = Date.now()) {
-  return transactions.map(tx => {
-    const record = { ...tx };
-    if (record.item_type !== 'SERVICE' || record.transaction_type !== 'BOOKING') return record;
-    if (['CANCELLED', 'COMPLETED', 'EXPIRED'].includes(String(record.transaction_status || '').toUpperCase())) return record;
-    const start = parseJakartaDateTime(record.booking_date, record.booking_time).getTime();
-    const durationMs = Math.max(Number(record.duration_minutes || 0), 0) * 60000;
-    const end = start + durationMs;
-    const cutoff = start + 30 * 60000;
-    if (Number.isFinite(start) && now > cutoff && record.payment_status === 'PAID' && record.transaction_status !== 'EXPIRED') {
-      record.transaction_status = 'EXPIRED';
-      record.queue_status = 'COMPLETED';
-      return record;
-    }
-    if (Number.isFinite(start) && end <= now && record.transaction_status !== 'COMPLETED') {
-      record.transaction_status = 'EXPIRED';
-      record.queue_status = 'COMPLETED';
-    }
-    return record;
-  });
-}
-function isBusinessHourBookingValid(dateString, timeString, durationMinutes = 0, now = new Date()) {
-  return isWithinOperatingHours(dateString, timeString, durationMinutes, now);
 }
 function isValidCustomerCapabilityToken(token) {
   return typeof token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(token);
@@ -329,21 +201,17 @@ function supabaseHttpError(label, status, responseText = '') {
   return message;
 }
 
+function hasAdminRole(user) {
+  return user?.app_metadata?.rinse_role === 'admin';
+}
+
 if (typeof window === 'undefined') {
   const appExports = {
     normalizePhone,
     toSupabasePhone,
+    hasAdminRole,
     verifiedPhoneMatchesInput,
     hasCustomerPhoneChanged,
-    getBookingWindow,
-    isWithinOperatingHours,
-    resolveServiceSchedule,
-    resolveAutomaticServiceSchedule,
-    bookingWindowsOverlap,
-    collectAddonIds,
-    resolveBookingAddons,
-    calculateBookingAmount,
-    calculateServiceDuration,
     mergePersistedTransaction,
     validateServicePaymentMethod,
     isValidIndonesianPlate,
@@ -352,9 +220,6 @@ if (typeof window === 'undefined') {
     isValidDemoProductOrderResponse,
     normalizeTransactionStatusForDisplay,
     resolveCustomerIdentity,
-    normalizeBookingStatus,
-    applyBookingExpiration,
-    isBusinessHourBookingValid,
     isValidCustomerCapabilityToken,
     requireCustomerCapabilityToken,
     sanitizeCart,
@@ -661,7 +526,7 @@ function syncServiceCatalog() {
   ADDONS.splice(0, ADDONS.length, ...addons.map(catalogItem));
 }
 function transactionTypeLabel(value) {
-  return ({ BOOKING: 'Booking', WALK_IN: 'Datang langsung', SHOP: 'Toko' })[value] || String(value || '').replaceAll('_', ' ');
+  return ({ BOOKING: 'Layanan terjadwal', WALK_IN: 'Datang langsung', SHOP: 'Toko' })[value] || String(value || '').replaceAll('_', ' ');
 }
 function money(value) { return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value) || 0); }
 function escapeHtml(value = '') { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])); }
@@ -673,9 +538,6 @@ function isSelfServiceItem(item) {
 }
 function regularServices() {
   return SERVICES.filter(isRegularServiceItem);
-}
-function getJakartaFutureTimeString(minutes = 10) {
-  return getJakartaTimeString(new Date(Date.now() + Number(minutes) * 60000));
 }
 function getJakartaDateParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(date);
@@ -791,6 +653,7 @@ async function openAdmin() {
   adminDataError = '';
   setPage('admin');
   try {
+    if (supabaseSession) await restoreAdminSession();
     await loadAdminData();
     render();
   } catch (error) {
@@ -806,10 +669,16 @@ function polishUiLabels(root) {
     .replaceAll('cuci mandiri', 'Self-Service')
     .replaceAll('LANDASAN LAYANAN', 'PROFESSIONAL WASH')
     .replaceAll('Semua layanan', 'Lihat pilihan')
-    .replaceAll('Coba Self-Service', 'Pesan Self-Service')
+    .replaceAll('Coba Self-Service', 'Mulai Self-Service')
     .replaceAll('Pilih paket sesi', 'Tinjau harga')
     .replaceAll('Mulai sesi dalam tiga langkah', 'Pesan Self-Service')
-    .replaceAll('Booking tetap menunggu konfirmasi pembayaran sebelum sesi dapat dimulai.', 'Pembayaran simulasi berhasil dicatat setelah pesanan tersimpan.')
+    .replaceAll('Booking tetap menunggu konfirmasi pembayaran sebelum sesi dapat dimulai.', 'Pembayaran simulasi berhasil dicatat setelah sesi tersimpan.')
+    .replaceAll('booking belum mengaktifkan sesi sebelum pembayaran diverifikasi.', 'sesi dimulai setelah pembayaran simulasi berhasil dicatat.')
+    .replaceAll('setelah booking tersimpan.', 'setelah order sesi tersimpan.')
+    .replaceAll('Pilih salah satu dari empat bay universal untuk mobil atau sepeda motor, lalu tentukan waktu dan durasi cuci.', 'Pilih jenis kendaraan dan paket sesi. Sistem memilih waktu serta bay otomatis berdasarkan ketersediaan.')
+    .replaceAll('Pilih kendaraan dan bay', 'Pilih jenis kendaraan')
+    .replaceAll('Tentukan jenis kendaraan, salah satu dari empat bay, serta waktu kunjungan.', 'Waktu kunjungan dan bay ditentukan otomatis berdasarkan ketersediaan.')
+    .replaceAll('Pilih bay yang tersedia; booking belum mengaktifkan sesi sebelum pembayaran diverifikasi.', 'Sesi dan bay ditentukan otomatis setelah pembayaran simulasi berhasil dicatat.')
     .replaceAll('LAYANAN CUCI', 'PROFESSIONAL WASH')
     .replaceAll('Layanan Cuci', 'Professional Wash')
     .replaceAll('Layanan cuci', 'Professional Wash')
@@ -863,7 +732,7 @@ function polishPublicContent(root, currentPage) {
     });
   }
   if (currentPage === 'self-service') {
-    root.querySelectorAll('.bay-card [data-action="self-service-book"]').forEach(button => button.remove());
+    root.querySelectorAll('.bay-card [data-action="self-service-order"]').forEach(button => button.remove());
     const bayNote = root.querySelector('.bay-note p');
     if (bayNote) bayNote.textContent = 'Status bay diperbarui langsung. Setiap pesanan dialokasikan ke bay yang tersedia secara otomatis.';
     const firstStep = root.querySelector('.guide-steps li:first-child');
@@ -916,7 +785,7 @@ function render() {
   document.body.dataset.page = page;
   document.body.classList.toggle('admin-mode', page === 'admin');
   if (page === 'admin') {
-    app.innerHTML = renderAdmin();
+    app.innerHTML = renderAdmin().replace(/<button class="admin-nav" data-admin-tab="bookings">[\s\S]*?<\/button>/, '');
     app.querySelector('.admin-top-actions')?.insertAdjacentHTML('afterbegin', '<button class="button button-quiet button-small" type="button" data-action="home">← Kembali ke Beranda</button>');
     if (!adminDataReady) {
       const content = app.querySelector('#admin-content');
@@ -927,6 +796,18 @@ function render() {
     app.innerHTML = (views[page] || renderHome)();
     if (!databaseConnected) app.insertAdjacentHTML('afterbegin', renderPublicDataState());
   }
+  if (page === 'admin') {
+    removeUnauthorizedAdminMutations(app);
+    if (!isAdminAuthorized()) {
+      app.querySelector('.admin-topbar')?.insertAdjacentHTML('afterend', '<div class="admin-readonly-notice" role="status"><span>Tampilan baca saja. Akses Admin terverifikasi diperlukan untuk mengubah data.</span><button class="button button-quiet button-small" data-action="admin-login">Masuk sebagai Admin</button></div>');
+    }
+  }
+  document.querySelectorAll('[data-action="booking"]').forEach(button => {
+    button.dataset.action = 'service-order';
+  });
+  app.querySelectorAll('[data-action="self-service-book"]').forEach(button => {
+    button.dataset.action = 'self-service-order';
+  });
   applyReferencePresentation(app);
   polishUiLabels(app);
   if (['home', 'services', 'self-service'].includes(page)) polishPublicContent(app, page);
@@ -946,10 +827,10 @@ function render() {
   app.querySelectorAll('.database-notice').forEach(element => element.remove());
   const settingsButton = app.querySelector('.admin-sidebar [data-action="settings"]');
   if (settingsButton) settingsButton.setAttribute('aria-label', 'Pengaturan studio');
-  if (page === 'admin') app.querySelectorAll('.admin-sidebar [data-action="logout"]').forEach(button => button.remove());
   if (page === 'admin' && adminDataReady && document.querySelector('.metric-grid')) {
     try {
       renderAdminMetrics();
+      removeUnauthorizedAdminMutations(app);
     } catch (error) {
       console.error('[Admin dashboard] Render failed:', error);
       const content = app.querySelector('#admin-content');
@@ -968,7 +849,7 @@ function applyReferencePresentation(app) {
   const availableLabel = publicBays.length ? String(availableBays).padStart(2, '0') : '--';
   app.insertAdjacentHTML('afterbegin', `<section class="home-statusbar"><div><span class="live-dot"></span><strong>${publicWashCount} KENDARAAN TERAWAT HARI INI</strong><span class="status-divider">/</span><span>RINSE SOCIETY · SEMARANG</span></div><div><span>SELF-SERVICE LIVE</span><strong>${availableLabel} / ${totalBays} BAY TERSEDIA</strong></div></section>`);
   hero.classList.add('reference-home-hero');
-  hero.querySelector('.hero-content .hero-buttons').innerHTML = '<button class="button button-dark" data-action="booking">Pesan layanan</button><button class="button button-quiet" data-nav="services">Jelajahi layanan</button>';
+  hero.querySelector('.hero-content .hero-buttons').innerHTML = '<button class="button button-dark" data-action="service-order">Pesan layanan</button><button class="button button-quiet" data-nav="services">Jelajahi layanan</button>';
   hero.insertAdjacentHTML('beforeend', `<aside class="home-capacity-panel"><div class="capacity-panel-heading"><span><i class="live-dot"></i> TELEMETRI BAY LIVE</span><strong>SISTEM NORMAL</strong></div><div class="capacity-metrics"><article><div><span>PROFESSIONAL WASH</span><b>${String(regularServices().length).padStart(2, '0')}</b></div><small>Layanan studio</small><i>Studio Semarang</i></article><article><div><span>SELF-SERVICE</span><b>${String(totalBays).padStart(2, '0')}</b></div><small>Bay universal</small><i>${availableLabel} tersedia</i></article></div><div class="capacity-panel-foot"><span>Jadwal diperbarui dari status bay</span><button class="text-link" data-nav="self-service">Lihat status bay</button></div></aside>`);
 }
 function renderPublicDataState() {
@@ -1039,7 +920,6 @@ function renderAdminMetrics() {
   const paidToday = todays.filter(isRevenueTransaction);
   const lowStock = db.services_products.filter(item => item.item_type === 'PRODUCT' && item.stock <= item.min_stock).length;
   const washed = new Set(todays.filter(tx => tx.item_type === 'SERVICE' && isRevenueTransaction(tx) && tx.transaction_status === 'COMPLETED').map(tx => tx.vehicle_id).filter(Boolean)).size;
-  const bookings = todays.filter(tx => tx.transaction_type === 'BOOKING' && isRevenueTransaction(tx)).length;
   const selfService = todays.filter(tx => tx.item_type === 'SERVICE' && isRevenueTransaction(tx) && db.services_products.find(item => item.id === tx.item_id)?.category === 'SELF_SERVICE').length;
   const paid = transactions.filter(isRevenueTransaction);
   const weeklyRows = dailyPaidRevenue(transactions);
@@ -1049,9 +929,9 @@ function renderAdminMetrics() {
   const productRevenue = weeklyPaid.filter(tx => tx.item_type === 'PRODUCT').reduce((sum, tx) => sum + Number(tx.amount), 0);
   const metrics = [
     ['Pendapatan Hari Ini', money(paidToday.reduce((sum, tx) => sum + Number(tx.amount), 0)), `${paidToday.length} transaksi lunas`, 'primary'],
-    ['Transaksi', transactions.length.toString().padStart(2, '0'), `${transactions.filter(tx => tx.transaction_type === 'BOOKING' && tx.transaction_status !== 'CANCELLED').length} booking tercatat`, 'primary'],
+    ['Transaksi', transactions.length.toString().padStart(2, '0'), 'Layanan, sesi, dan produk tersimpan', 'primary'],
     ['Kendaraan Dilayani', String(washed).padStart(2, '0'), 'Transaksi selesai hari ini', 'primary'],
-    ['Booking Hari Ini', String(bookings).padStart(2, '0'), 'Jadwal kunjungan', 'primary']
+    ['Order Hari Ini', String(todays.length).padStart(2, '0'), 'Layanan, sesi, dan produk', 'primary']
   ];
   document.querySelector('.metric-grid').innerHTML = metrics.map(([label, value, note, primary]) => `<article class="metric-card ${primary ? 'metric-primary' : ''}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join('');
   const secondaryMetrics = `<div class="metric-secondary-grid"><div><span>Sesi Self-Service Hari Ini</span><strong>${String(selfService).padStart(2, '0')}</strong><small>Sesi lunas hari ini</small></div><div><span>Pendapatan Jasa · Tujuh Hari</span><strong>${money(serviceRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Pendapatan Produk · Tujuh Hari</span><strong>${money(productRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Pelanggan</span><strong>${String(db.customers.length).padStart(2, '0')}</strong><small>Data pelanggan terdaftar</small></div></div>`;
@@ -1094,7 +974,7 @@ function renderHome() {
   <section class="section quality-section"><div class="section-heading"><div><p class="eyebrow">STANDARDISASI PERAWATAN</p><h2>Metode dan kualitas<br><em>yang terasa bedanya.</em></h2></div><p class="section-aside">Perawatan dirancang untuk membersihkan kendaraan dengan teliti dan menjaga hasilnya tetap rapi.</p></div><div class="quality-grid"><article><span class="quality-index">01</span><h3>Air tersaring</h3><p>Bilas Reverse Osmosis membantu mengurangi residu mineral yang dapat meninggalkan noda air.</p></article><article><span class="quality-index">02</span><h3>Formula pH-netral</h3><p>Sampo khusus kendaraan untuk membersihkan dengan lembut dan menjaga lapisan wax.</p></article><article><span class="quality-index">03</span><h3>Teknik menyeluruh</h3><p>Busa, bilas bertekanan, dan pengeringan rapi sesuai layanan yang dipilih.</p></article><article><span class="quality-index">04</span><h3>Pilihan sesuai kendaraan</h3><p>Layanan tersedia untuk mobil dan sepeda motor, termasuk empat bay Self-Service.</p></article></div></section>
   <section class="section services-section" id="services"><div class="section-heading"><div><p class="eyebrow">PROFESSIONAL WASH</p><h2>Serahkan kendaraan.<br><em>Tim kami yang menangani.</em></h2></div><p class="section-aside">Tim Rinse Society menangani pencucian kendaraan dengan fokus pada kualitas hasil, durasi, dan penanganan yang rapi.</p><a class="text-link" href="#services" data-nav="services">Lihat pilihan</a></div><div class="service-grid">${regularServices().slice(0, 2).map(serviceCard).join('')}</div><div class="service-banner"><img src="${PHOTOS.selfBay}" alt="Beberapa bay Self-Service yang siap digunakan" loading="lazy"><div class="banner-content"><span class="eyebrow eyebrow-light">SELF-SERVICE</span><h3>Self-Service</h3><p>Pilih salah satu dari empat bay universal untuk mobil atau sepeda motor, lalu tentukan waktu dan durasi cuci.</p><button class="button button-white" data-nav="self-service">Pilih bay</button></div><span class="banner-index">BAY UNIVERSAL · 02</span></div></section>
   <section class="shop-teaser"><div class="section-heading"><div><p class="eyebrow">PERAWATAN KENDARAAN DI RUMAH</p><h2>Produk pilihan.<br><em>Rawat kilapnya.</em></h2></div><a class="text-link" href="#shop" data-nav="shop">Lihat semua produk</a></div><div class="product-grid">${db.services_products.filter(item => item.item_type === 'PRODUCT').slice(0, 2).map(productCard).join('')}</div></section>
-  <section class="closing-cta"><div><p class="eyebrow eyebrow-light">RINSE SOCIETY · SEMARANG</p><h2>Siap memberikan kilau terbaik<br>untuk kendaraan Anda?</h2><p>Pilih layanan dan waktu kunjungan yang sesuai.</p></div><div class="closing-cta-actions"><button class="button button-white" data-action="booking">Pesan layanan</button><button class="text-link light-link" data-nav="services">Lihat semua layanan</button></div></section>`;
+  <section class="closing-cta"><div><p class="eyebrow eyebrow-light">RINSE SOCIETY · SEMARANG</p><h2>Siap memberikan kilau terbaik<br>untuk kendaraan Anda?</h2><p>Pilih layanan dan waktu kunjungan yang sesuai.</p></div><div class="closing-cta-actions"><button class="button button-white" data-action="service-order">Pesan layanan</button><button class="text-link light-link" data-nav="services">Lihat semua layanan</button></div></section>`;
 }
 function productCard(sourceProduct, options = {}) {
   const product = catalogItem(sourceProduct);
@@ -1102,6 +982,17 @@ function productCard(sourceProduct, options = {}) {
   const categoryAttribute = options.categoryFilter ? `data-product-category="${escapeHtml(options.categoryFilter)}"` : '';
   const hidden = options.categoryFilter && productFilter !== 'all' && options.categoryFilter !== productFilter ? 'hidden' : '';
   return `<article class="product-card" ${categoryAttribute} ${hidden}><button class="product-image" data-product="${product.id}" aria-label="Tambahkan ${escapeHtml(product.name)} ke keranjang"><img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy"><span class="product-add">+</span></button><div class="product-info"><span class="eyebrow">${escapeHtml(product.category || 'PRODUK PERAWATAN')}</span><h3>${escapeHtml(product.name)}</h3><p>${escapeHtml(product.description || '')}</p><div class="product-price-row"><strong>${money(product.price)}</strong><span class="stock-note ${low ? 'low-stock' : ''}">${low ? 'STOK MENIPIS' : `STOK ${product.stock}`}</span></div><button class="product-buy" data-product="${product.id}">Tambah ke keranjang <span>↗</span></button></div></article>`;
+}
+function isAdminAuthorized() {
+  return page === 'admin' && hasAdminRole(adminUser);
+}
+function requireAdminAuthorization() {
+  if (!isAdminAuthorized()) throw new Error('Akses Admin terverifikasi diperlukan.');
+}
+function removeUnauthorizedAdminMutations(root) {
+  if (isAdminAuthorized()) return;
+  root.querySelectorAll('[data-action="walkin"], [data-action="add-item"], [data-action="logout"], [data-edit-item], [data-edit-customer-address], [data-payment-paid], [data-refund-complete], [data-queue-id]')
+    .forEach(control => control.remove());
 }
 function renderServices() {
   const cars = regularServices().filter(service => service.type === 'CAR');
@@ -1186,13 +1077,15 @@ function openDialog(kind, serviceId) {
     return;
   }
   if (kind === 'walkin') {
-    if (page !== 'admin' || !adminDataReady) {
+    if (!isAdminAuthorized() || !adminDataReady) {
       showToast('Data dashboard belum tersedia untuk membuat transaksi langsung.', 'error');
       return;
     }
     renderTransactionForm(content, service || regularServices()[0]);
   } else if (kind === 'settings') {
     content.innerHTML = `<p class="eyebrow">PENGATURAN STUDIO</p><h2>Akun <em>studio.</em></h2><p class="dialog-intro">${adminUser ? `Masuk sebagai ${escapeHtml(adminUser.email || 'admin')}.` : 'Pengaturan operasional Rinse Society.'}</p><div class="settings-status"><strong>Rinse Society · Semarang</strong><p>Kelola jadwal, layanan, dan produk studio dari dashboard.</p></div><div class="dialog-actions">${adminUser ? '<button class="button button-dark" data-action="logout">Keluar dari akun</button>' : ''}<button class="button button-quiet" data-action="close-dialog">Tutup</button></div>`;
+  } else if (kind === 'admin-login') {
+    content.innerHTML = '<p class="eyebrow">AKSES STUDIO</p><h2>Masuk sebagai <em>Admin.</em></h2><form id="admin-login-form" class="dialog-form"><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="button button-dark button-full" type="submit">Masuk</button></form>';
   } else if (kind === 'cart') renderCartDialog(content);
   else if (kind === 'self-service') {
     const selfService = service || db.services_products.find(item => isSelfServiceItem(item) && item.type === 'CAR') || db.services_products.find(isSelfServiceItem);
@@ -1206,13 +1099,6 @@ function openDialog(kind, serviceId) {
   }
   dialog.showModal();
   simplifyUiSymbols(dialog);
-}
-function renderLegacyBookingChoiceDialog(content) {
-  const services = regularServices();
-  const professionalChoices = services.map(service => `<button class="booking-choice-service" type="button" data-service="${service.id}"><strong>${escapeHtml(service.name)}</strong><span>${money(service.price)} · ${service.duration} menit</span><b>Pilih layanan</b></button>`).join('');
-  const availableAddons = ADDONS.map(addon => `<li>${escapeHtml(addon.name)} · ${money(addon.price)}</li>`).join('');
-  content.innerHTML = `<p class="eyebrow">PEMESANAN</p><h2>Pilih jenis layanan</h2><p class="dialog-intro">Pilih cara mencuci kendaraan Anda.</p><div class="booking-choice-grid"><section class="booking-choice-option"><p class="eyebrow">PROFESSIONAL WASH</p><h3>Cuci kendaraan oleh tim</h3><p>Tim Rinse Society menangani pencucian kendaraan Anda.</p><div class="booking-choice-services">${professionalChoices || '<p class="report-empty">Layanan Professional Wash belum tersedia.</p>'}</div><div class="booking-choice-addons"><strong>Tambahan tersedia</strong><ul>${availableAddons || '<li>Belum ada tambahan</li>'}</ul></div></section><section class="booking-choice-option"><p class="eyebrow">SELF-SERVICE</p><h3>Cuci kendaraan sendiri</h3><p>Pilih kendaraan, tanggal, waktu, durasi, dan bay universal.</p><button class="button button-dark" type="button" data-action="self-service-book">Pilih Self-Service</button></section></div>`;
-  polishUiLabels(content);
 }
 function renderTransactionForm(content, selectedService) {
   const services = db.services_products.filter(item => item.item_type === 'SERVICE' && item.active !== false);
@@ -1251,199 +1137,6 @@ function renderTransactionForm(content, selectedService) {
   form.addEventListener('input', rotateRequestIdAfterEdit);
   form.addEventListener('change', rotateRequestIdAfterEdit);
   updateServiceDetails();
-}
-function renderLegacyScheduledTransactionForm(content, kind, selectedService) {
-  const walkin = kind === "walkin";
-  const simpleOrder = kind === "order";
-  const service = catalogItem(selectedService || SERVICES[0]);
-  content.innerHTML = `
-    <p class="eyebrow">${walkin ? "WALK-IN · ADMIN" : simpleOrder ? "PESAN LAYANAN" : "BOOKING · LANGKAH 1"}</p>
-    <h2>${walkin ? "Langsung datang.<br><em>Kami siap melayani.</em>" : simpleOrder ? "Buat pesanan<br><em>cuci kendaraan.</em>" : "Jadwalkan cuci<br><em>kendaraan Anda.</em>"}</h2>
-    <p class="dialog-intro">${escapeHtml(service.name)} · ${money(service.price)} · ${service.duration} menit</p>
-    ${simpleOrder ? '<p class="dialog-intro">Jadwal layanan dan antrean diatur otomatis oleh studio.</p>' : ''}
-    <form id="transaction-form" class="dialog-form">
-      <input type="hidden" name="flow" value="${kind}">
-      <label>Layanan cuci<select name="service_id" required>${db.services_products.filter(isRegularServiceItem).map(item => `<option value="${item.id}" ${item.id === service.id ? "selected" : ""}>${escapeHtml(item.name)} · ${money(item.price)}</option>`).join("")}</select></label>
-      <div class="form-two">
-        <label>Nama lengkap<input name="name" autocomplete="name" required placeholder="Nama pelanggan"></label>
-        <label>Nomor HP<input name="phone" type="tel" autocomplete="tel" required placeholder="08…"></label>
-      </div>
-      <div class="form-two">
-        <label>Model kendaraan<input name="model" placeholder="Contoh: Honda HR-V"></label>
-        <label>Nomor polisi<input name="plate" required placeholder="H 1234 NP"></label>
-      </div>
-      ${simpleOrder
-        ? ''
-        : walkin
-        ? `<label>Waktu datang<input name="time" type="time" required value="${getJakartaFutureTimeString()}" min="08:00" max="20:30"></label>`
-        : `<div class="form-two"><label>Tanggal kunjungan<input name="date" type="date" required value="${getJakartaDateString()}" min="${getJakartaDateString()}"></label><label>Jam layanan<input name="time" type="time" required value="${getJakartaFutureTimeString()}" min="08:00" max="20:30"></label></div>`}
-      <div class="dialog-total"><span>Estimasi total</span><strong id="flow-total">${money(service.price)}</strong></div>
-      <button class="button button-dark button-full" type="submit">Lanjut ke review <span>↗</span></button>
-    </form>
-  `;
-  const paymentLabel = document.createElement("label");
-  paymentLabel.textContent = "Metode pembayaran";
-  const paymentSelect = document.createElement("select");
-  paymentSelect.name = "payment";
-  paymentSelect.required = true;
-  (simpleOrder ? [["CASH", "Bayar di tempat"]] : walkin ? [["CASH", "Tunai"], ["QRIS", "QRIS"], ["E_WALLET", "Dompet digital"], ["CARD", "Kartu"]] : [["QRIS", "QRIS"], ["E_WALLET", "Dompet digital"], ["CARD", "Kartu"]]).forEach(([value, label]) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = label;
-    paymentSelect.append(option);
-  });
-  paymentLabel.append(paymentSelect);
-  const paymentNote = document.createElement("small");
-  paymentNote.textContent = "Pembayaran disimulasikan berhasil dan dicatat lunas setelah transaksi tersimpan.";
-  paymentLabel.append(paymentNote);
-  content.querySelector("#flow-total")?.closest(".dialog-total")?.before(paymentLabel);
-  const form = content.querySelector("#transaction-form");
-  const serviceSelect = content.querySelector('[name="service_id"]');
-  const recalculate = () => {
-    const chosen = db.services_products.find(item => item.id === serviceSelect.value) || service;
-    content.querySelector("#flow-total").textContent = money(chosen.price);
-  };
-  serviceSelect.addEventListener("change", recalculate);
-  recalculate();
-}
-function renderLegacyScheduledSelfServiceTransactionForm(content) {
-  const defaultService = db.services_products.find(item => item.category === 'SELF_SERVICE' && item.type === 'CAR') || db.services_products.find(item => item.category === 'SELF_SERVICE');
-  const todayDate = getJakartaDateString();
-  const nowTime = getJakartaFutureTimeString();
-  const bayOptions = Array.from({ length: 4 }, (_, index) => `<option value="${index + 1}">B-${String(index + 1).padStart(2, '0')}</option>`).join('');
-  const durationOptions = [20, 25, 30, 45, 60].map(value => `<option value="${value}" ${value === Number(defaultService.duration || 30) ? 'selected' : ''}>${value} menit</option>`).join('');
-  content.innerHTML = `<p class="eyebrow">CUCI MANDIRI · BOOKING</p><h2>Cuci sendiri di<br><em>bay pilihan Anda.</em></h2><p class="dialog-intro">4 bay universal untuk mobil dan sepeda motor. Pastikan jadwal, bay, dan durasi sesuai kebutuhan Anda.</p><form id="transaction-form" class="dialog-form"><input type="hidden" name="flow" value="self-service"><input type="hidden" name="service_id" value="${defaultService.id}"><div class="form-two"><label>Jenis kendaraan<select name="vehicle_type" required><option value="CAR" selected>Mobil</option><option value="MOTOR">Sepeda Motor</option></select></label><label>Bay<select name="bay_number" required>${bayOptions}</select></label></div><div class="form-two"><label>Nama lengkap<input name="name" required placeholder="Nama pelanggan"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label></div><div class="form-two"><label>Model kendaraan<input name="model" placeholder="Contoh: Honda HR-V"></label><label>Nomor polisi<input name="plate" required placeholder="H 1234 NP"></label></div><label>Tambahan layanan<div class="addon-checklist">${ADDONS.map(addon => `<label class="addon-choice"><input type="checkbox" name="addon_ids" value="${addon.id}"><span><strong>${escapeHtml(addon.name)}</strong><small>${money(addon.price)} · ${addon.duration} menit</small></span></label>`).join('')}</div></label><div class="form-two"><label>Tanggal<select name="date" required>${Array.from({ length: 7 }, (_, index) => {
-      const value = addDaysToJakartaDate(todayDate, index);
-      return `<option value="${value}" ${index === 0 ? 'selected' : ''}>${new Date(`${value}T12:00:00+07:00`).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })}</option>`;
-    }).join('')}</select></label><label>Jam mulai<input name="time" type="time" required value="${nowTime}"></label></div><div class="form-two"><label>Durasi<select name="duration" required>${durationOptions}</select></label><label>Metode pembayaran<select name="payment"><option value="CASH">Tunai</option><option value="QRIS">QRIS</option><option value="E_WALLET">E-Wallet</option><option value="CARD">Kartu</option></select></label></div><div class="dialog-total"><span>Estimasi total</span><strong id="flow-total">${money(defaultService.price)}</strong></div><button class="button button-dark button-full" type="submit">Lanjut ke review <span>↗</span></button></form>`;
-  const vehicleTypeField = content.querySelector('[name="vehicle_type"]');
-  const bayField = content.querySelector('[name="bay_number"]');
-  const durationField = content.querySelector('[name="duration"]');
-  const totalField = content.querySelector('#flow-total');
-  const customerNameField = content.querySelector('[name="name"]');
-  const customerPhoneField = content.querySelector('[name="phone"]');
-  const vehicleModelField = content.querySelector('[name="model"]');
-  const vehiclePlateField = content.querySelector('[name="plate"]');
-  const addonInputs = [...content.querySelectorAll('[name="addon_ids"]')];
-  const vehicleSelectLabel = document.createElement('label');
-  vehicleSelectLabel.textContent = 'Kendaraan terdaftar';
-  const vehicleSelect = document.createElement('select');
-  vehicleSelect.name = 'vehicle_id';
-  vehicleSelect.innerHTML = '<option value="">Tambahkan kendaraan baru</option>';
-  vehicleSelectLabel.append(vehicleSelect);
-  customerPhoneField.closest('.form-two')?.after(vehicleSelectLabel);
-  let customerVehicles = [];
-  let lastRequestedCustomerPhone = '';
-  let lastResolvedCustomerPhone = '';
-  const setVehicleChoices = () => {
-    const choices = customerVehicles.filter(vehicle => vehicle.type === vehicleTypeField.value);
-    vehicleSelect.innerHTML = `<option value="">${choices.length ? 'Pilih kendaraan pelanggan' : 'Tambahkan kendaraan baru'}</option>${choices.map(vehicle => `<option value="${escapeHtml(vehicle.id)}">${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.plate)}</option>`).join('')}`;
-    vehicleModelField.readOnly = false;
-    vehiclePlateField.readOnly = false;
-    vehicleModelField.value = '';
-    vehiclePlateField.value = '';
-  };
-  const loadSelfServiceCustomer = async () => {
-    const phone = normalizePhone(customerPhoneField.value);
-    if (phone.length < 7) {
-      lastRequestedCustomerPhone = '';
-      lastResolvedCustomerPhone = '';
-      customerVehicles = [];
-      setVehicleChoices();
-      return;
-    }
-    if (!(page === 'admin' && adminUser) && !customerCapability(phone)) {
-      customerVehicles = [];
-      setVehicleChoices();
-      return;
-    }
-    lastRequestedCustomerPhone = phone;
-    try {
-      const rows = await customerByPhone(phone);
-      if (normalizePhone(customerPhoneField.value) !== phone) return;
-      customerVehicles = rows.filter(row => row.vehicle_id).map(row => ({ id: row.vehicle_id, type: row.vehicle_type, model: row.vehicle_model, plate: row.vehicle_plate }));
-      const identity = resolveCustomerIdentity({ name: customerNameField.value, phone: customerPhoneField.value, existingCustomers: rows.map(row => ({ id: row.customer_id, full_name: row.full_name, phone: row.phone })) });
-      if (identity.mismatch) {
-        customerNameField.value = '';
-        lastRequestedCustomerPhone = '';
-        lastResolvedCustomerPhone = '';
-        customerVehicles = [];
-        setVehicleChoices();
-        showToast('Identitas pelanggan tidak cocok dengan nomor telepon yang dimasukkan.', 'error');
-        return;
-      }
-      if (rows[0]?.full_name) customerNameField.value = rows[0].full_name;
-      lastResolvedCustomerPhone = phone;
-      setVehicleChoices();
-    } catch (error) {
-      if (normalizePhone(customerPhoneField.value) !== phone) return;
-      showToast(`Data kendaraan belum dapat dimuat: ${error.message}`, 'error');
-    }
-  };
-  customerPhoneField.addEventListener('input', () => {
-    const currentPhone = normalizePhone(customerPhoneField.value);
-    const previousPhone = lastResolvedCustomerPhone || lastRequestedCustomerPhone;
-    if (hasCustomerPhoneChanged(previousPhone, currentPhone)) {
-      customerNameField.value = '';
-      lastRequestedCustomerPhone = '';
-      lastResolvedCustomerPhone = '';
-    }
-    customerVehicles = [];
-    setVehicleChoices();
-  });
-  customerPhoneField.addEventListener('blur', loadSelfServiceCustomer);
-  customerPhoneField.addEventListener('change', loadSelfServiceCustomer);
-  vehicleSelect.addEventListener('change', () => {
-    const vehicle = customerVehicles.find(item => item.id === vehicleSelect.value);
-    vehicleModelField.value = vehicle?.model || '';
-    vehiclePlateField.value = vehicle?.plate || '';
-    vehicleModelField.readOnly = !!vehicle;
-    vehiclePlateField.readOnly = !!vehicle;
-  });
-  const selfServicePayment = content.querySelector('[name="payment"]');
-  selfServicePayment.querySelector('option[value="CASH"]')?.remove();
-  const selfServicePaymentNote = document.createElement('small');
-  selfServicePaymentNote.textContent = 'Pembayaran disimulasikan berhasil dan dicatat lunas setelah booking tersimpan.';
-  selfServicePayment.closest('label')?.append(selfServicePaymentNote);
-  const updateSelfServiceTotal = () => {
-    const vehicleType = vehicleTypeField.value;
-    const service = db.services_products.find(item => item.category === 'SELF_SERVICE' && item.type === vehicleType) || db.services_products.find(item => item.category === 'SELF_SERVICE');
-    const addonIds = collectAddonIds(addonInputs.filter(input => input.checked).map(input => input.value));
-    const total = calculateBookingAmount(service, ADDONS, addonIds);
-    totalField.textContent = money(total);
-    content.querySelector('[name="service_id"]').value = service.id;
-  };
-  vehicleTypeField.addEventListener('change', () => { updateSelfServiceTotal(); setVehicleChoices(); });
-  durationField.addEventListener('change', updateSelfServiceTotal);
-  addonInputs.forEach(input => input.addEventListener('change', updateSelfServiceTotal));
-  bayField.value = '1';
-  updateSelfServiceTotal();
-}
-function renderCompactSelfServiceOrderForm(content) {
-  const defaultService = db.services_products.find(item => item.category === 'SELF_SERVICE' && item.type === 'CAR')
-    || db.services_products.find(item => item.category === 'SELF_SERVICE');
-  if (!defaultService) {
-    content.innerHTML = '<div class="empty-state"><h3>Self-Service belum tersedia.</h3><p>Pilih Professional Wash atau coba lagi setelah katalog dimuat.</p></div>';
-    return;
-  }
-  content.innerHTML = `<p class="eyebrow">PESAN SELF-SERVICE</p><h2>Cuci mandiri<br><em>tanpa pilih slot.</em></h2><p class="dialog-intro">Waktu dan bay terdekat dipilih otomatis. Pembayaran disimulasikan setelah booking tersimpan.</p><form id="transaction-form" class="dialog-form"><input type="hidden" name="flow" value="self-service"><input type="hidden" name="service_id" value="${defaultService.id}"><input type="hidden" name="duration" value="${defaultService.duration}"><div class="form-two"><label>Jenis kendaraan<select name="vehicle_type" required><option value="CAR" selected>Mobil</option><option value="MOTOR">Sepeda motor</option></select></label><label>Nomor HP<input name="phone" type="tel" autocomplete="tel" required placeholder="08…"></label></div><label>Nama lengkap<input name="name" autocomplete="name" required placeholder="Nama pelanggan"></label><div class="form-two"><label>Model kendaraan<input name="model" placeholder="Contoh: Honda HR-V"></label><label>Nomor polisi<input name="plate" required placeholder="H 1234 NP"></label></div><label>Metode pembayaran<select name="payment" required><option value="QRIS">QRIS</option><option value="E_WALLET">Dompet digital</option><option value="CARD">Kartu</option></select></label><small>Status LUNAS dicatat database setelah order berhasil.</small><div class="dialog-total"><span>Estimasi total</span><strong id="flow-total">${money(defaultService.price)}</strong></div><button class="button button-dark button-full" type="submit">Bayar & buat pesanan</button></form>`;
-  const form = content.querySelector('#transaction-form');
-  const vehicleType = form.elements.vehicle_type;
-  const serviceId = form.elements.service_id;
-  const duration = form.elements.duration;
-  const phone = form.elements.phone;
-  const name = form.elements.name;
-  const model = form.elements.model;
-  const plate = form.elements.plate;
-  const updateTotal = () => {
-    const service = db.services_products.find(item => item.category === 'SELF_SERVICE' && item.type === vehicleType.value);
-    if (!service) return;
-    serviceId.value = service.id;
-    duration.value = service.duration;
-    content.querySelector('#flow-total').textContent = money(service.price);
-  };
-  vehicleType.addEventListener('change', updateTotal);
-  updateTotal();
 }
 function renderCartDialog(content) {
   const lines = Object.entries(cart).map(([id, row]) => ({ product: catalogItem(db.services_products.find(item => item.id === id) || {}), ...row })).filter(row => row.product.id);
@@ -1505,31 +1198,6 @@ function resolveOrderVehicle(customerVehicles, customerId, type, model, plate) {
   const existingVehicle = customerVehicles.find(vehicle => vehicle.type === type
     && normalizePlate(vehicle.plate) === normalizedPlate);
   return existingVehicle || makeVehicle(customerId, type, model, plate);
-}
-function isBayScheduledForWindow(bayNumber, dateString, timeString, durationMinutes) {
-  const startUtc = parseJakartaDateTime(dateString, timeString).getTime();
-  const durationMs = Math.max(Number(durationMinutes) || 0, 0) * 60000;
-  const endUtc = startUtc + durationMs;
-  return db.transactions.some(tx => {
-    const normalized = normalizeOperationalTransaction(tx);
-    if (!normalized || normalized.item_type === 'PRODUCT' || !['PENDING', 'PAID'].includes(normalized.payment_status) || !Number.isFinite(Number(normalized.bay_number)) || Number(normalized.bay_number) !== Number(bayNumber)) return false;
-    if (!['PENDING', 'ACTIVE', 'BOOKED'].includes(normalized.transaction_status)) return false;
-    if (!normalized.booking_date || !normalized.booking_time) return false;
-    const txStartUtc = parseJakartaDateTime(normalized.booking_date, normalized.booking_time).getTime();
-    const txDurationMs = Math.max(Number(normalized.duration_minutes) || 0, 0) * 60000;
-    const txEndUtc = txStartUtc + txDurationMs;
-    return bookingWindowsOverlap(startUtc, durationMs, txStartUtc, txDurationMs);
-  });
-}
-function firstAvailableBay(dateString = getJakartaDateString(), timeString = getJakartaTimeString(), durationMinutes = 30) {
-  if (!databaseConnected) throw new Error('Status Self-Service belum dapat dimuat. Silakan coba lagi.');
-  const targetDuration = Number(durationMinutes) || 30;
-  const publiclyBusy = dateString === getJakartaDateString()
-    ? new Set(publicBays.filter(bay => bay.bay_status !== 'AVAILABLE').map(bay => Number(bay.bay_number)))
-    : new Set();
-  return Array.from({ length: 4 }, (_, index) => index + 1).find(bayNumber =>
-    !publiclyBusy.has(bayNumber) && !isBayScheduledForWindow(bayNumber, dateString, timeString, targetDuration)
-  ) || null;
 }
 async function persistTransaction(tx, ownerToken = null, requestId = null) {
   if (!databaseConnected) throw new Error('Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.');
@@ -1624,8 +1292,8 @@ async function submitService(form) {
   render();
 }
 function showConfirmation(tx) {
-  const isBooking = tx.transaction_type === 'BOOKING';
-  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">${isBooking ? 'BOOKING TERCATAT' : 'TRANSAKSI TERCATAT'}</p><h2>${isBooking ? 'Booking dikonfirmasi.' : 'Pembayaran berhasil.'}</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama order Anda.</p><div class="pass-card"><div><span>KODE ORDER</span><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(tx.item_name)} · ${tx.booking_date} · ${tx.booking_time}</small></div><img class="fake-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=144x144&data=${encodeURIComponent(tx.code)}" alt="Kode order ${escapeHtml(tx.code)}"></div><div class="confirmation-details"><span>${money(tx.amount)}</span>${statusBadge(tx.payment_status)}${statusBadge(tx.payment_method)}</div><button class="button button-dark button-full" data-action="close-dialog">Selesai <span>↗</span></button></div>`;
+  const isSelfServiceSession = tx.transaction_type === 'BOOKING';
+  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">${isSelfServiceSession ? 'SESI SELF-SERVICE TERCATAT' : 'TRANSAKSI TERCATAT'}</p><h2>${isSelfServiceSession ? 'Sesi Self-Service dikonfirmasi.' : 'Pembayaran berhasil.'}</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama order Anda.</p><div class="pass-card"><div><span>KODE ORDER</span><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(tx.item_name)} · ${tx.booking_date} · ${tx.booking_time}</small></div><img class="fake-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=144x144&data=${encodeURIComponent(tx.code)}" alt="Kode order ${escapeHtml(tx.code)}"></div><div class="confirmation-details"><span>${money(tx.amount)}</span>${statusBadge(tx.payment_status)}${statusBadge(tx.payment_method)}</div><button class="button button-dark button-full" data-action="close-dialog">Selesai <span>↗</span></button></div>`;
 }
 async function submitProducts(form) {
   const data = new FormData(form);
@@ -1727,14 +1395,6 @@ function renderAdminTransactionList(records, title, eyebrow) {
   }).join('');
   return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Data operasional studio dengan status pembayaran dan jadwal yang konsisten.</p></div><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
 }
-function renderAdminBookings() {
-  const bookings = getOperationalTransactions(db.transactions).filter(tx => tx.transaction_type === 'BOOKING' && tx.transaction_status !== 'CANCELLED').sort((a, b) => `${a.booking_date} ${a.booking_time}`.localeCompare(`${b.booking_date} ${b.booking_time}`));
-  const today = getJakartaDateString();
-  const upcoming = bookings.filter(tx => tx.booking_date >= today && isRevenueTransaction(tx));
-  const rows = bookings.filter(tx => tx.booking_date >= today).length ? bookings.filter(tx => tx.booking_date >= today) : bookings;
-  const confirmedToday = bookings.filter(tx => tx.booking_date === today && isRevenueTransaction(tx)).length;
-  return `<div class="booking-board"><div class="booking-summary"><div><span>BOOKING MENDATANG</span><strong>${upcoming.length}</strong></div><div><span>MENUNGGU PEMBAYARAN</span><strong>${bookings.filter(tx => tx.payment_status === 'PENDING').length}</strong></div><div><span>BOOKING HARI INI</span><strong>${confirmedToday}</strong></div></div><div class="booking-board-heading"><div><p class="eyebrow">JADWAL KUNJUNGAN</p><h2>${rows.some(tx => tx.booking_date >= today) ? 'Booking berikutnya' : 'Riwayat booking'}</h2></div><span>${rows.length} jadwal</span></div><div class="booking-list">${rows.length ? rows.map(tx => { const customer = getCustomer(tx), vehicle = getVehicle(tx); const date = new Date(`${tx.booking_date}T12:00:00`); return `<article class="booking-row"><div class="booking-date"><strong>${date.toLocaleDateString('id-ID', { day: '2-digit' })}</strong><span>${date.toLocaleDateString('id-ID', { month: 'short' })}</span></div><div class="booking-main"><strong>${escapeHtml(tx.item_name)}</strong><span>${escapeHtml(customer?.full_name || 'Pelanggan')} · ${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</span><small>${escapeHtml(tx.code)}</small></div><div class="booking-time"><strong>${escapeHtml(tx.booking_time)}</strong><span>${tx.duration_minutes} menit</span></div><div class="booking-status"><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${statusLabel(tx.transaction_status)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span></div><strong class="booking-amount">${money(tx.amount)}</strong></article>`; }).join('') : '<p class="report-empty">Belum ada booking tercatat.</p>'}</div></div>`;
-}
 function renderAdminCustomers() {
   return `<div class="customer-toolbar"><div><p class="eyebrow">DATA PELANGGAN</p><h2>Pelanggan & Kendaraan</h2><p>Ringkasan kunjungan dan kendaraan terdaftar.</p></div><label class="customer-search" for="customer-search">Cari nama, nomor HP, atau plat<input id="customer-search" type="search" placeholder="Nama, nomor HP, atau plat"></label><span>${db.customers.length} pelanggan · ${db.vehicles.length} kendaraan</span></div><div class="customer-grid">${db.customers.map(customer => {
     const vehicles = db.vehicles.filter(vehicle => vehicle.customer_id === customer.id);
@@ -1745,7 +1405,7 @@ function renderAdminCustomers() {
   }).join('')}</div>`;
 }
 function adminDescription(tab) {
-  return ({ overview: 'Pantau pendapatan, aktivitas studio, dan kebutuhan operasional.', transactions: 'Kelola pembayaran dan aktivitas transaksi dari semua kanal.', bookings: 'Tinjau jadwal kunjungan mendatang, pelanggan, dan status pembayaran.', queue: 'Pantau kendaraan yang menunggu, dicuci, dan siap diserahkan.', 'self-service': 'Pantau status empat bay dan sesi yang sedang berjalan.', customers: 'Lihat pelanggan, kendaraan, dan frekuensi kunjungan.', catalog: 'Kelola layanan, produk, harga, dan persediaan studio.', reports: 'Analisis pendapatan, metode pembayaran, layanan, dan penjualan produk.' })[tab] || '';
+  return ({ overview: 'Pantau pendapatan, aktivitas studio, dan kebutuhan operasional.', transactions: 'Kelola pembayaran dan aktivitas transaksi dari semua kanal.', queue: 'Pantau kendaraan yang menunggu, dicuci, dan siap diserahkan.', 'self-service': 'Pantau status empat bay dan sesi yang sedang berjalan.', customers: 'Lihat pelanggan, kendaraan, dan frekuensi kunjungan.', catalog: 'Kelola layanan, produk, harga, dan persediaan studio.', reports: 'Analisis pendapatan, metode pembayaran, layanan, dan penjualan produk.' })[tab] || '';
 }
 function setAdminDescription(tab) {
   const heading = document.getElementById('admin-heading');
@@ -1833,6 +1493,7 @@ function renderAdminCatalog() {
   }).join('')}</div>`;
 }
 function activateAdminTab(tab) {
+  if (!['overview', 'transactions', 'queue', 'self-service', 'customers', 'catalog', 'reports'].includes(tab)) return;
   if (!adminDataReady) {
     const content = document.getElementById('admin-content');
     if (content) content.innerHTML = renderAdminDataState();
@@ -1843,18 +1504,18 @@ function activateAdminTab(tab) {
   const heading = document.getElementById('admin-heading');
   const content = document.getElementById('admin-content');
   if (!content) return;
-  const labels = { overview: 'Ringkasan', transactions: 'Transaksi', bookings: 'Booking', queue: 'Antrean', 'self-service': 'Self-Service', catalog: 'Produk & Layanan', customers: 'Pelanggan & Kendaraan', reports: 'Laporan Pendapatan' };
+  const labels = { overview: 'Ringkasan', transactions: 'Transaksi', queue: 'Antrean', 'self-service': 'Self-Service', catalog: 'Produk & Layanan', customers: 'Pelanggan & Kendaraan', reports: 'Laporan Pendapatan' };
   heading.textContent = labels[tab] || labels.overview;
   setAdminDescription(tab);
   if (tab === 'overview') { render(); return; }
   if (tab === 'catalog') {
     content.innerHTML = renderAdminCatalog();
+    removeUnauthorizedAdminMutations(content);
     polishUiLabels(content);
     simplifyUiSymbols(content);
     return;
   }
   if (tab === 'transactions') content.innerHTML = renderAdminTransactionList(db.transactions, 'Seluruh transaksi studio.', 'DAFTAR TRANSAKSI');
-  else if (tab === 'bookings') content.innerHTML = renderAdminBookings();
   else if (tab === 'self-service') content.innerHTML = renderAdminBays();
   if (tab === 'queue') content.innerHTML = `<div class="queue-toolbar"><div><p class="eyebrow">PENGELOLAAN AREA CUCI</p><h2>Pantau setiap kendaraan.</h2></div><button class="button button-dark" data-action="walkin">+ Walk-in baru</button></div>${renderQueueColumns(true)}`;
   else if (tab === 'reports') { content.innerHTML = renderReports(); content.insertAdjacentHTML('beforeend', renderReportDetails()); }
@@ -1869,6 +1530,7 @@ function activateAdminTab(tab) {
     });
   }
   else if (tab === 'catalog') content.innerHTML = `<div class="catalog-toolbar"><div><p class="eyebrow">KATALOG DAN PERSEDIAAN</p><h2>Kelola layanan dan produk.</h2></div><button class="button button-dark" data-action="add-item">+ Tambah item</button></div><div class="catalog-table"><div class="catalog-row catalog-head"><span>ITEM</span><span>JENIS</span><span>HARGA</span><span>STOK / DURASI</span><span>STATUS</span></div>${db.services_products.filter(item => !isPickupAddon(item)).map(item => `<div class="catalog-row"><span class="catalog-name"><img src="${catalogItem(item).image || PHOTOS.car}" alt=""><strong>${escapeHtml(item.name)}</strong></span><span>${item.item_type === 'PRODUCT' ? 'PRODUK' : item.item_type === 'ADD_ON' ? 'TAMBAHAN' : 'LAYANAN'}</span><span>${money(item.price)}</span><span>${item.item_type === 'PRODUCT' ? `<b class="${item.stock <= item.min_stock ? 'stock-low' : ''}">${item.stock} / min ${item.min_stock}</b>` : `${item.duration || 0} menit`}</span><button class="toggle-active" data-edit-item="${item.id}">${item.active === false ? 'NONAKTIF' : 'AKTIF'} · Ubah</button></div>`).join('')}</div>`;
+  removeUnauthorizedAdminMutations(content);
   polishUiLabels(content);
   simplifyUiSymbols(content);
 }
@@ -1902,6 +1564,7 @@ async function fetchWithDiagnostics(url, options, label) {
   }
 }
 async function supabaseRequest(table, method = 'GET', body, query = '', prefer = 'return=representation') {
+  if (method !== 'GET') requireAdminAuthorization();
   if (!isSupabaseConfigured()) throw new Error('Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.');
   const activeSession = adminUser ? supabaseSession : null;
   if (activeSession?.expires_at && activeSession.expires_at * 1000 < Date.now() + 30000) {
@@ -2152,12 +1815,14 @@ async function bootstrapSupabase() {
   render();
 }
 function addCatalogItem() {
+  if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
   const content = document.getElementById('dialog-content');
   content.innerHTML = `<p class="eyebrow">KATALOG STUDIO</p><h2>Tambah item <em>baru.</em></h2><form id="catalog-form" class="dialog-form"><label>Nama item<input name="name" required></label><label>Jenis item<select name="item_type"><option value="SERVICE">LAYANAN</option><option value="PRODUCT">PRODUK</option><option value="ADD_ON">ADD-ON</option></select></label><label>Jenis kendaraan<select name="type"><option value="">Tidak terkait kendaraan</option><option value="CAR">Mobil</option><option value="MOTOR">Sepeda motor</option></select></label><label>Kategori<input name="category" placeholder="REGULAR, SELF_SERVICE, WASH & CARE"></label><label>Deskripsi<input name="description" required></label><div class="form-two"><label>Harga (Rp)<input name="price" type="number" min="0" required></label><label>Durasi (menit)<input name="duration" type="number" min="0" value="30"></label></div><div class="form-two"><label>Stok<input name="stock" type="number" min="0" value="0"></label><label>Stok minimum<input name="min_stock" type="number" min="0" value="5"></label></div><label>URL foto yang sesuai<input name="image" type="url" placeholder="https://..."></label><button class="button button-dark button-full" type="submit">Simpan ke katalog <span>↗</span></button></form>`;
   document.getElementById('flow-dialog').showModal();
   simplifyUiSymbols(document.getElementById('flow-dialog'));
 }
 function editCatalogItem(item) {
+  if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
   if (isPickupAddon(item)) {
     showToast('Add-on antar-jemput tidak lagi tersedia.', 'error');
     return;
@@ -2168,6 +1833,7 @@ function editCatalogItem(item) {
   simplifyUiSymbols(document.getElementById('flow-dialog'));
 }
 function editCustomerAddress(customer) {
+  if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
   const content = document.getElementById('dialog-content');
   content.innerHTML = `<p class="eyebrow">DATA PELANGGAN</p><h2>Alamat <em>${escapeHtml(customer.full_name)}</em></h2><form id="customer-address-form" class="dialog-form"><input type="hidden" name="customer_id" value="${escapeHtml(customer.id)}"><label>Alamat pelanggan<textarea name="address" rows="3" required>${escapeHtml(customer.address || '')}</textarea></label><button class="button button-dark button-full" type="submit">Simpan alamat</button></form>`;
   document.getElementById('flow-dialog').showModal();
@@ -2265,10 +1931,10 @@ document.addEventListener('click', async event => {
       render();
       document.getElementById('services')?.scrollIntoView({ behavior: 'instant' });
     }
-    else if (['booking', 'walkin', 'self-service-book', 'cart', 'settings'].includes(action)) {
+    else if (['service-order', 'walkin', 'self-service-order', 'cart', 'settings', 'admin-login'].includes(action)) {
       const dialog = document.getElementById('flow-dialog');
-      if (dialog.open && ['booking', 'self-service-book'].includes(action)) dialog.close();
-      openDialog(action === 'booking' ? 'order' : action === 'self-service-book' ? 'self-service' : action);
+      if (dialog.open && ['service-order', 'self-service-order'].includes(action)) dialog.close();
+      openDialog(action === 'service-order' ? 'order' : action === 'self-service-order' ? 'self-service' : action);
     }
     else if (action === 'checkout-product') renderProductCheckout(document.getElementById('dialog-content'));
     else if (action === 'add-item') addCatalogItem();
@@ -2308,8 +1974,23 @@ document.addEventListener('submit', async event => {
     try { await submitProducts(event.target); }
     catch (error) { showToast(error.message, 'error'); if (submit.isConnected) submit.disabled = false; }
   }
+  if (event.target.id === 'admin-login-form') {
+    event.preventDefault();
+    const submit = event.target.querySelector('[type="submit"]');
+    submit.disabled = true;
+    const data = new FormData(event.target);
+    try {
+      await signInAdmin(String(data.get('email') || '').trim(), String(data.get('password') || ''));
+      document.getElementById('flow-dialog').close();
+      render();
+    } catch (error) {
+      showToast(error.message || 'Login Admin belum dapat diproses.', 'error');
+      submit.disabled = false;
+    }
+  }
   if (event.target.id === 'customer-address-form') {
     event.preventDefault();
+    if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
     const data = Object.fromEntries(new FormData(event.target));
     const customer = db.customers.find(item => item.id === data.customer_id);
     if (!customer) { showToast('Data pelanggan tidak ditemukan.', 'error'); return; }
@@ -2325,6 +2006,7 @@ document.addEventListener('submit', async event => {
   }
   if (event.target.id === 'catalog-form') {
     event.preventDefault();
+    if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
     const data = Object.fromEntries(new FormData(event.target));
     const item = { id: crypto.randomUUID(), ...data, type: data.type || null, price: Number(data.price), duration: Number(data.duration), stock: Number(data.stock), min_stock: Number(data.min_stock), active: true, image: data.image || (data.item_type === 'PRODUCT' ? PHOTOS.detailing : PHOTOS.car) };
     if (isPickupAddon(item)) { showToast('Add-on antar-jemput tidak lagi tersedia.', 'error'); return; }
@@ -2333,6 +2015,7 @@ document.addEventListener('submit', async event => {
   }
   if (event.target.id === 'catalog-edit-form') {
     event.preventDefault();
+    if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
     const data = Object.fromEntries(new FormData(event.target));
     const item = db.services_products.find(product => product.id === data.record_id);
     if (!item || isPickupAddon(item)) { showToast('Add-on antar-jemput tidak lagi tersedia.', 'error'); return; }

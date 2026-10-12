@@ -2,26 +2,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {
-  calculateBookingAmount,
-  collectAddonIds,
+  hasAdminRole,
   hasCustomerPhoneChanged,
   toSupabasePhone,
   verifiedPhoneMatchesInput,
-  resolveBookingAddons,
-  calculateServiceDuration,
   mergePersistedTransaction,
-  isWithinOperatingHours,
   isValidIndonesianPlate,
   isValidRequestId,
   isValidServiceOrderResponse,
   isValidDemoProductOrderResponse,
   normalizeTransactionStatusForDisplay,
-  resolveServiceSchedule,
-  resolveAutomaticServiceSchedule,
-  bookingWindowsOverlap,
   resolveCustomerIdentity,
   validateServicePaymentMethod,
-  applyBookingExpiration,
   isValidCustomerCapabilityToken,
   requireCustomerCapabilityToken,
   sanitizeCart,
@@ -32,14 +24,8 @@ const {
   supabaseHttpError
 } = require('../app.js');
 
-const service = { id: 'svc-car', price: 50000 };
-const addons = [
-  { id: 'addon-vacuum', price: 20000, duration: 15 },
-  { id: 'addon-wax', price: 25000, duration: 10 },
-  { id: 'addon-tire', price: 15000, duration: 8 }
-];
-const referenceTime = new Date('2026-10-11T07:00:00+07:00');
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+const indexSource = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const migrationSource = fs.readFileSync(path.join(__dirname, '..', 'sql', 'multi-addon-booking-integrity-proposal.sql'), 'utf8');
 const authorizationSource = fs.readFileSync(path.join(__dirname, '..', 'sql', 'admin-role-authorization-proposal.sql'), 'utf8');
 const operationsSource = fs.readFileSync(path.join(__dirname, '..', 'sql', 'business-flow-hardening.sql'), 'utf8');
@@ -71,7 +57,7 @@ const productSubmitStart = appSource.indexOf('async function submitProducts(form
 const productSubmitEnd = appSource.indexOf('\nfunction showProductConfirmation', productSubmitStart);
 const productSubmitSource = appSource.slice(productSubmitStart, productSubmitEnd);
 const serviceFormStart = appSource.indexOf('function renderTransactionForm(content, selectedService)');
-const serviceFormEnd = appSource.indexOf('\nfunction renderLegacyScheduledTransactionForm', serviceFormStart);
+const serviceFormEnd = appSource.indexOf('\nfunction renderCartDialog', serviceFormStart);
 const serviceFormSource = appSource.slice(serviceFormStart, serviceFormEnd);
 const productFormStart = appSource.indexOf('function renderProductCheckout(content)');
 const productFormEnd = appSource.indexOf('\nfunction makeCode', productFormStart);
@@ -92,6 +78,8 @@ const validCapabilityToken = 'A'.repeat(43);
 const wrongOwnerCapabilityToken = 'B'.repeat(43);
 assert.notEqual(validCapabilityToken, wrongOwnerCapabilityToken);
 assert.equal(isValidCustomerCapabilityToken(validCapabilityToken), true);
+assert.equal(hasAdminRole({ app_metadata: { rinse_role: 'admin' } }), true);
+assert.equal(hasAdminRole({ user_metadata: { rinse_role: 'admin' } }), false);
 assert.equal(isValidCustomerCapabilityToken(wrongOwnerCapabilityToken), true);
 assert.equal(isValidCustomerCapabilityToken('invalid-token'), false);
 assert.equal(isValidCustomerCapabilityToken(undefined), false);
@@ -276,20 +264,12 @@ assert.match(capabilitySource, /grant select, insert, update, delete on public\.
 assert.match(capabilitySource, /create policy "Capability customer catalog read" on public\.services_products\s+for select to anon using \(active = true\)/);
 assert.match(capabilitySource, /for all to authenticated using \(public\.is_rinse_admin\(\)\) with check \(public\.is_rinse_admin\(\)\)/);
 
-assert.deepEqual(collectAddonIds(['addon-vacuum', 'addon-wax', 'addon-wax']), ['addon-vacuum', 'addon-wax']);
-const selectedAddons = resolveBookingAddons(['addon-vacuum', 'addon-wax', 'addon-tire'], addons);
-assert.deepEqual(selectedAddons.map(addon => addon.id), ['addon-vacuum', 'addon-wax', 'addon-tire']);
-assert.equal(calculateServiceDuration(50, selectedAddons), 83);
-assert.equal(calculateBookingAmount(service, addons, ['addon-vacuum', 'addon-wax', 'addon-tire']), 110000);
-assert.throws(() => resolveBookingAddons(['addon-unknown'], addons), /tidak tersedia/);
-assert.throws(() => calculateBookingAmount(service, addons, ['addon-unknown']), /tidak tersedia/);
-
 for (const method of ['QRIS', 'E_WALLET', 'CARD']) {
   assert.equal(validateServicePaymentMethod(method, 'BOOKING'), method);
   assert.equal(validateServicePaymentMethod(method, 'WALK_IN'), method);
 }
 assert.equal(validateServicePaymentMethod('CASH', 'WALK_IN'), 'CASH');
-assert.throws(() => validateServicePaymentMethod('CASH', 'BOOKING'), /Booking dan Self-Service/);
+assert.throws(() => validateServicePaymentMethod('CASH', 'BOOKING'), /Self-Service/);
 assert.throws(() => validateServicePaymentMethod('BANK_TRANSFER', 'BOOKING'), /Pilih metode pembayaran/);
 assert.equal(isValidIndonesianPlate('H 1234 NP'), true);
 assert.equal(isValidIndonesianPlate('ab 12 c'), true);
@@ -360,32 +340,11 @@ assert.equal(resolveCustomerIdentity({
   existingCustomers: [customerB]
 }).customer.id, customerB.id);
 
-assert.equal(isWithinOperatingHours('2026-10-11', '07:59', 30, referenceTime), false);
-assert.equal(isWithinOperatingHours('2026-10-11', '08:00', 30, referenceTime), true);
-assert.equal(isWithinOperatingHours('2026-10-11', '20:30', 30, referenceTime), true);
-assert.equal(isWithinOperatingHours('2026-10-11', '20:31', 30, referenceTime), false);
-assert.equal(isWithinOperatingHours('2026-10-11', '08:30', 30, new Date('2026-10-11T09:00:00+07:00')), false);
-assert.deepEqual(resolveServiceSchedule(false, '2099-01-01', '16:45', '2026-10-11', '16:00'), {
-  bookingDate: '2026-10-11',
-  bookingTime: '16:45'
-});
-assert.deepEqual(resolveAutomaticServiceSchedule(50, new Date('2026-10-11T07:00:00+07:00')), {
-  bookingDate: '2026-10-11',
-  bookingTime: '08:10'
-});
-assert.deepEqual(resolveAutomaticServiceSchedule(50, new Date('2026-10-11T20:55:00+07:00')), {
-  bookingDate: '2026-10-12',
-  bookingTime: '08:10'
-});
-assert.throws(() => resolveAutomaticServiceSchedule(0, referenceTime), /Durasi layanan tidak valid/);
-assert.equal(bookingWindowsOverlap(1000, 30000, 20000, 30000), true);
-assert.equal(bookingWindowsOverlap(1000, 30000, 31000, 30000), false);
-
 assert.notEqual(submitStart, -1);
 assert.match(submitSource, /validateServicePaymentMethod\(/);
 assert.match(submitSource, /toSupabasePhone\(phone\)/);
 assert.match(submitSource, /isValidIndonesianPlate\(plate\)/);
-assert.doesNotMatch(submitSource, /findOrCreateCustomer|customerCapability|resolveAutomaticServiceSchedule|firstAvailableBay/);
+assert.doesNotMatch(submitSource, /findOrCreateCustomer|customerCapability/);
 assert.match(persistenceSource, /rpcRequest\('create_demo_service_order',\s*\{\s*p_order:/);
 assert.match(persistenceSource, /rpcRequest\('create_demo_product_order',\s*\{\s*p_order:/);
 assert.match(persistenceSource, /isValidDemoProductOrderResponse\(result/);
@@ -396,7 +355,12 @@ assert.match(appSource, /result\.payment_status === 'PAID'/);
 assert.match(appSource, /result\.transaction_status === expected\.transaction_status/);
 assert.match(appSource, /const activeSession = adminUser \? supabaseSession : null/);
 assert.match(appSource, /const requestSession = adminUser \? supabaseSession : null/);
-assert.match(appSource, /openDialog\(action === 'booking' \? 'order'/);
+assert.match(appSource, /openDialog\(action === 'service-order' \? 'order'/);
+assert.match(appSource, /method !== 'GET'\) requireAdminAuthorization\(\)/);
+assert.match(appSource, /function removeUnauthorizedAdminMutations\(/);
+assert.match(appSource, /!\['overview', 'transactions', 'queue', 'self-service', 'customers', 'catalog', 'reports'\]\.includes\(tab\)/);
+assert.doesNotMatch(appSource, /else if \(tab === 'bookings'\)/);
+assert.doesNotMatch(appSource, /action === 'booking'/);
 assert.match(appSource, /openDialog\('order', service\.dataset\.service\)/);
 assert.match(serviceFormSource, /Pilih layanan<select name="service_id" required>/);
 assert.match(serviceFormSource, /name="request_id" value="\$\{crypto\.randomUUID\(\)\}"/);
@@ -405,7 +369,7 @@ assert.match(serviceFormSource, /name="plate" required/);
 assert.match(serviceFormSource, /name="payment" required/);
 assert.match(serviceFormSource, /id="flow-total"/);
 assert.doesNotMatch(serviceFormSource, /addon|vehicle_id|Kendaraan terdaftar|name="(?:date|time|bay_number)"/i);
-assert.match(appSource, /!publiclyBusy\.has\(bayNumber\) && !isBayScheduledForWindow/);
+assert.doesNotMatch(appSource, /firstAvailableBay|isBayScheduledForWindow/);
 assert.match(serviceFormSource, /pembayaran simulasi dicatat lunas saat order tersimpan/);
 assert.doesNotMatch(serviceFormSource, /menunggu konfirmasi pembayaran/);
 assert.doesNotMatch(appSource, /lookup_customer_history_with_capability|cancel_customer_booking_with_capability|renderHistory\(/);
@@ -440,7 +404,9 @@ assert.match(appSource, /async function openAdmin\(\)[\s\S]*setPage\('admin'\)[\
 assert.match(appSource, /if \(page === 'admin'\) \{\s*app\.innerHTML = renderAdmin\(\)/);
 assert.match(appSource, /if \(!adminDataReady\) \{/);
 assert.match(appSource, /rpcRequest\('get_demo_admin_snapshot'\)/);
-assert.doesNotMatch(appSource, /admin-login-form|Masuk sebagai Admin/);
+assert.match(appSource, /id="admin-login-form"/);
+assert.match(appSource, /user\.app_metadata\?\.rinse_role !== 'admin'/);
+assert.match(appSource, /removeUnauthorizedAdminMutations\(app\)/);
 assert.doesNotMatch(appSource, /renderAdminDemo|demoAdminOrders|data-demo-order-status/);
 assert.match(persistenceSource, /mergePersistedTransaction\(tx, result\)/);
 assert.match(persistenceSource, /Database belum mengonfirmasi penyimpanan pesanan layanan/);
@@ -520,16 +486,11 @@ mergePersistedTransaction(localTransaction, { payment_status: 'PENDING', transac
 assert.equal(localTransaction.payment_status, 'PENDING');
 assert.equal(localTransaction.transaction_status, 'PENDING');
 
-const expired = applyBookingExpiration([{
-  item_type: 'SERVICE',
-  transaction_type: 'BOOKING',
-  payment_status: 'PAID',
-  transaction_status: 'BOOKED',
-  booking_date: '2026-10-11',
-  booking_time: '08:00',
-  duration_minutes: 30,
-  queue_status: 'WAITING'
-}], Date.parse('2026-10-11T08:45:00+07:00'));
-assert.equal(expired[0].transaction_status, 'EXPIRED');
+assert.doesNotMatch(appSource, /renderLegacyBookingChoiceDialog|renderLegacyScheduledTransactionForm|renderLegacyScheduledSelfServiceTransactionForm|renderAdminBookings/);
+assert.match(appSource, /button\.dataset\.action = 'service-order'/);
+assert.doesNotMatch(appSource, /action === 'booking'|else if \(tab === 'bookings'\)/);
+assert.match(appSource, /button\.dataset\.action = 'self-service-order'/);
+assert.doesNotMatch(appSource, /includes\(action\).*self-service-book/);
+assert.doesNotMatch(indexSource, />Booking</i);
 
 console.log('booking helper tests: PASS');
