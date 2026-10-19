@@ -20,9 +20,73 @@ function parseJakartaDateTime(dateString, timeString) {
   if (!dateString || !timeString) return new Date();
   return new Date(`${dateString}T${timeString}:00+07:00`);
 }
+const MAX_TRANSACTION_DATE = '2026-10-19';
+function getWibDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+  }).formatToParts(date);
+  return Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+}
+function isStudioOpenAt(date = new Date()) {
+  const parts = getWibDateParts(date);
+  const minuteOfDay = Number(parts.hour) * 60 + Number(parts.minute) + Number(parts.second) / 60;
+  return `${parts.year}-${parts.month}-${parts.day}` <= getMaxAllowedTransactionDate(date)
+    && minuteOfDay >= 8 * 60
+    && minuteOfDay <= 21 * 60;
+}
+function getMaxAllowedTransactionDate(now = new Date()) {
+  const parts = getWibDateParts(now);
+  return [`${parts.year}-${parts.month}-${parts.day}`, MAX_TRANSACTION_DATE].sort()[0];
+}
+function assertStudioOpenAt(date = new Date()) {
+  const parts = getWibDateParts(date);
+  if (`${parts.year}-${parts.month}-${parts.day}` > getMaxAllowedTransactionDate(date)) {
+    throw new Error('Tanggal transaksi tidak boleh melewati 19 Oktober 2026.');
+  }
+  if (!isStudioOpenAt(date)) {
+    throw new Error('Transaksi hanya dapat dibuat pukul 08.00–21.00 WIB.');
+  }
+}
+function validateTransactionSchedule(dateString, timeString, durationMinutes = 0, now = new Date()) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateString || ''))
+    || (() => {
+      const parts = getWibDateParts(new Date(`${dateString}T12:00:00+07:00`));
+      return `${parts.year}-${parts.month}-${parts.day}` !== dateString;
+    })()) {
+    throw new Error('Tanggal transaksi tidak valid.');
+  }
+  if (dateString > getMaxAllowedTransactionDate(now)) {
+    throw new Error('Tanggal transaksi tidak boleh melewati 19 Oktober 2026.');
+  }
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(String(timeString || ''));
+  if (!timeMatch) throw new Error('Jam transaksi tidak valid.');
+  const minuteOfDay = Number(timeMatch[1]) * 60 + Number(timeMatch[2]);
+  if (minuteOfDay < 8 * 60 || minuteOfDay > 21 * 60) {
+    throw new Error('Jam transaksi harus berada di antara 08.00–21.00 WIB.');
+  }
+  const duration = Number(durationMinutes);
+  if (!Number.isFinite(duration) || duration < 0 || minuteOfDay + duration > 21 * 60) {
+    throw new Error('Transaksi layanan harus selesai paling lambat pukul 21.00 WIB.');
+  }
+  return true;
+}
+function assertServiceScheduleAvailable(durationMinutes, now = new Date()) {
+  assertStudioOpenAt(now);
+  const scheduledStart = new Date(Math.floor(now.getTime() / 60000) * 60000 + 10 * 60000);
+  validateTransactionSchedule(
+    getJakartaDateString(scheduledStart),
+    getJakartaTimeString(scheduledStart),
+    durationMinutes,
+    now
+  );
+}
 function mergePersistedTransaction(transaction, savedTransaction) {
   if (savedTransaction && typeof savedTransaction === 'object') Object.assign(transaction, savedTransaction);
   return transaction;
+}
+function removeTransactionFromState(transactions = [], transactionId) {
+  return transactions.filter(transaction => transaction.id !== transactionId);
 }
 function validateServicePaymentMethod(paymentMethod, transactionType) {
   if (!['CASH', 'QRIS', 'E_WALLET', 'CARD'].includes(paymentMethod)) throw new Error('Pilih metode pembayaran.');
@@ -236,7 +300,11 @@ if (typeof window === 'undefined') {
     verifiedPhoneMatchesInput,
     hasCustomerPhoneChanged,
     mergePersistedTransaction,
+    removeTransactionFromState,
     validateServicePaymentMethod,
+    isStudioOpenAt,
+    validateTransactionSchedule,
+    getMaxAllowedTransactionDate,
     isValidIndonesianPlate,
     isValidRequestId,
     isValidServiceOrderResponse,
@@ -425,10 +493,17 @@ const SEED = {
     { id: 't-20', code: 'RS-261009-2417', customer_id: 'c-1', vehicle_id: 'v-1', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'CASH', payment_status: 'REFUNDED', transaction_type: 'BOOKING', transaction_status: 'CANCELLED', queue_status: 'COMPLETED', booking_date: '2026-10-09', booking_time: '17:10', duration_minutes: 50 }
   ]
 };
-const seedToday = getJakartaDateString();
+const MAX_SEED_TIMESTAMP = new Date(`${MAX_TRANSACTION_DATE}T23:59:59.999+07:00`).getTime();
+const rawSeedNow = Math.min(Date.now(), MAX_SEED_TIMESTAMP);
+const rawSeedDate = getJakartaDateString(new Date(rawSeedNow));
+const rawSeedParts = getJakartaDateParts(new Date(rawSeedNow));
+const rawSeedMinute = Number(rawSeedParts.hour) * 60 + Number(rawSeedParts.minute);
+const seedMinute = Math.min(Math.max(rawSeedMinute, 8 * 60 + 8), 20 * 60 + 43);
+const seedToday = rawSeedDate;
+const seedNow = new Date(`${seedToday}T${String(Math.floor(seedMinute / 60)).padStart(2, '0')}:${String(seedMinute % 60).padStart(2, '0')}:00+07:00`).getTime();
 const seedYesterday = addDaysToJakartaDate(seedToday, -1);
 const activeSeed = SEED.transactions.find(tx => tx.id === 't-2');
-const activeStarted = new Date(Date.now() - 8 * 60000);
+const activeStarted = new Date(seedNow - 8 * 60000);
 activeSeed.booking_date = seedToday;
 activeSeed.booking_time = getJakartaTimeString(activeStarted);
 activeSeed.created_at = activeStarted.toISOString();
@@ -439,7 +514,7 @@ SEED.transactions.find(tx => tx.id === 't-4').booking_date = seedYesterday;
 for (const [id, offset] of [['t-5', -2], ['t-6', -3], ['t-7', -2], ['t-8', 0], ['t-9', -2], ['t-10', -2]]) {
   const transaction = SEED.transactions.find(tx => tx.id === id);
   transaction.booking_date = addDaysToJakartaDate(seedToday, offset);
-  transaction.created_at = new Date(Date.now() + offset * 86400000).toISOString();
+  transaction.created_at = new Date(seedNow + offset * 86400000).toISOString();
 }
 for (const [id, offset] of [['t-11', -1], ['t-12', 0], ['t-13', -1], ['t-14', 0], ['t-15', -1], ['t-16', 0], ['t-17', -2], ['t-18', -1], ['t-19', -1], ['t-20', 0]]) {
   const transaction = SEED.transactions.find(tx => tx.id === id);
@@ -449,9 +524,7 @@ SEED.transactions.forEach((transaction, index) => {
   const [year, month, day] = transaction.booking_date.slice(2).split('-');
   transaction.code = `RS-${year}${month}${day}-${String(1042 + index * 37).padStart(4, '0')}`;
   if (transaction.id !== 't-2') {
-    transaction.created_at = transaction.transaction_type === 'BOOKING' && transaction.booking_date >= seedToday
-      ? new Date(Date.now() - (index + 1) * 17 * 60000).toISOString()
-      : new Date(`${transaction.booking_date}T${transaction.booking_time}:00+07:00`).toISOString();
+    transaction.created_at = new Date(`${transaction.booking_date}T${transaction.booking_time}:00+07:00`).toISOString();
   }
 });
 SEED.transactions.filter(transaction => transaction.item_type === 'SERVICE').forEach(transaction => {
@@ -565,7 +638,7 @@ function regularServices() {
   return SERVICES.filter(isRegularServiceItem);
 }
 function getJakartaDateParts(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(date);
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(date);
   const result = {};
   parts.forEach(part => { if (part.type !== 'literal') result[part.type] = part.value; });
   return {
@@ -1256,6 +1329,7 @@ function resolveOrderVehicle(customerVehicles, customerId, type, model, plate) {
   return existingVehicle || makeVehicle(customerId, type, model, plate);
 }
 async function persistTransaction(tx, ownerToken = null, requestId = null) {
+  assertStudioOpenAt();
   if (!databaseConnected) throw new Error('Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.');
   if (carriesPickupData(tx)) throw new Error('Add-on antar-jemput tidak lagi tersedia.');
   tx.payment_status = ['PENDING', 'PAID', 'FAILED', 'REFUNDED'].includes(String(tx.payment_status || '').toUpperCase()) ? String(tx.payment_status).toUpperCase() : 'PENDING';
@@ -1318,6 +1392,7 @@ async function persistTransaction(tx, ownerToken = null, requestId = null) {
 }
 async function submitService(form) {
   const data = new FormData(form);
+  assertServiceScheduleAvailable(Number(db.services_products.find(item => item.id === data.get('service_id'))?.duration) || 0);
   if (!databaseConnected) throw new Error('Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.');
   const service = db.services_products.find(item => item.id === data.get('service_id') && item.active !== false);
   if (!service) throw new Error('Layanan tidak ditemukan. Muat ulang katalog lalu coba lagi.');
@@ -1351,6 +1426,8 @@ function showConfirmation(tx) {
   document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">${isSelfServiceSession ? 'SESI SELF-SERVICE TERCATAT' : 'TRANSAKSI TERCATAT'}</p><h2>${isSelfServiceSession ? 'Sesi Self-Service dikonfirmasi.' : 'Pembayaran berhasil.'}</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama order Anda.</p><div class="pass-card"><div><span>KODE ORDER</span><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(tx.item_name)} · ${tx.booking_date} · ${tx.booking_time}</small></div><img class="fake-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=144x144&data=${encodeURIComponent(tx.code)}" alt="Kode order ${escapeHtml(tx.code)}"></div><div class="confirmation-details"><span>${money(tx.amount)}</span>${statusBadge(tx.payment_status)}${statusBadge(tx.payment_method)}</div><button class="button button-dark button-full" data-action="close-dialog">Selesai <span>↗</span></button></div>`;
 }
 async function submitProducts(form) {
+  const transactionNow = new Date();
+  assertStudioOpenAt(transactionNow);
   const data = new FormData(form);
   const customerName = String(data.get('name') || '').trim();
   const phone = String(data.get('phone') || '').trim();
@@ -1388,8 +1465,8 @@ async function submitProducts(form) {
         amount: product.price * quantity, payment_method: data.get('payment'),
         payment_status: 'PAID', refund_status: 'NONE', transaction_type: 'SHOP',
         transaction_status: 'PENDING', queue_status: 'WAITING',
-        booking_date: getJakartaDateString(), booking_time: getJakartaTimeString(),
-        duration_minutes: 0, created_at: new Date().toISOString()
+        booking_date: getJakartaDateString(transactionNow), booking_time: getJakartaTimeString(transactionNow),
+        duration_minutes: 0, created_at: transactionNow.toISOString()
       };
       const savedTransaction = await persistTransaction(transaction, customerResult?.owner_token || null, requestId);
       completedIds.push(id);
@@ -1464,9 +1541,11 @@ function renderAdminTransactionList(records, title, eyebrow) {
     const refundAction = tx.refund_status === 'PENDING' ? `<button class="payment-mark-paid" type="button" data-refund-complete="${escapeHtml(tx.id)}">Catat Pengembalian Dana</button>` : '';
     const refundStatus = tx.refund_status === 'PENDING' ? '<small>Pengembalian Dana: menunggu proses manual</small>' : tx.refund_status === 'COMPLETED' ? '<small>Pengembalian Dana: selesai</small>' : '';
     const pickupAddress = ['addon-pickup', 'addon-pickup-moto'].includes(tx.addon_id) && customer?.address ? `<small>Alamat Antar-Jemput: ${escapeHtml(customer.address)}</small><small>Jarak pulang-pergi: ${escapeHtml(tx.pickup_distance_km)} km</small>` : '';
-    return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small>${pickupAddress}</span><span class="transaction-item">${escapeHtml(tx.item_name || (tx.item_type === 'PRODUCT' ? 'Pembelian produk' : 'Layanan cuci'))}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${refundStatus}${paymentAction}${refundAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${transactionStatusLabel(tx)}</span><span class="transaction-amount">${money(tx.amount)}</span><span class="transaction-row-actions"><button type="button" data-edit-transaction="${escapeHtml(tx.id)}">Edit Transaksi</button><button type="button" data-admin-remove="${escapeHtml(tx.id)}">Hapus Transaksi</button></span></div>`;
-  }).join('');
-  return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Data operasional studio dengan status pembayaran dan jadwal yang konsisten.</p></div><div class="transaction-actions"><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div><button class="button button-dark" type="button" data-action="admin-transaction-create">+ Transaksi</button></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span><span>AKSI ADMIN</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
+    return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small>${pickupAddress}</span><span class="transaction-item">${escapeHtml(tx.item_name || (tx.item_type === 'PRODUCT' ? 'Pembelian produk' : 'Layanan cuci'))}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${refundStatus}${paymentAction}${refundAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${transactionStatusLabel(tx)}</span><span class="transaction-amount">${money(tx.amount)}</span><span class="transaction-row-actions"><button type="button" aria-label="Edit transaksi ${escapeHtml(tx.code)}" data-edit-transaction="${escapeHtml(tx.id)}">Edit</button><button type="button" aria-label="Batalkan transaksi ${escapeHtml(tx.code)}" data-admin-remove="${escapeHtml(tx.id)}">Batal</button></span></div>`;
+  }).join('')
+    .replaceAll('>Batal</button>', '>Hapus</button>')
+    .replaceAll('aria-label="Batalkan transaksi ', 'aria-label="Hapus transaksi ');
+  return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Data operasional studio dengan status pembayaran dan jadwal yang konsisten.</p></div><div class="transaction-actions"><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div><button class="button button-dark" type="button" data-action="admin-transaction-create">+ Transaksi</button></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span><span>KELOLA</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
 }
 function renderAdminTransactionForm(content, transactionId = null) {
   const transaction = transactionId ? db.transactions.find(tx => tx.id === transactionId) : null;
@@ -1490,6 +1569,16 @@ function renderAdminTransactionForm(content, transactionId = null) {
 function setupAdminTransactionForm(content) {
   const form = content.querySelector('#admin-transaction-form');
   if (!form) return;
+  const dateField = form.elements.booking_date;
+  const timeField = form.elements.booking_time;
+  dateField.max = getMaxAllowedTransactionDate();
+  timeField.min = '08:00';
+  timeField.max = '21:00';
+  if (!form.elements.transaction_id.value) {
+    const now = new Date();
+    dateField.value = getJakartaDateString(now);
+    timeField.value = getJakartaTimeString(now);
+  }
   let typeField = form.elements.item_type;
   const isEditing = Boolean(form.elements.transaction_id.value);
   if (!isEditing) {
@@ -1559,6 +1648,8 @@ async function saveAdminTransaction(form) {
   if (!item) throw new Error('Layanan atau produk tidak ditemukan. Muat ulang katalog.');
   const transaction = data.transaction_id ? db.transactions.find(tx => tx.id === data.transaction_id) : null;
   if (data.transaction_id && !transaction) throw new Error('Transaksi tidak ditemukan.');
+  validateTransactionSchedule(data.booking_date, data.booking_time, item.item_type === 'SERVICE' ? Number(item.duration) || 0 : 0);
+  if (!transaction) assertStudioOpenAt();
   const changes = {
     item_id: item.id,
     item_name: item.name,
@@ -1610,16 +1701,11 @@ async function saveAdminTransaction(form) {
   db.transactions.unshift(created);
   return created;
 }
-async function softDeleteAdminTransaction(transactionId) {
+async function deleteAdminTransaction(transactionId) {
   requireAdminAuthorization();
-  const transaction = db.transactions.find(tx => tx.id === transactionId);
-  if (!transaction) throw new Error('Transaksi tidak ditemukan.');
-  const changes = {
-    transaction_status: 'CANCELLED',
-    refund_status: transaction.payment_status === 'PAID' ? 'PENDING' : transaction.refund_status
-  };
-  await patchRow('transactions', transaction.id, changes);
-  Object.assign(transaction, changes);
+  if (!db.transactions.some(tx => tx.id === transactionId)) throw new Error('Transaksi tidak ditemukan.');
+  if (isSupabaseConfigured()) await deleteRow('transactions', transactionId);
+  db.transactions = removeTransactionFromState(db.transactions, transactionId);
 }
 function renderAdminCustomers() {
   return `<div class="customer-toolbar"><div><p class="eyebrow">DATA PELANGGAN</p><h2>Pelanggan & Kendaraan</h2><p>Ringkasan kunjungan dan kendaraan terdaftar.</p></div><label class="customer-search" for="customer-search">Cari nama, nomor HP, atau plat<input id="customer-search" type="search" placeholder="Nama, nomor HP, atau plat"></label><span>${db.customers.length} pelanggan · ${db.vehicles.length} kendaraan</span></div><div class="customer-grid">${db.customers.map(customer => {
@@ -1865,6 +1951,13 @@ async function upsertRow(table, row) {
 }
 async function patchRow(table, id, changes) {
   return supabaseRequest(table, 'PATCH', changes, `?id=eq.${encodeURIComponent(id)}`, 'return=representation');
+}
+async function deleteRow(table, id) {
+  const deletedRows = await supabaseRequest(table, 'DELETE', null, `?id=eq.${encodeURIComponent(id)}`, 'return=representation');
+  if (!Array.isArray(deletedRows) || deletedRows.length === 0) {
+    throw new Error('Transaksi tidak ditemukan atau tidak dapat dihapus oleh akun Admin.');
+  }
+  return deletedRows[0];
 }
 async function refreshAdminSession() {
   if (!supabaseSession?.refresh_token) throw new Error('Sesi admin berakhir. Silakan masuk kembali.');
@@ -2215,15 +2308,15 @@ document.addEventListener('click', async event => {
   if (removeTransactionButton) {
     if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
     const tx = db.transactions.find(item => item.id === removeTransactionButton.dataset.adminRemove);
-    if (!tx || !window.confirm(`Batalkan transaksi ${tx.code}? Data tetap tersimpan dan tidak dihitung dalam laporan.`)) return;
+    if (!tx || !window.confirm('Apakah Anda yakin ingin menghapus transaksi ini?')) return;
     removeTransactionButton.disabled = true;
     try {
-      await softDeleteAdminTransaction(tx.id);
+      await deleteAdminTransaction(tx.id);
       activateAdminTab('transactions');
-      showToast(`${tx.code} dibatalkan dan dikecualikan dari laporan.`);
+      showToast(`${tx.code} dihapus.`);
     } catch (error) {
       removeTransactionButton.disabled = false;
-      showToast(error.message || 'Transaksi belum dapat dibatalkan.', 'error');
+      showToast(error.message || 'Transaksi belum dapat dihapus.', 'error');
     }
     return;
   }

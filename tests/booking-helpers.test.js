@@ -7,6 +7,7 @@ const {
   toSupabasePhone,
   verifiedPhoneMatchesInput,
   mergePersistedTransaction,
+  removeTransactionFromState,
   isValidIndonesianPlate,
   isValidRequestId,
   isValidServiceOrderResponse,
@@ -16,6 +17,9 @@ const {
   filterQueueTransactionsForDate,
   resolveCustomerIdentity,
   validateServicePaymentMethod,
+  isStudioOpenAt,
+  validateTransactionSchedule,
+  getMaxAllowedTransactionDate,
   isValidCustomerCapabilityToken,
   requireCustomerCapabilityToken,
   sanitizeCart,
@@ -47,6 +51,7 @@ const cleanupGeneratorSource = fs.readFileSync(path.join(__dirname, '..', 'supab
 const adminRichDataSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000003_add_admin_and_rich_dummy_data.sql'), 'utf8');
 const paidDemoMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000004_mark_demo_transactions_paid.sql'), 'utf8');
 const demoDateCorrectionSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000005_cap_demo_transaction_dates.sql'), 'utf8');
+const wibScheduleMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000006_transaction_wib_operating_hours.sql'), 'utf8');
 const demoSnapshotStart = demoProposalSource.search(/create(?:\s+or\s+replace)?\s+function public\.get_demo_admin_snapshot\(\)/i);
 const demoOrderStart = demoRpcSource.search(/create(?:\s+or\s+replace)?\s+function public\.create_demo_service_order\(p_order jsonb\)/i);
 const demoOrderEnd = demoRpcSource.search(/\nrevoke all on function public\.create_demo_service_order\(jsonb\)/i);
@@ -332,7 +337,14 @@ assert.match(paidDemoMigrationSource, /payment_status not in \('PAID', 'REFUNDED
 assert.match(paidDemoMigrationSource, /transaction_status <> 'CANCELLED'/);
 assert.doesNotMatch(paidDemoMigrationSource, /create table|alter table/i);
 assert.match(demoDateCorrectionSource, /disable trigger transactions_integrity_guard[\s\S]*set booking_date[\s\S]*booking_date > jakarta_today\.today[\s\S]*transaction_row\.id like 'rich-tx-%'[\s\S]*enable trigger transactions_integrity_guard/);
-assert.match(cleanupGeneratorSource, /'seed-tx-rina-self-service'[\s\S]*\(now\(\) at time zone 'Asia\/Jakarta'\)::date, time '13:00'/);
+assert.match(wibScheduleMigrationSource, /least\(\(clock_timestamp\(\) at time zone 'Asia\/Jakarta'\)::date, date '2026-10-19'\)/);
+assert.match(wibScheduleMigrationSource, /new\.booking_date > least\(date '2026-10-19', local_now::date\)/);
+assert.match(wibScheduleMigrationSource, /new\.booking_time < time '08:00' or new\.booking_time > time '21:00'/);
+assert.match(wibScheduleMigrationSource, /new\.created_at := clock_timestamp\(\)/);
+assert.match(wibScheduleMigrationSource, /before insert or update on public\.transactions/);
+assert.match(appSource, /dateField\.max = getMaxAllowedTransactionDate\(\)/);
+assert.match(appSource, /timeField\.min = '08:00'[\s\S]*timeField\.max = '21:00'/);
+assert.match(cleanupGeneratorSource, /'seed-tx-rina-self-service'[\s\S]*least\(\(now\(\) at time zone 'Asia\/Jakarta'\)::date, date '2026-10-19'\), time '13:00'/);
 assert.doesNotMatch(cleanupGeneratorSource, /current_date\s*\+\s*(1|30)/);
 assert.match(appSource, /\['create_demo_service_order', 'create_demo_product_order'\]\.includes\(name\)\)\s*\{\s*requestSession = \{ access_token: SUPABASE_PUBLISHABLE_KEY \};/);
 assert.match(appSource, /payment-status-\$\{String\(tx\.payment_status\)\.toLowerCase\(\)\}/);
@@ -361,6 +373,19 @@ for (const method of ['QRIS', 'E_WALLET', 'CARD']) {
 assert.equal(validateServicePaymentMethod('CASH', 'WALK_IN'), 'CASH');
 assert.throws(() => validateServicePaymentMethod('CASH', 'BOOKING'), /Self-Service/);
 assert.throws(() => validateServicePaymentMethod('BANK_TRANSFER', 'BOOKING'), /Pilih metode pembayaran/);
+assert.equal(getMaxAllowedTransactionDate(new Date('2026-10-19T14:00:00.000Z')), '2026-10-19');
+assert.equal(isStudioOpenAt(new Date('2026-10-19T01:00:00.000Z')), true);
+assert.equal(isStudioOpenAt(new Date('2026-10-19T14:00:00.000Z')), true);
+assert.equal(isStudioOpenAt(new Date('2026-10-19T00:59:00.000Z')), false);
+assert.equal(isStudioOpenAt(new Date('2026-10-19T14:01:00.000Z')), false);
+assert.equal(isStudioOpenAt(new Date('2026-10-19T14:00:01.000Z')), false);
+assert.equal(isStudioOpenAt(new Date('2026-10-19T17:00:00.000Z')), false);
+assert.equal(validateTransactionSchedule('2026-10-19', '08:00', 0, new Date('2026-10-19T10:00:00.000Z')), true);
+assert.equal(validateTransactionSchedule('2026-10-19', '20:00', 60, new Date('2026-10-19T10:00:00.000Z')), true);
+assert.throws(() => validateTransactionSchedule('2026-10-20', '10:00', 0, new Date('2026-10-19T10:00:00.000Z')), /19 Oktober 2026/);
+assert.throws(() => validateTransactionSchedule('2026-10-19', '07:59', 0), /08.00–21.00 WIB/);
+assert.throws(() => validateTransactionSchedule('2026-10-19', '21:01', 0), /08.00–21.00 WIB/);
+assert.throws(() => validateTransactionSchedule('2026-10-19', '20:11', 50), /selesai paling lambat/);
 assert.equal(isValidIndonesianPlate('H 1234 NP'), true);
 assert.equal(isValidIndonesianPlate('ab 12 c'), true);
 assert.equal(isValidIndonesianPlate('1234'), false);
@@ -368,6 +393,13 @@ assert.equal(isValidIndonesianPlate('ABC 1234 QZ'), false);
 assert.equal(isValidIndonesianPlate('H 12345 NP'), false);
 assert.equal(isValidRequestId('78df9b22-f1e7-4a9a-ac72-e0e6823409ef'), true);
 assert.equal(isValidRequestId('not-a-uuid'), false);
+assert.deepEqual(removeTransactionFromState([
+  { id: 'keep-a' }, { id: 'remove-me' }, { id: 'keep-b' }
+], 'remove-me'), [{ id: 'keep-a' }, { id: 'keep-b' }]);
+assert.match(appSource, /supabaseRequest\(table, 'DELETE', null, `\?id=eq\.\$\{encodeURIComponent\(id\)\}`/);
+assert.match(appSource, /window\.confirm\('Apakah Anda yakin ingin menghapus transaksi ini\?'\)/);
+assert.match(appSource, /replaceAll\('>Batal<\/button>', '>Hapus<\/button>'\)/);
+assert.match(appSource, /replaceAll\('aria-label="Batalkan transaksi ', 'aria-label="Hapus transaksi '\)/);
 const validWalkInResponse = {
   id: '78df9b22-f1e7-4a9a-ac72-e0e6823409ef', code: 'RS-261012-ED7CFF9A',
   customer_id: 'customer-id', vehicle_id: 'vehicle-id', item_id: 'svc-car', item_type: 'SERVICE',
