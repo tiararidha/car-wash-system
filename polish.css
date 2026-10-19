@@ -171,6 +171,16 @@ a:focus-visible { outline: 3px solid rgba(23,102,116,.25); outline-offset: 2px; 
 .admin-panel,
 .report-card,
 .customer-card { border-radius: var(--ui-radius); }
+.admin-bay-status-panel { margin-top: 14px; padding: 18px 20px; border: 1px solid rgba(20,33,36,.07); box-shadow: none; }
+.admin-bay-indicators { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.admin-bay-indicator { display: grid; min-width: 0; gap: 5px; padding: 12px; border: 1px solid var(--line); background: #fff; }
+.admin-bay-indicator > strong { font: 600 13px/1.35 var(--display); }
+.admin-bay-state { color: var(--muted); font: 600 10px/1.4 var(--body); }
+.admin-bay-indicator small { color: var(--muted); font: 11px/1.45 var(--body); overflow-wrap: anywhere; }
+.admin-bay-occupied .admin-bay-state { color: #9a3e38; }
+.admin-bay-reserved .admin-bay-state { color: #8a6521; }
+.admin-bay-available .admin-bay-state { color: #26724e; }
+.transaction-actions { display: flex; align-items: center; gap: 14px; }
 .panel-heading h2,
 .queue-toolbar h2,
 .catalog-toolbar h2,
@@ -304,6 +314,8 @@ a:focus-visible { outline: 3px solid rgba(23,102,116,.25); outline-offset: 2px; 
   .sidebar-bottom { display: none; }
   .admin-nav { min-height: 40px; height: auto; padding: 0 8px; font-size: 12px; }
   .admin-main { padding: 22px 14px; }
+  .admin-bay-indicators { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .transaction-actions { align-items: flex-start; flex-direction: column; gap: 8px; }
   .admin-topbar { align-items: flex-start; gap: 12px; }
   .admin-topbar h1 { font-size: 22px; line-height: 28px; }
   .admin-top-actions { align-items: flex-end; flex-direction: column-reverse; gap: 8px; }

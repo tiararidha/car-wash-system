@@ -12,6 +12,7 @@ const {
   isValidServiceOrderResponse,
   isValidDemoProductOrderResponse,
   normalizeTransactionStatusForDisplay,
+  countActiveQueueTransactions,
   resolveCustomerIdentity,
   validateServicePaymentMethod,
   isValidCustomerCapabilityToken,
@@ -147,6 +148,18 @@ assert.doesNotMatch(supabaseHttpError('POST /rest/v1/rpc/cancel_customer_booking
 assert.match(serviceOrderErrorMessage({ code: 'P0001', message: 'Nomor pelanggan sudah terdaftar dengan nama berbeda.' }), /Gunakan nama yang terdaftar/);
 assert.match(serviceOrderErrorMessage({ message: 'POST /rpc failed · SQLSTATE P0001' }), /hubungi studio/);
 assert.equal(serviceOrderErrorMessage(new Error('network failure')), 'network failure');
+assert.equal(countActiveQueueTransactions([
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', payment_status: 'PAID', queue_status: 'WAITING' },
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', payment_status: 'PAID', queue_status: 'WASHING' },
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', payment_status: 'PAID', queue_status: 'FINISHING' },
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', payment_status: 'PAID', queue_status: 'COMPLETED' },
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'PENDING', payment_status: 'PENDING', queue_status: 'WAITING' },
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'CANCELLED', payment_status: 'PAID', queue_status: 'WAITING' },
+  { item_type: 'PRODUCT', transaction_type: 'SHOP', transaction_status: 'PENDING', payment_status: 'PAID', queue_status: 'WAITING' }
+]), 3);
+assert.match(appSource, /const stages = \['WAITING', 'WASHING', 'COMPLETED'\]/);
+assert.match(appSource, /'self-service'\) tab = 'overview'/);
+assert.doesNotMatch(appSource.slice(appSource.indexOf('function renderAdminTransactionList'), appSource.indexOf('\nfunction renderAdminCustomers')), /data-action="delete|data-delete-transaction/);
 
 const rpcContracts = {
   lookup_customer_by_phone: { source: capabilitySource, args: [['p_phone', 'text']], returns: 'table', columns: /returns table\(\s*customer_id text,\s*full_name text,\s*phone text,\s*vehicle_id text,\s*vehicle_type text,\s*vehicle_plate text,\s*vehicle_model text,\s*customer_address text\s*\)/i },
@@ -424,7 +437,7 @@ assert.match(appSource, /const requestSession = adminUser \? supabaseSession : n
 assert.match(appSource, /openDialog\(action === 'service-order' \? 'order'/);
 assert.match(appSource, /method !== 'GET'\) requireAdminAuthorization\(\)/);
 assert.match(appSource, /function removeUnauthorizedAdminMutations\(/);
-assert.match(appSource, /!\['overview', 'transactions', 'queue', 'self-service', 'customers', 'catalog', 'reports'\]\.includes\(tab\)/);
+assert.match(appSource, /!\['overview', 'transactions', 'queue', 'customers', 'catalog', 'reports'\]\.includes\(tab\)/);
 assert.doesNotMatch(appSource, /else if \(tab === 'bookings'\)/);
 assert.doesNotMatch(appSource, /action === 'booking'/);
 assert.match(appSource, /openDialog\('order', service\.dataset\.service\)/);

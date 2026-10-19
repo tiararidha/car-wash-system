@@ -206,6 +206,14 @@ function serviceOrderErrorMessage(error) {
   }
   return error?.message || 'Pesanan layanan belum dapat diproses. Silakan coba lagi.';
 }
+function countActiveQueueTransactions(records = []) {
+  return records.filter(tx => tx?.item_type === 'SERVICE'
+    && String(tx.payment_status || '').toUpperCase() === 'PAID'
+    && !['CANCELLED', 'EXPIRED'].includes(String(tx.transaction_status || '').toUpperCase())
+    && !['PENDING', 'COMPLETED'].includes(String(tx.refund_status || 'NONE').toUpperCase())
+    && (tx.transaction_type !== 'BOOKING' || ['ACTIVE', 'COMPLETED'].includes(String(tx.transaction_status || '').toUpperCase()))
+    && ['WAITING', 'WASHING', 'FINISHING'].includes(String(tx.queue_status || 'WAITING').toUpperCase())).length;
+}
 
 function hasAdminRole(user) {
   return user?.app_metadata?.rinse_role === 'admin';
@@ -225,6 +233,7 @@ if (typeof window === 'undefined') {
     isValidServiceOrderResponse,
     isValidDemoProductOrderResponse,
     normalizeTransactionStatusForDisplay,
+    countActiveQueueTransactions,
     resolveCustomerIdentity,
     isValidCustomerCapabilityToken,
     requireCustomerCapabilityToken,
@@ -628,6 +637,12 @@ function isRevenueTransaction(tx) {
     && !['CANCELLED', 'EXPIRED'].includes(transactionStatus)
     && !['PENDING', 'COMPLETED'].includes(refundStatus);
 }
+function getOperationalQueueTransactions(records = []) {
+  return getOperationalTransactions(records).filter(tx => tx.item_type === 'SERVICE'
+    && isRevenueTransaction(tx)
+    && (tx.transaction_type !== 'BOOKING' || ['ACTIVE', 'COMPLETED'].includes(tx.transaction_status))
+    && ['WAITING', 'WASHING', 'FINISHING', 'COMPLETED'].includes(tx.queue_status || 'WAITING'));
+}
 function statusLabel(value) {
   return ({ AVAILABLE: 'Tersedia', OCCUPIED: 'Digunakan', RESERVED: 'Dipesan', PAID: 'Lunas', PENDING: 'Belum Dibayar', FAILED: 'Gagal', REFUNDED: 'Pengembalian Dana', NONE: 'Tidak ada', COMPLETED: 'Selesai', BOOKED: 'Terkonfirmasi', ACTIVE: 'Sedang Berlangsung', CANCELLED: 'Dibatalkan', EXPIRED: 'Hangus', WAITING: 'Menunggu', WASHING: 'Dicuci', FINISHING: 'Tahap Akhir', CASH: 'Tunai', QRIS: 'QRIS', E_WALLET: 'Dompet digital', CARD: 'Kartu' })[String(value || '').toUpperCase()] || String(value || '').replaceAll('_', ' ');
 }
@@ -798,8 +813,12 @@ function render() {
   document.body.dataset.page = page;
   document.body.classList.toggle('admin-mode', page === 'admin');
   if (page === 'admin') {
-    app.innerHTML = renderAdmin().replace(/<button class="admin-nav" data-admin-tab="bookings">[\s\S]*?<\/button>/, '');
+    app.innerHTML = renderAdmin()
+      .replace(/<button class="admin-nav" data-admin-tab="bookings">[\s\S]*?<\/button>/, '')
+      .replace(/<button class="admin-nav" data-admin-tab="self-service">[\s\S]*?<\/button>/, '');
     app.querySelector('.admin-top-actions')?.insertAdjacentHTML('afterbegin', '<button class="button button-quiet button-small" type="button" data-action="home">← Kembali ke Beranda</button>');
+    app.querySelectorAll('[data-action="walkin"]').forEach(button => button.remove());
+    updateQueueSidebarCount(app);
     if (!adminDataReady) {
       const content = app.querySelector('#admin-content');
       if (content) content.innerHTML = renderAdminDataState();
@@ -924,6 +943,7 @@ function reportVehicle(transaction) {
 }
 function renderAdminMetrics() {
   if (!document.querySelector('.metric-grid')) return;
+  updateQueueSidebarCount();
   const transactions = reportTransactions();
   const today = getJakartaDateString();
   const todays = transactions.filter(tx => tx.booking_date === today);
@@ -962,6 +982,9 @@ function renderAdminMetrics() {
 
   const queuePreview = document.querySelector('.queue-preview');
   if (queuePreview) queuePreview.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">KONDISI AREA CUCI</p><h2>Antrean saat ini</h2></div><button class="text-link" data-admin-tab="queue">Lihat antrean</button></div>${renderQueueColumns(false)}`;
+  const bayStatus = document.querySelector('.admin-bay-status-panel');
+  if (bayStatus) bayStatus.outerHTML = renderAdminBayStatus();
+  else if (queuePreview) queuePreview.insertAdjacentHTML('afterend', renderAdminBayStatus());
 
   const activityGrid = document.querySelector('.admin-content-grid');
   if (activityGrid) {
@@ -1063,9 +1086,7 @@ function renderAdminLegacy() {
 }
 function renderAdmin() {
   const today = getJakartaDateString();
-  const waiting = getOperationalTransactions(db.transactions).filter(tx => tx.item_type === 'SERVICE'
-    && isRevenueTransaction(tx) && tx.queue_status !== 'COMPLETED'
-    && (tx.transaction_type !== 'BOOKING' || ['ACTIVE', 'COMPLETED'].includes(tx.transaction_status))).length;
+  const waiting = countActiveQueueTransactions(getOperationalQueueTransactions(db.transactions));
   return `<div class="admin-shell"><aside class="admin-sidebar"><div class="admin-brand"><span class="brand-mark">R</span><span>rinse<span class="brand-light">society</span><small>DASHBOARD STUDIO</small></span></div><p class="admin-nav-label">MENU STUDIO</p><button class="admin-nav active" data-admin-tab="overview"><span>◫</span> Ringkasan</button><button class="admin-nav" data-admin-tab="transactions"><span>▤</span> Transaksi</button><button class="admin-nav" data-admin-tab="bookings"><span>▣</span> Booking</button><button class="admin-nav" data-admin-tab="queue"><span>≋</span> Antrean cuci <b>${waiting}</b></button><button class="admin-nav" data-admin-tab="self-service"><span>⌂</span> Cuci mandiri</button><button class="admin-nav" data-admin-tab="customers"><span>◎</span> Pelanggan & kendaraan</button><button class="admin-nav" data-admin-tab="catalog"><span>▦</span> Layanan & produk</button><button class="admin-nav" data-admin-tab="reports"><span>↗</span> Laporan</button><button class="admin-nav" data-action="settings"><span>⚙</span> Pengaturan</button><button class="admin-nav" data-action="logout"><span>↪</span> Keluar</button><div class="sidebar-bottom"><span class="sidebar-avatar">RS</span><span><strong>${escapeHtml(adminUser?.email || 'Admin studio')}</strong><small>Semarang · Studio 01</small></span></div></aside><div class="admin-main"><header class="admin-topbar"><div><p class="eyebrow">RINGKASAN STUDIO · ${new Date(`${today}T12:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase()}</p><h1 id="admin-heading">Ringkasan operasional</h1></div><div class="admin-top-actions"><span class="connection-indicator ${databaseConnected ? 'connected' : ''}"><i></i>${databaseConnected ? 'SUPABASE TERHUBUNG' : 'DATABASE TERPUTUS'}</span><button class="button button-dark button-small" data-action="walkin">+ Walk-in baru</button></div></header><div id="admin-content"><div class="metric-grid">${Array.from({ length: 8 }, () => '<article class="metric-card"><span>MEMUAT DATA</span><strong>—</strong><small>Dari transaksi Supabase</small></article>').join('')}</div><div class="admin-content-grid"><section class="admin-panel revenue-panel"><div class="panel-heading"><div><p class="eyebrow">TRANSAKSI LUNAS</p><h2>Pendapatan studio</h2></div><span class="panel-period">SEMUA WAKTU</span></div><div class="revenue-total">${money(0)}<span>Total pemasukan</span></div><div class="revenue-bars"><div class="revenue-bar-row"><span>Pendapatan jasa</span><div><i style="width:0%"></i></div><strong>${money(0)}</strong></div><div class="revenue-bar-row"><span>Pendapatan produk</span><div><i class="bar-green" style="width:0%"></i></div><strong>${money(0)}</strong></div></div><div class="chart-footnote"><span>● Pendapatan jasa</span><span>● Pendapatan produk</span></div></section><section class="admin-panel low-stock-panel"><div class="panel-heading"><div><p class="eyebrow">PANTAU STOK</p><h2>Perlu ditambah</h2></div><span class="low-stock-count">0 MENIPIS</span></div><div class="stock-clear">Memuat persediaan dari Supabase.</div><button class="text-link" data-admin-tab="catalog">Kelola persediaan <span>↗</span></button></section></div><section class="admin-panel queue-preview"><div class="panel-heading"><div><p class="eyebrow">KONDISI AREA CUCI</p><h2>Antrean saat ini</h2></div><button class="text-link" data-admin-tab="queue">Buka antrean <span>↗</span></button></div>${renderQueueColumns(false)}</section></div></div></div>`;
 }
 function queueCard(tx) {
@@ -1073,9 +1094,20 @@ function queueCard(tx) {
   return `<article class="queue-card"><div class="queue-card-top"><strong>${escapeHtml(tx.code)}</strong>${statusBadge(tx.payment_status)}</div><h3>${escapeHtml(vehicle?.plate || 'Penjualan produk')}</h3><p>${escapeHtml(tx.item_name || 'Layanan cuci')} · ${escapeHtml(customer?.full_name || 'Walk-in')}</p><div class="queue-card-foot"><span>${escapeHtml(tx.booking_time || 'Walk-in')} · ${tx.duration_minutes || 0} menit</span><select aria-label="Ubah status ${escapeHtml(tx.code)}" data-queue-id="${tx.id}">${['WAITING', 'WASHING', 'FINISHING', 'COMPLETED'].map(status => `<option value="${status}" ${tx.queue_status === status ? 'selected' : ''}>${statusLabel(status)}</option>`).join('')}</select></div></article>`;
 }
 function renderQueueColumns(large) {
-  const stages = ['WAITING', 'WASHING', 'FINISHING', 'COMPLETED'];
-  const washTransactions = getOperationalTransactions(db.transactions).filter(tx => tx.item_type === 'SERVICE' && isRevenueTransaction(tx) && (tx.transaction_type !== 'BOOKING' || ['ACTIVE', 'COMPLETED'].includes(tx.transaction_status)));
-  return `<div class="queue-columns ${large ? 'queue-columns-large' : ''}">${stages.map(stage => `<div class="queue-column"><div class="queue-column-head"><span>${statusLabel(stage)}</span><b>${washTransactions.filter(tx => (tx.queue_status || 'WAITING') === stage).length}</b></div>${washTransactions.filter(tx => (tx.queue_status || 'WAITING') === stage).map(queueCard).join('') || '<div class="queue-empty">Belum ada kendaraan</div>'}</div>`).join('')}</div>`;
+  const stages = ['WAITING', 'WASHING', 'COMPLETED'];
+  const washTransactions = getOperationalQueueTransactions(db.transactions);
+  const stageTransactions = stage => washTransactions.filter(tx => stage === 'WASHING'
+    ? ['WASHING', 'FINISHING'].includes(tx.queue_status || 'WAITING')
+    : (tx.queue_status || 'WAITING') === stage);
+  return `<div class="queue-columns ${large ? 'queue-columns-large' : ''}">${stages.map(stage => {
+    const rows = stageTransactions(stage);
+    return `<div class="queue-column"><div class="queue-column-head"><span>${statusLabel(stage)}</span><b>${rows.length}</b></div>${rows.map(queueCard).join('') || '<div class="queue-empty">Belum ada kendaraan</div>'}</div>`;
+  }).join('')}</div>`;
+}
+function updateQueueSidebarCount(root = document) {
+  const count = countActiveQueueTransactions(getOperationalQueueTransactions(db.transactions));
+  const badge = root.querySelector('.admin-nav[data-admin-tab="queue"] b');
+  if (badge) badge.textContent = String(count);
 }
 
 function openDialog(kind, serviceId) {
@@ -1402,7 +1434,7 @@ function renderAdminTransactionList(records, title, eyebrow) {
     const pickupAddress = ['addon-pickup', 'addon-pickup-moto'].includes(tx.addon_id) && customer?.address ? `<small>Alamat Antar-Jemput: ${escapeHtml(customer.address)}</small><small>Jarak pulang-pergi: ${escapeHtml(tx.pickup_distance_km)} km</small>` : '';
     return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small>${pickupAddress}</span><span class="transaction-item">${escapeHtml(tx.item_name || (tx.item_type === 'PRODUCT' ? 'Pembelian produk' : 'Layanan cuci'))}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${refundStatus}${paymentAction}${refundAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${transactionStatusLabel(tx)}</span><span class="transaction-amount">${money(tx.amount)}</span></div>`;
   }).join('');
-  return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Data operasional studio dengan status pembayaran dan jadwal yang konsisten.</p></div><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
+  return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Data operasional studio dengan status pembayaran dan jadwal yang konsisten.</p></div><div class="transaction-actions"><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div><button class="button button-dark" type="button" data-action="walkin">+ Transaksi</button></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
 }
 function renderAdminCustomers() {
   return `<div class="customer-toolbar"><div><p class="eyebrow">DATA PELANGGAN</p><h2>Pelanggan & Kendaraan</h2><p>Ringkasan kunjungan dan kendaraan terdaftar.</p></div><label class="customer-search" for="customer-search">Cari nama, nomor HP, atau plat<input id="customer-search" type="search" placeholder="Nama, nomor HP, atau plat"></label><span>${db.customers.length} pelanggan · ${db.vehicles.length} kendaraan</span></div><div class="customer-grid">${db.customers.map(customer => {
@@ -1414,7 +1446,7 @@ function renderAdminCustomers() {
   }).join('')}</div>`;
 }
 function adminDescription(tab) {
-  return ({ overview: 'Pantau pendapatan, aktivitas studio, dan kebutuhan operasional.', transactions: 'Kelola pembayaran dan aktivitas transaksi dari semua kanal.', queue: 'Pantau kendaraan yang menunggu, dicuci, dan siap diserahkan.', 'self-service': 'Pantau status empat bay dan sesi yang sedang berjalan.', customers: 'Lihat pelanggan, kendaraan, dan frekuensi kunjungan.', catalog: 'Kelola layanan, produk, harga, dan persediaan studio.', reports: 'Analisis pendapatan, metode pembayaran, layanan, dan penjualan produk.' })[tab] || '';
+  return ({ overview: 'Pantau pendapatan, aktivitas studio, dan kebutuhan operasional.', transactions: 'Kelola pembayaran dan aktivitas transaksi dari semua kanal.', queue: 'Pantau kendaraan yang menunggu, dicuci, dan siap diserahkan.', customers: 'Lihat pelanggan, kendaraan, dan frekuensi kunjungan.', catalog: 'Kelola layanan, produk, harga, dan persediaan studio.', reports: 'Analisis pendapatan, metode pembayaran, layanan, dan penjualan produk.' })[tab] || '';
 }
 function setAdminDescription(tab) {
   const heading = document.getElementById('admin-heading');
@@ -1428,16 +1460,17 @@ function setAdminDescription(tab) {
   description.className = 'admin-page-description';
   description.textContent = adminDescription(tab);
 }
-function renderAdminBays() {
+function renderAdminBayStatus() {
   const bays = [1, 2, 3, 4].map(number => {
     const tx = getOperationalTransactions(db.transactions).find(item => item.bay_number === number && isRevenueTransaction(item) && isBayTransactionCurrent(item));
     const vehicle = tx && getVehicle(tx);
     const started = tx && parseJakartaDateTime(tx.booking_date, tx.booking_time).getTime() <= Date.now();
     const status = !tx ? 'AVAILABLE' : tx.transaction_status === 'ACTIVE' || started ? 'OCCUPIED' : 'RESERVED';
-    const statusLabelText = !tx ? 'TERSEDIA' : status === 'OCCUPIED' ? 'DIGUNAKAN' : 'DIPESAN';
-    return `<article class="bay-card bay-${status.toLowerCase()}"><div class="bay-card-top"><span>B-${String(number).padStart(2, '0')}</span>${statusBadge(status)}</div><div class="bay-visual"><img src="${PHOTOS.selfBay}" alt="Bay cuci mandiri ${number}"><span class="bay-number">${String(number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><strong>${vehicle ? `${statusLabelText} · ${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.plate)}` : statusLabelText}</strong><span>${tx ? `${tx.duration_minutes} menit · ${vehicle?.type === 'MOTOR' ? 'Sepeda motor' : 'Mobil'}` : 'Belum ada sesi aktif'}</span><span class="bay-time">${status === 'OCCUPIED' ? `${bayMinutesLeft(tx)} menit tersisa` : status === 'RESERVED' ? `${tx.booking_time} · dipesan` : 'Tersedia sekarang'}</span></div></article>`;
+    const label = status === 'OCCUPIED' ? 'DALAM PENGGUNAAN' : status === 'RESERVED' ? 'TERISI' : 'KOSONG';
+    const detail = tx ? `${vehicle?.type === 'MOTOR' ? 'Motor' : 'Mobil'}${vehicle?.plate ? ` · ${escapeHtml(vehicle.plate)}` : ''} · ${status === 'OCCUPIED' ? `${bayMinutesLeft(tx)} menit tersisa` : `${escapeHtml(tx.booking_time)} · terjadwal`}` : 'Siap digunakan';
+    return `<article class="admin-bay-indicator admin-bay-${status.toLowerCase()}" aria-label="Bay ${number}: ${label}"><strong>Bay ${number}</strong><span class="admin-bay-state">${label}</span><small>${detail}</small></article>`;
   }).join('');
-  return `<div class="catalog-toolbar"><div><p class="eyebrow">AREA CUCI MANDIRI</p><h2>Status bay saat ini.</h2></div><span class="shop-count">${getOperationalTransactions(db.transactions).filter(tx => isRevenueTransaction(tx) && tx.bay_number && isBayTransactionCurrent(tx) && (tx.transaction_status === 'ACTIVE' || parseJakartaDateTime(tx.booking_date, tx.booking_time).getTime() <= Date.now())).length} bay digunakan</span></div><div class="bay-grid">${bays}</div>`;
+  return `<section class="admin-panel admin-bay-status-panel"><div class="panel-heading"><div><p class="eyebrow">SELF-SERVICE · KETERSEDIAAN</p><h2>Status empat bay</h2></div><span class="updated-label"><i class="live-dot"></i> Diperbarui langsung</span></div><div class="admin-bay-indicators">${bays}</div></section>`;
 }
 function renderReportDetailsLegacy() {
   const paid = db.transactions.filter(tx => tx.payment_status === 'PAID');
@@ -1502,18 +1535,20 @@ function renderAdminCatalog() {
   }).join('')}</div>`;
 }
 function activateAdminTab(tab) {
-  if (!['overview', 'transactions', 'queue', 'self-service', 'customers', 'catalog', 'reports'].includes(tab)) return;
+  if (tab === 'self-service') tab = 'overview';
+  if (!['overview', 'transactions', 'queue', 'customers', 'catalog', 'reports'].includes(tab)) return;
   if (!adminDataReady) {
     const content = document.getElementById('admin-content');
     if (content) content.innerHTML = renderAdminDataState();
     return;
   }
   activeAdminTab = tab;
+  updateQueueSidebarCount();
   document.querySelectorAll('.admin-nav').forEach(button => button.classList.toggle('active', button.dataset.adminTab === tab));
   const heading = document.getElementById('admin-heading');
   const content = document.getElementById('admin-content');
   if (!content) return;
-  const labels = { overview: 'Ringkasan', transactions: 'Transaksi', queue: 'Antrean', 'self-service': 'Self-Service', catalog: 'Produk & Layanan', customers: 'Pelanggan & Kendaraan', reports: 'Laporan Pendapatan' };
+  const labels = { overview: 'Ringkasan', transactions: 'Transaksi', queue: 'Antrean', catalog: 'Produk & Layanan', customers: 'Pelanggan & Kendaraan', reports: 'Laporan Pendapatan' };
   heading.textContent = labels[tab] || labels.overview;
   setAdminDescription(tab);
   if (tab === 'overview') { render(); return; }
@@ -1525,8 +1560,7 @@ function activateAdminTab(tab) {
     return;
   }
   if (tab === 'transactions') content.innerHTML = renderAdminTransactionList(db.transactions, 'Seluruh transaksi studio.', 'DAFTAR TRANSAKSI');
-  else if (tab === 'self-service') content.innerHTML = renderAdminBays();
-  if (tab === 'queue') content.innerHTML = `<div class="queue-toolbar"><div><p class="eyebrow">PENGELOLAAN AREA CUCI</p><h2>Pantau setiap kendaraan.</h2></div><button class="button button-dark" data-action="walkin">+ Walk-in baru</button></div>${renderQueueColumns(true)}`;
+  if (tab === 'queue') content.innerHTML = `<div class="queue-toolbar"><div><p class="eyebrow">PENGELOLAAN AREA CUCI</p><h2>Pantau setiap kendaraan.</h2></div></div>${renderQueueColumns(true)}`;
   else if (tab === 'reports') { content.innerHTML = renderReports(); content.insertAdjacentHTML('beforeend', renderReportDetails()); }
   else if (tab === 'customers') {
     content.innerHTML = renderAdminCustomers();
