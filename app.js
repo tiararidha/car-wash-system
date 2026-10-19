@@ -200,6 +200,12 @@ function supabaseHttpError(label, status, responseText = '') {
   }
   return message;
 }
+function serviceOrderErrorMessage(error) {
+  if (error?.code === 'P0001' || /SQLSTATE P0001/.test(error?.message || '')) {
+    return 'Nomor HP sudah terdaftar dengan nama berbeda. Gunakan nama yang terdaftar atau hubungi studio untuk memperbarui profil.';
+  }
+  return error?.message || 'Pesanan layanan belum dapat diproses. Silakan coba lagi.';
+}
 
 function hasAdminRole(user) {
   return user?.app_metadata?.rinse_role === 'admin';
@@ -227,7 +233,8 @@ if (typeof window === 'undefined') {
     safeSupabaseErrorCode,
     safeSupabaseErrorDetails,
     sanitizeSupabaseDiagnostic,
-    supabaseHttpError
+    supabaseHttpError,
+    serviceOrderErrorMessage
   };
   if (typeof module !== 'undefined') {
     module.exports = appExports;
@@ -647,13 +654,18 @@ function setPage(next) {
   document.querySelector('.main-nav')?.classList.remove('is-open');
 }
 async function openAdmin() {
+  if (supabaseSession) await restoreAdminSession();
+  if (!hasAdminRole(adminUser)) {
+    setPage('home');
+    openDialog('admin-login');
+    return;
+  }
   activeAdminTab = 'overview';
   adminDataReady = false;
   adminDataState = 'loading';
   adminDataError = '';
   setPage('admin');
   try {
-    if (supabaseSession) await restoreAdminSession();
     await loadAdminData();
     render();
   } catch (error) {
@@ -782,6 +794,7 @@ function polishPublicContent(root, currentPage) {
 function render() {
   const views = { home: renderHome, services: renderServices, 'self-service': renderBays, shop: renderShop };
   const app = document.getElementById('app');
+  if (page === 'admin' && !hasAdminRole(adminUser)) page = 'home';
   document.body.dataset.page = page;
   document.body.classList.toggle('admin-mode', page === 'admin');
   if (page === 'admin') {
@@ -798,9 +811,6 @@ function render() {
   }
   if (page === 'admin') {
     removeUnauthorizedAdminMutations(app);
-    if (!isAdminAuthorized()) {
-      app.querySelector('.admin-topbar')?.insertAdjacentHTML('afterend', '<div class="admin-readonly-notice" role="status"><span>Tampilan baca saja. Akses Admin terverifikasi diperlukan untuk mengubah data.</span><button class="button button-quiet button-small" data-action="admin-login">Masuk sebagai Admin</button></div>');
-    }
   }
   document.querySelectorAll('[data-action="booking"]').forEach(button => {
     button.dataset.action = 'service-order';
@@ -1085,7 +1095,7 @@ function openDialog(kind, serviceId) {
   } else if (kind === 'settings') {
     content.innerHTML = `<p class="eyebrow">PENGATURAN STUDIO</p><h2>Akun <em>studio.</em></h2><p class="dialog-intro">${adminUser ? `Masuk sebagai ${escapeHtml(adminUser.email || 'admin')}.` : 'Pengaturan operasional Rinse Society.'}</p><div class="settings-status"><strong>Rinse Society · Semarang</strong><p>Kelola jadwal, layanan, dan produk studio dari dashboard.</p></div><div class="dialog-actions">${adminUser ? '<button class="button button-dark" data-action="logout">Keluar dari akun</button>' : ''}<button class="button button-quiet" data-action="close-dialog">Tutup</button></div>`;
   } else if (kind === 'admin-login') {
-    content.innerHTML = '<p class="eyebrow">AKSES STUDIO</p><h2>Masuk sebagai <em>Admin.</em></h2><form id="admin-login-form" class="dialog-form"><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="button button-dark button-full" type="submit">Masuk</button></form>';
+    content.innerHTML = '<p class="eyebrow">LOGIN ADMIN</p><h2>Masuk ke <em>dashboard studio.</em></h2><p class="dialog-intro">Area pengelolaan hanya tersedia untuk akun Admin terverifikasi.</p><form id="admin-login-form" class="dialog-form"><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="button button-dark button-full" type="submit">Masuk sebagai Admin</button></form>';
   } else if (kind === 'cart') renderCartDialog(content);
   else if (kind === 'self-service') {
     const selfService = service || db.services_products.find(item => isSelfServiceItem(item) && item.type === 'CAR') || db.services_products.find(isSelfServiceItem);
@@ -1205,8 +1215,7 @@ async function persistTransaction(tx, ownerToken = null, requestId = null) {
   tx.payment_status = ['PENDING', 'PAID', 'FAILED', 'REFUNDED'].includes(String(tx.payment_status || '').toUpperCase()) ? String(tx.payment_status).toUpperCase() : 'PENDING';
   tx.refund_status = ['NONE', 'PENDING', 'COMPLETED'].includes(String(tx.refund_status || 'NONE').toUpperCase()) ? String(tx.refund_status || 'NONE').toUpperCase() : 'NONE';
   if (tx.item_type === 'PRODUCT') {
-    const adminRpc = page === 'admin' && adminUser?.app_metadata?.rinse_role === 'admin';
-    if (!ownerToken && !adminRpc) {
+    if (!ownerToken) {
       const productOrderPayload = {
         request_id: requestId,
         customer_name: tx.customer_name,
@@ -1276,7 +1285,7 @@ async function submitService(form) {
   const normalizedPhone = toSupabasePhone(phone);
   if (!isValidIndonesianPlate(plate)) throw new Error('Masukkan nomor polisi Indonesia yang valid, contoh H 1234 NP.');
   const paymentMethod = validateServicePaymentMethod(String(data.get('payment') || ''), isSelfService ? 'BOOKING' : 'WALK_IN');
-  const tx = { customer_name: customerName, customer_phone: normalizedPhone, vehicle_model: String(data.get('model') || '').trim(), vehicle_plate: plate, item_id: service.id, item_type: 'SERVICE', item_name: service.name, amount: service.price, payment_method: paymentMethod, payment_status: 'PENDING', refund_status: 'NONE' };
+  const tx = { customer_name: customerName, customer_phone: normalizedPhone, vehicle_model: String(data.get('model') || '').trim(), vehicle_plate: plate, item_id: service.id, item_type: 'SERVICE', item_name: service.name, amount: service.price, payment_method: paymentMethod, payment_status: 'PAID', refund_status: 'NONE' };
   const requestId = String(data.get('request_id') || '');
   if (!isValidRequestId(requestId)) {
     throw new Error('Kunci permintaan tidak valid. Tutup lalu buka kembali form order.');
@@ -1331,7 +1340,7 @@ async function submitProducts(form) {
         customer_name: customerName, customer_phone: normalizedPhone, vehicle_id: null,
         item_id: id, item_type: 'PRODUCT', item_name: product.name, quantity,
         amount: product.price * quantity, payment_method: data.get('payment'),
-        payment_status: 'PENDING', refund_status: 'NONE', transaction_type: 'SHOP',
+        payment_status: 'PAID', refund_status: 'NONE', transaction_type: 'SHOP',
         transaction_status: 'PENDING', queue_status: 'WAITING',
         booking_date: getJakartaDateString(), booking_time: getJakartaTimeString(),
         duration_minutes: 0, created_at: new Date().toISOString()
@@ -1385,9 +1394,9 @@ function renderAdminTransactionList(records, title, eyebrow) {
   const rows = transactions.map(tx => {
     const customer = getCustomer(tx);
     const vehicle = getVehicle(tx);
-    const canConfirmCash = tx.payment_status === 'PENDING' && tx.payment_method === 'CASH'
-      && ['WALK_IN', 'SHOP'].includes(tx.transaction_type) && tx.transaction_status !== 'CANCELLED';
-    const paymentAction = canConfirmCash ? `<button class="payment-mark-paid" type="button" data-payment-paid="${escapeHtml(tx.id)}">Konfirmasi Lunas</button>` : '';
+    const canConfirmCash = tx.payment_status === 'PENDING' && tx.transaction_status === 'PENDING'
+      && tx.payment_method === 'CASH' && ['WALK_IN', 'SHOP'].includes(tx.transaction_type);
+    const paymentAction = canConfirmCash ? `<button class="payment-mark-paid" type="button" data-payment-paid="${escapeHtml(tx.id)}">Tandai Lunas</button>` : '';
     const refundAction = tx.refund_status === 'PENDING' ? `<button class="payment-mark-paid" type="button" data-refund-complete="${escapeHtml(tx.id)}">Catat Pengembalian Dana</button>` : '';
     const refundStatus = tx.refund_status === 'PENDING' ? '<small>Pengembalian Dana: menunggu proses manual</small>' : tx.refund_status === 'COMPLETED' ? '<small>Pengembalian Dana: selesai</small>' : '';
     const pickupAddress = ['addon-pickup', 'addon-pickup-moto'].includes(tx.addon_id) && customer?.address ? `<small>Alamat Antar-Jemput: ${escapeHtml(customer.address)}</small><small>Jarak pulang-pergi: ${escapeHtml(tx.pickup_distance_km)} km</small>` : '';
@@ -1534,7 +1543,20 @@ function activateAdminTab(tab) {
   polishUiLabels(content);
   simplifyUiSymbols(content);
 }
-function showToast(message, type = 'success') { const element = document.createElement('div'); element.className = `toast toast-${type}`; element.textContent = message; document.getElementById('toast-region').append(element); setTimeout(() => element.remove(), 4500); }
+function showToast(message, type = 'success', dedupeKey = '') {
+  const region = document.getElementById('toast-region');
+  if (dedupeKey) {
+    [...region.querySelectorAll('.toast')]
+      .filter(toast => toast.dataset.toastKey === dedupeKey)
+      .forEach(toast => toast.remove());
+  }
+  const element = document.createElement('div');
+  element.className = `toast toast-${type}`;
+  if (dedupeKey) element.dataset.toastKey = dedupeKey;
+  element.textContent = message;
+  region.append(element);
+  setTimeout(() => element.remove(), 4500);
+}
 function requestHeaders(prefer = 'return=representation', session = null) {
   const activeSession = session || (adminUser ? supabaseSession : null);
   const bearer = activeSession?.access_token || SUPABASE_PUBLISHABLE_KEY;
@@ -1600,6 +1622,9 @@ async function rpcRequest(name, parameters = {}) {
   ].includes(name);
   if (capabilityRpc) requireCustomerCapabilityToken(parameters.p_owner_token);
   let requestSession = adminRpc ? supabaseSession : null;
+  if (['create_demo_service_order', 'create_demo_product_order'].includes(name)) {
+    requestSession = { access_token: SUPABASE_PUBLISHABLE_KEY };
+  }
   if (requestSession?.expires_at && requestSession.expires_at * 1000 < Date.now() + 30000) {
     await refreshAdminSession();
     requestSession = supabaseSession;
@@ -1607,7 +1632,9 @@ async function rpcRequest(name, parameters = {}) {
   const label = `POST /rest/v1/rpc/${name}`;
   const { response, text } = await fetchWithDiagnostics(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${name}`, { method: 'POST', headers: requestHeaders('return=representation', requestSession), body: JSON.stringify(parameters) }, label);
   if (!response.ok) {
-    throw new Error(supabaseHttpError(label, response.status, text));
+    const error = new Error(supabaseHttpError(label, response.status, text));
+    error.code = safeSupabaseErrorCode(text);
+    throw error;
   }
   return text ? JSON.parse(text) : null;
 }
@@ -1683,12 +1710,6 @@ async function signInAdmin(email, password) {
   result.expires_at = Math.floor(Date.now() / 1000) + result.expires_in;
   rememberAuthSession(result);
   adminUser = user;
-  try { await loadAdminData(); }
-  catch (error) {
-    adminDataReady = false;
-    adminDataState = 'error';
-    throw new Error(`Login berhasil, tetapi data dashboard gagal dimuat: ${error.message}`);
-  }
 }
 async function restoreAdminSession() {
   if (!supabaseSession || !isSupabaseConfigured()) return false;
@@ -1901,7 +1922,7 @@ document.addEventListener('click', async event => {
       if (!updated || updated.payment_status !== 'PAID') {
         throw new Error('Status pembayaran belum tersimpan.');
       }
-      Object.assign(tx, updated);
+      await loadAdminData();
       activateAdminTab('transactions');
       showToast(`${tx.code} dikonfirmasi lunas.`);
     } catch (error) {
@@ -1966,7 +1987,20 @@ document.addEventListener('click', async event => {
   if (customerAddressButton) editCustomerAddress(db.customers.find(customer => customer.id === customerAddressButton.dataset.editCustomerAddress));
 });
 document.addEventListener('submit', async event => {
-  if (event.target.id === 'transaction-form') { event.preventDefault(); const submit = event.target.querySelector('[type="submit"]'); submit.disabled = true; try { await submitService(event.target); } catch (error) { showToast(error.message, 'error'); submit.disabled = false; } }
+  if (event.target.id === 'transaction-form') {
+    event.preventDefault();
+    const form = event.target;
+    if (form.dataset.submitting === 'true') return;
+    const submit = form.querySelector('[type="submit"]');
+    form.dataset.submitting = 'true';
+    submit.disabled = true;
+    try { await submitService(form); }
+    catch (error) {
+      showToast(serviceOrderErrorMessage(error), 'error', 'service-order');
+      if (submit.isConnected) submit.disabled = false;
+    }
+    finally { delete form.dataset.submitting; }
+  }
   if (event.target.id === 'product-checkout-form') {
     event.preventDefault();
     const submit = event.target.querySelector('[type="submit"]');
@@ -1982,7 +2016,7 @@ document.addEventListener('submit', async event => {
     try {
       await signInAdmin(String(data.get('email') || '').trim(), String(data.get('password') || ''));
       document.getElementById('flow-dialog').close();
-      render();
+      await openAdmin();
     } catch (error) {
       showToast(error.message || 'Login Admin belum dapat diproses.', 'error');
       submit.disabled = false;

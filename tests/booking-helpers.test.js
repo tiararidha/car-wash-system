@@ -21,11 +21,13 @@ const {
   safeSupabaseErrorCode,
   safeSupabaseErrorDetails,
   sanitizeSupabaseDiagnostic,
-  supabaseHttpError
+  supabaseHttpError,
+  serviceOrderErrorMessage
 } = require('../app.js');
 
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const polishSource = fs.readFileSync(path.join(__dirname, '..', 'polish.css'), 'utf8');
 const migrationSource = fs.readFileSync(path.join(__dirname, '..', 'sql', 'multi-addon-booking-integrity-proposal.sql'), 'utf8');
 const authorizationSource = fs.readFileSync(path.join(__dirname, '..', 'sql', 'admin-role-authorization-proposal.sql'), 'utf8');
 const operationsSource = fs.readFileSync(path.join(__dirname, '..', 'sql', 'business-flow-hardening.sql'), 'utf8');
@@ -38,6 +40,10 @@ const demoRpcSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'mi
 const anonymousLockdownSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261012000001_restrict_legacy_anon_rpcs.sql'), 'utf8');
 const demoProductSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261012000002_demo_product_checkout.sql'), 'utf8');
 const simulatedPaymentSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261012000004_simulate_demo_payments.sql'), 'utf8');
+const customerNameCanonicalizationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000000_canonicalize_demo_order_customer_name.sql'), 'utf8');
+const cleanupGeneratorSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000001_cleanup_demo_data_and_realistic_fallback.sql'), 'utf8');
+const adminRichDataSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000003_add_admin_and_rich_dummy_data.sql'), 'utf8');
+const paidDemoMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000004_mark_demo_transactions_paid.sql'), 'utf8');
 const demoSnapshotStart = demoProposalSource.search(/create(?:\s+or\s+replace)?\s+function public\.get_demo_admin_snapshot\(\)/i);
 const demoOrderStart = demoRpcSource.search(/create(?:\s+or\s+replace)?\s+function public\.create_demo_service_order\(p_order jsonb\)/i);
 const demoOrderEnd = demoRpcSource.search(/\nrevoke all on function public\.create_demo_service_order\(jsonb\)/i);
@@ -138,6 +144,9 @@ assert.doesNotMatch(sqlExecutionError, /RPC create_demo_product_order tidak dite
 assert.match(supabaseHttpError('GET /rest/v1/services_products', 401), /URL dan publishable key/);
 assert.match(supabaseHttpError('GET /rest/v1/services_products', 403), /grant, RLS, dan role Admin/);
 assert.doesNotMatch(supabaseHttpError('POST /rest/v1/rpc/cancel_customer_booking_with_capability', 404, '{"code":"PGRST202","message":"owner token private"}'), /owner token private/);
+assert.match(serviceOrderErrorMessage({ code: 'P0001', message: 'Nomor pelanggan sudah terdaftar dengan nama berbeda.' }), /Gunakan nama yang terdaftar/);
+assert.match(serviceOrderErrorMessage({ message: 'POST /rpc failed · SQLSTATE P0001' }), /hubungi studio/);
+assert.equal(serviceOrderErrorMessage(new Error('network failure')), 'network failure');
 
 const rpcContracts = {
   lookup_customer_by_phone: { source: capabilitySource, args: [['p_phone', 'text']], returns: 'table', columns: /returns table\(\s*customer_id text,\s*full_name text,\s*phone text,\s*vehicle_id text,\s*vehicle_type text,\s*vehicle_plate text,\s*vehicle_model text,\s*customer_address text\s*\)/i },
@@ -247,6 +256,56 @@ assert.match(simulatedPaymentSource, /revoke all on function public\.create_demo
 assert.match(simulatedPaymentSource, /revoke all on function private\.simulate_demo_payment\(text,uuid\) from public, anon, authenticated/);
 assert.match(simulatedPaymentSource, /grant execute on function public\.create_demo_service_order\(jsonb\) to anon/);
 assert.match(simulatedPaymentSource, /grant execute on function public\.create_demo_product_order\(jsonb\) to anon/);
+assert.match(customerNameCanonicalizationSource, /create or replace function public\.create_demo_service_order\(p_order jsonb\)/i);
+assert.match(customerNameCanonicalizationSource, /select full_name into existing_customer_name[\s\S]*from public\.customers[\s\S]*normalized_phone/i);
+assert.match(customerNameCanonicalizationSource, /jsonb_set\(p_order, '\{customer_name\}', to_jsonb\(existing_customer_name\), true\)/i);
+assert.ok(customerNameCanonicalizationSource.indexOf('jsonb_set(p_order') < customerNameCanonicalizationSource.indexOf('create_demo_service_order_pending(p_order)'));
+assert.match(customerNameCanonicalizationSource, /private\.simulate_demo_payment\(/);
+assert.match(customerNameCanonicalizationSource, /grant execute on function public\.create_demo_service_order\(jsonb\) to anon/);
+assert.match(cleanupGeneratorSource, /delete from public\.transactions transaction_row[\s\S]*using demo_cleanup_rows cleanup_row/);
+assert.match(cleanupGeneratorSource, /registry\.transaction_id is not null/);
+assert.match(cleanupGeneratorSource, /ilike '%demo%'/);
+assert.match(cleanupGeneratorSource, /'Budi Santoso', '081298765432'/);
+assert.match(cleanupGeneratorSource, /'Rina Wijaya', '081233445566'/);
+assert.match(cleanupGeneratorSource, /'Hendra Gunawan', '081277889900'/);
+assert.match(cleanupGeneratorSource, /on conflict \(phone\) do update\s+set full_name = excluded\.full_name/i);
+assert.ok(cleanupGeneratorSource.indexOf('delete from public.transactions') < cleanupGeneratorSource.indexOf("'Budi Santoso', '081298765432'"));
+assert.ok(cleanupGeneratorSource.indexOf('delete from public.customers') < cleanupGeneratorSource.indexOf("'Budi Santoso', '081298765432'"));
+assert.match(cleanupGeneratorSource, /'H 8821 AB'/);
+assert.match(cleanupGeneratorSource, /'B 1234 XYZ'/);
+assert.match(cleanupGeneratorSource, /'seed-tx-budi-wash'[\s\S]*'CASH', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED'/);
+assert.match(cleanupGeneratorSource, /'seed-tx-rina-self-service'[\s\S]*'QRIS', 'PAID', 'BOOKING', 'BOOKED', 'WAITING'/);
+assert.match(cleanupGeneratorSource, /'seed-tx-hendra-wash'[\s\S]*'CASH', 'PENDING', 'WALK_IN', 'PENDING', 'WAITING'/);
+assert.match(cleanupGeneratorSource, /insert into private\.demo_transaction_registry \(transaction_id\)[\s\S]*seed-tx-hendra-wash/);
+assert.match(cleanupGeneratorSource, /private\.demo_realistic_name\(request_id_value::text\)/);
+assert.match(cleanupGeneratorSource, /private\.demo_realistic_plate\(request_id_value::text \|\| ':' \|\| candidate_number::text\)/);
+assert.match(cleanupGeneratorSource, /where registry\.request_id = request_id_value/);
+assert.match(cleanupGeneratorSource, /'full_name', private\.demo_realistic_name\(customer_row\.id\)/);
+assert.match(cleanupGeneratorSource, /'plate', private\.demo_realistic_plate\(vehicle_row\.id\)/);
+assert.doesNotMatch(cleanupGeneratorSource, /Pelanggan demo|Kendaraan demo/);
+assert.match(adminRichDataSource, /raise notice 'Admin account is not provisioned yet[\s\S]*app_metadata\.rinse_role=admin\./);
+assert.doesNotMatch(adminRichDataSource, /Admin_123|public\.app_admins|insert into auth\.users/i);
+assert.match(adminRichDataSource, /create table if not exists private\.demo_transaction_registry/i);
+assert.doesNotMatch(adminRichDataSource, /public\.demo_transaction_registry/);
+assert.match(adminRichDataSource, /from private\.demo_transaction_registry registry[\s\S]*join public\.transactions transaction_row/);
+assert.match(adminRichDataSource, /lower\(trim\(full_name\)\) = 'dimas saputra'/);
+assert.match(adminRichDataSource, /generate_series\(1, 28\)/);
+assert.match(adminRichDataSource, /floor\(\(sequence\.n - 1\) \* 90\.0 \/ 27\)/);
+assert.match(adminRichDataSource, /when 0 then 'CASH'[\s\S]*when 1 then 'QRIS'[\s\S]*when 2 then 'E_WALLET'[\s\S]*else 'CARD'/);
+assert.match(adminRichDataSource, /when 0 then 'COMPLETED'[\s\S]*when 1 then 'BOOKED'[\s\S]*else 'PENDING'/);
+assert.match(adminRichDataSource, /'Bambang Pamungkas'[\s\S]*'Doni Tata'[\s\S]*'Budi Santoso'/);
+assert.match(adminRichDataSource, /join public\.customers customer_row on customer_row\.phone = seed\.customer_phone[\s\S]*join public\.vehicles vehicle_row on vehicle_row\.customer_id = customer_row\.id[\s\S]*vehicle_row\.plate = seed\.vehicle_plate/);
+assert.match(adminRichDataSource, /select seed\.transaction_id, seed\.transaction_code, customer_row\.id, vehicle_row\.id/);
+assert.doesNotMatch(adminRichDataSource, /selected\.vehicle_id/);
+assert.match(adminRichDataSource, /insert into private\.demo_transaction_registry/);
+assert.match(paidDemoMigrationSource, /set payment_status = 'PAID'[\s\S]*from private\.demo_transaction_registry/);
+assert.match(paidDemoMigrationSource, /set_config\('rinse\.payment_update', 'on', true\)/);
+assert.match(paidDemoMigrationSource, /payment_status not in \('PAID', 'REFUNDED'\)/);
+assert.match(paidDemoMigrationSource, /transaction_status <> 'CANCELLED'/);
+assert.doesNotMatch(paidDemoMigrationSource, /create table|alter table/i);
+assert.match(appSource, /\['create_demo_service_order', 'create_demo_product_order'\]\.includes\(name\)\)\s*\{\s*requestSession = \{ access_token: SUPABASE_PUBLISHABLE_KEY \};/);
+assert.match(appSource, /payment-status-\$\{String\(tx\.payment_status\)\.toLowerCase\(\)\}/);
+assert.match(polishSource, /\.payment-status-paid\s*\{\s*color:\s*#26724e/i);
 assert.doesNotMatch(simulatedPaymentSource, /grant execute on function public\.create_demo_(?:service|product)_order\(jsonb\) to authenticated/i);
 for (const [name, signature] of [
   ['lookup_customer_profile_by_capability', 'text, text'],
@@ -343,6 +402,10 @@ assert.equal(resolveCustomerIdentity({
 assert.notEqual(submitStart, -1);
 assert.match(submitSource, /validateServicePaymentMethod\(/);
 assert.match(submitSource, /toSupabasePhone\(phone\)/);
+assert.match(submitSource, /payment_status: 'PAID'/);
+assert.match(submitSource, /String\(data\.get\('name'\) \|\| ''\)\.trim\(\)/);
+assert.match(submitSource, /String\(data\.get\('phone'\) \|\| ''\)\.trim\(\)/);
+assert.match(submitSource, /String\(data\.get\('model'\) \|\| ''\)\.trim\(\)/);
 assert.match(submitSource, /isValidIndonesianPlate\(plate\)/);
 assert.doesNotMatch(submitSource, /findOrCreateCustomer|customerCapability/);
 assert.match(persistenceSource, /rpcRequest\('create_demo_service_order',\s*\{\s*p_order:/);
@@ -353,6 +416,9 @@ assert.match(persistenceSource, /isValidServiceOrderResponse\(result/);
 assert.match(persistenceSource, /return tx/);
 assert.match(appSource, /result\.payment_status === 'PAID'/);
 assert.match(appSource, /result\.transaction_status === expected\.transaction_status/);
+assert.match(appSource, /if \(form\.dataset\.submitting === 'true'\) return/);
+assert.match(appSource, /showToast\(serviceOrderErrorMessage\(error\), 'error', 'service-order'\)/);
+assert.match(appSource, /event\.preventDefault\(\);\s*const form = event\.target/);
 assert.match(appSource, /const activeSession = adminUser \? supabaseSession : null/);
 assert.match(appSource, /const requestSession = adminUser \? supabaseSession : null/);
 assert.match(appSource, /openDialog\(action === 'service-order' \? 'order'/);
@@ -407,11 +473,18 @@ assert.match(appSource, /rpcRequest\('get_demo_admin_snapshot'\)/);
 assert.match(appSource, /id="admin-login-form"/);
 assert.match(appSource, /user\.app_metadata\?\.rinse_role !== 'admin'/);
 assert.match(appSource, /removeUnauthorizedAdminMutations\(app\)/);
+assert.doesNotMatch(appSource, /admin-readonly-notice/);
+assert.match(indexSource, /id="admin-shortcut" aria-label="Login Admin">Login Admin/);
+assert.match(appSource, />Tandai Lunas<\/button>/);
+assert.match(appSource, /tx\.payment_status === 'PENDING' && tx\.transaction_status === 'PENDING'[\s\S]*tx\.payment_method === 'CASH'/);
+assert.match(appSource, /rpcRequest\('confirm_transaction_payment'[\s\S]*await loadAdminData\(\);\s*activateAdminTab\('transactions'\)/);
+assert.match(appSource, /await signInAdmin\([\s\S]*await openAdmin\(\)/);
 assert.doesNotMatch(appSource, /renderAdminDemo|demoAdminOrders|data-demo-order-status/);
 assert.match(persistenceSource, /mergePersistedTransaction\(tx, result\)/);
 assert.match(persistenceSource, /Database belum mengonfirmasi penyimpanan pesanan layanan/);
 assert.notEqual(productSubmitStart, -1);
 assert.match(productSubmitSource, /requestId = requestIds\[id\]/);
+assert.match(productSubmitSource, /payment_status: 'PAID'/);
 assert.match(productSubmitSource, /customerResult = isAdmin \? await findOrCreateCustomer/);
 assert.match(productSubmitSource, /completedTransactions\.push\(savedTransaction\)/);
 assert.match(productSubmitSource, /escapeHtml\(saved\.code\)/);
