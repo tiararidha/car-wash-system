@@ -162,11 +162,11 @@ select seed.id, seed.code, customer_row.id, vehicle_row.id, service.id, 'SERVICE
   service.duration, bay.bay_number
 from (values
   ('seed-tx-budi-wash', 'RS-SEED-SAMPLE-BUDI-01', '081298765432', 'H 8821 AB', 'svc-car',
-    'CASH', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED', current_date - 1, time '09:00'),
+    'CASH', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED', least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19') - 1, time '09:00'),
   ('seed-tx-rina-self-service', 'RS-SEED-SAMPLE-RINA-01', '081233445566', 'B 1234 XYZ', 'svc-self-car',
-    'QRIS', 'PAID', 'BOOKING', 'BOOKED', 'WAITING', current_date + 30, time '13:00'),
+    'QRIS', 'PAID', 'BOOKING', 'BOOKED', 'WAITING', least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19'), time '13:00'),
   ('seed-tx-hendra-wash', 'RS-SEED-SAMPLE-HENDRA-01', '081277889900', 'D 4582 HG', 'svc-car',
-    'CASH', 'PENDING', 'WALK_IN', 'PENDING', 'WAITING', current_date + 1, time '11:00')
+    'CASH', 'PENDING', 'WALK_IN', 'PENDING', 'WAITING', least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19') - 1, time '11:00')
 ) as seed(id, code, phone, plate, item_id, payment_method, payment_status,
   transaction_type, transaction_status, queue_status, booking_date, booking_time)
 join public.customers customer_row on customer_row.phone = seed.phone

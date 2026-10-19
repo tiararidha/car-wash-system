@@ -19,22 +19,26 @@ alter table public.transactions add constraint transactions_transaction_status_c
 drop trigger if exists transactions_integrity_guard on public.transactions;
 
 update public.transactions
-set booking_date = (now() at time zone 'Asia/Jakarta')::date + case id
+set booking_date = least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19') + case id
       when 't-1' then -1 when 't-2' then 0 when 't-3' then 0 when 't-4' then -1
       when 't-5' then -2 when 't-6' then -3 when 't-7' then -1 when 't-8' then 0
       when 't-9' then -4 when 't-10' then -5 else 0 end,
     booking_time = case id
       when 't-1' then time '09:20'
-      when 't-2' then ((now() at time zone 'Asia/Jakarta')::time - interval '8 minutes')::time
+      when 't-2' then least(greatest((now() at time zone 'Asia/Jakarta')::time - interval '8 minutes', time '08:00'), time '20:35')
       when 't-3' then time '14:30'
       when 't-4' then time '16:40'
       when 't-5' then time '11:10'
       when 't-6' then time '15:25'
       when 't-7' then time '10:30'
-      when 't-8' then ((now() at time zone 'Asia/Jakarta')::time - interval '3 minutes')::time
+      when 't-8' then least(greatest((now() at time zone 'Asia/Jakarta')::time - interval '3 minutes', time '08:00'), time '20:10')
       when 't-9' then time '12:05'
       when 't-10' then time '17:15'
       else booking_time end
+where id in ('t-1','t-2','t-3','t-4','t-5','t-6','t-7','t-8','t-9','t-10');
+
+update public.transactions
+set created_at = (booking_date + booking_time) at time zone 'Asia/Jakarta'
 where id in ('t-1','t-2','t-3','t-4','t-5','t-6','t-7','t-8','t-9','t-10');
 
 update public.customers
@@ -243,7 +247,29 @@ declare
   addon_price integer := 0;
   addon_duration integer := 0;
   expected_amount integer;
+  local_now timestamp := clock_timestamp() at time zone 'Asia/Jakarta';
 begin
+  if new.booking_date > least(date '2026-10-19', local_now::date) then
+    raise exception 'Tanggal transaksi tidak boleh melewati 19 Oktober 2026 WIB.';
+  end if;
+  if new.booking_time < time '08:00' or new.booking_time > time '21:00' then
+    raise exception 'Transaksi hanya dapat dijadwalkan pukul 08.00–21.00 WIB.';
+  end if;
+  if new.item_type = 'SERVICE' and new.duration_minutes > 0
+    and new.booking_time + make_interval(mins => new.duration_minutes) > time '21:00' then
+    raise exception 'Durasi layanan harus selesai paling lambat pukul 21.00 WIB.';
+  end if;
+  if tg_op = 'INSERT' then
+    if new.id not in ('t-11','t-12','t-13','t-14','t-15','t-16','t-17','t-18','t-19','t-20')
+      and new.id not like 'rich-tx-%'
+      and (local_now::time < time '08:00' or local_now::time > time '21:00') then
+      raise exception 'Transaksi baru hanya dapat dibuat pada 08.00–21.00 WIB.';
+    end if;
+    if new.id not in ('t-11','t-12','t-13','t-14','t-15','t-16','t-17','t-18','t-19','t-20')
+      and new.id not like 'rich-tx-%' then
+      new.created_at := clock_timestamp();
+    end if;
+  end if;
   if new.vehicle_id is not null then
     select customer_id, type into owner_id, vehicle_type from public.vehicles where id = new.vehicle_id;
     if not found or owner_id <> new.customer_id then raise exception 'Kendaraan tidak sesuai dengan pelanggan transaksi.'; end if;
@@ -647,8 +673,8 @@ insert into public.transactions (
 select seed.id,seed.code,seed.customer_id,seed.vehicle_id,service.id,addon.id,seed.pickup_distance_km,seed.item_type,
   service.name || case when addon.id is not null then ' + '||addon.name else '' end,1,seed.amount,
   seed.payment_method,seed.payment_status,'NONE',seed.transaction_type,seed.transaction_status,seed.queue_status,
-  (now() at time zone 'Asia/Jakarta')::date+seed.day_offset,seed.booking_time,seed.duration_minutes,seed.bay_number,
-  least((((now() at time zone 'Asia/Jakarta')::date+seed.day_offset+seed.booking_time) at time zone 'Asia/Jakarta'), now())
+  least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19')+seed.day_offset,seed.booking_time,seed.duration_minutes,seed.bay_number,
+  ((least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19')+seed.day_offset+seed.booking_time) at time zone 'Asia/Jakarta')
 from (values
  ('t-11','RS-SEED-001','rs-c-04','rs-v-04','svc-car',null::text,null::numeric,'SERVICE',50000,'CASH','PAID','WALK_IN','COMPLETED','COMPLETED',-2,time '09:20',50,null::integer),
  ('t-12','RS-SEED-002','rs-c-04','rs-v-05','svc-moto',null::text,null::numeric,'SERVICE',20000,'CASH','PAID','WALK_IN','COMPLETED','COMPLETED',-1,time '16:40',35,null::integer),

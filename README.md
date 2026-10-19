@@ -45,6 +45,7 @@ Form order customer tidak meminta login, OTP email, atau SMS. Order layanan meng
 Gunakan Node.js 18 atau lebih baru:
 
 ```powershell
+npm install
 node app.js
 ```
 
@@ -57,6 +58,16 @@ Atur `SUPABASE_URL` dan `SUPABASE_PUBLISHABLE_KEY` pada konstanta di `app.js`. P
 Project Supabase menyimpan order customer melalui RPC; CRUD transaksi manual Admin menggunakan akses terautentikasi untuk menulis dan menghapus baris transaksi beserta relasi pelanggan/kendaraan. Sebanyak 28 transaksi historis/demo telah diperbarui dan tercatat berstatus `PAID`; tanggal data dummy/seed dibatasi maksimum 19 Oktober 2026. Papan Antrean Harian hanya mencakup layanan bertanggal hari ini. Tab Transaksi menampilkan transaksi aktif, termasuk layanan, produk, dan tanggal historis; baris `CANCELLED`/`EXPIRED` historis tidak tampil dalam daftar aktif atau perhitungan laporan. Order customer baru juga dicatat `PAID` oleh RPC pembayaran.
 
 Migration versioned `20261012000000_secure_demo_service_orders.sql` menambahkan idempotency key pada registry private dan menulis order layanan melalui wrapper `SECURITY DEFINER` yang tetap menjalankan trigger integritas. Migration `20261012000001_restrict_legacy_anon_rpcs.sql` mencabut akses `anon` ke lookup PII, cancellation, direct product/service sale, dan insert langsung customer/vehicle, sambil menjaga katalog publik serta grant `authenticated`/`service_role`. Migration `20261012000002_demo_product_checkout.sql` menambahkan checkout produk guest yang mengunci stok, menghitung harga dari katalog, menyimpan transaksi lewat trigger, dan meregistrasikan order secara idempotent. Migration `20261012000003_fix_demo_product_fingerprint.sql` memperbaiki operator precedence yang sempat menghasilkan SQLSTATE `42883`. Migration `20261012000004_simulate_demo_payments.sql` mencatat status `PAID` dalam transaksi database yang sama dan memindahkan booking Self-Service ke `BOOKED`; migration sampai versi ini telah diterapkan dan tercatat. Migration `20261019000005_cap_demo_transaction_dates.sql` mengoreksi tanggal seed demo yang melewati tanggal Jakarta. Migration `20261019000006_transaction_wib_operating_hours.sql` membatasi jadwal transaksi dan waktu insert database, serta menormalkan jam fixture demo. Terapkan migration terbaru pada project Supabase untuk mengaktifkan guard database.
+
+Untuk menerapkan migration versioned yang belum ada di project Supabase, login dan hubungkan project terlebih dahulu, lalu jalankan:
+
+```powershell
+npx supabase login
+npx supabase link --project-ref "PROJECT_REF"
+npx supabase db push
+```
+
+Periksa daftar migration yang akan diterapkan sebelum menyetujui `db push`. File di `supabase/migrations/` adalah migration versioned; jangan jalankan ulang baseline `sql/schema.sql` atau file `*-proposal.sql` pada database yang sudah berisi data.
 
 Dashboard Admin menggunakan alur login melalui Modal Login Admin khusus. Supabase Auth memverifikasi sesi dan aplikasi hanya memberikan akses dashboard kepada akun dengan claim `app_metadata.rinse_role = 'admin'`; dashboard tidak lagi menampilkan akses read-only atau banner melayang. Modal login memverifikasi akun yang sudah memiliki claim dan tidak menetapkan role. Panel status empat bay berada di tab Ringkasan Studio sebagai indikator monitoring ketersediaan real-time; tab Self-Service khusus Admin dan tombol pemesanan bay di Admin telah dihapus. Badge Antrean menghitung status MENUNGGU dan DICUCI, lalu berkurang saat status kendaraan menjadi SELESAI. Admin dapat membuat transaksi layanan/produk, mengubah item, nominal, tanggal, metode dan status pembayaran/antrean, atau menghapus transaksi dari tab Transaksi. Tab Laporan dapat mencetak atau menyimpan PDF laporan untuk seluruh periode.
 

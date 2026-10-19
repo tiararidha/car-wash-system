@@ -49,8 +49,8 @@ create table if not exists public.transactions (
   transaction_type text not null check (transaction_type in ('BOOKING', 'WALK_IN', 'SHOP')),
   transaction_status text not null default 'PENDING' check (transaction_status in ('PENDING', 'BOOKED', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'EXPIRED')),
   queue_status text not null default 'WAITING' check (queue_status in ('WAITING', 'WASHING', 'FINISHING', 'COMPLETED')),
-  booking_date date not null default current_date,
-  booking_time time not null default localtime,
+  booking_date date not null default least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19'),
+  booking_time time not null default least(greatest((now() at time zone 'Asia/Jakarta')::time, time '08:00'), time '21:00'),
   duration_minutes integer not null default 0 check (duration_minutes >= 0),
   bay_number integer check (bay_number between 1 and 4),
   addon_id text references public.services_products(id) on delete restrict,
@@ -141,7 +141,7 @@ $$;
 
 create or replace function public.get_public_today_wash_count()
 returns integer language sql stable security definer set search_path = public
-as $$ select count(*)::integer from public.transactions where booking_date = current_date and item_type = 'SERVICE'; $$;
+as $$ select count(*)::integer from public.transactions where booking_date = (now() at time zone 'Asia/Jakarta')::date and item_type = 'SERVICE'; $$;
 
 create or replace function public.get_public_bay_status()
 returns table(bay_number integer, bay_status text, vehicle_type text, duration_minutes integer, minutes_remaining integer, booking_time time)
@@ -358,3 +358,21 @@ on conflict (id) do update set code = excluded.code, customer_id = excluded.cust
   transaction_type = excluded.transaction_type, transaction_status = excluded.transaction_status,
   queue_status = excluded.queue_status, booking_date = excluded.booking_date, booking_time = excluded.booking_time,
   duration_minutes = excluded.duration_minutes, bay_number = excluded.bay_number, created_at = excluded.created_at;
+
+with fixture_schedule as (
+  select transaction_row.id,
+    least(transaction_row.booking_date, date '2026-10-19') as booking_date,
+    case
+      when transaction_row.item_type = 'SERVICE' and transaction_row.duration_minutes between 1 and 780
+        then least(greatest(transaction_row.booking_time, time '08:00'), time '21:00' - make_interval(mins => transaction_row.duration_minutes))
+      else least(greatest(transaction_row.booking_time, time '08:00'), time '21:00')
+    end as booking_time
+  from public.transactions transaction_row
+  where transaction_row.id in ('t-1','t-2','t-3','t-4','t-5','t-6','t-7','t-8','t-9','t-10')
+)
+update public.transactions transaction_row
+set booking_date = fixture_schedule.booking_date,
+    booking_time = fixture_schedule.booking_time,
+    created_at = (fixture_schedule.booking_date + fixture_schedule.booking_time) at time zone 'Asia/Jakarta'
+from fixture_schedule
+where transaction_row.id = fixture_schedule.id;
