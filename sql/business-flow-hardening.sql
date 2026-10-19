@@ -20,8 +20,8 @@ drop trigger if exists transactions_integrity_guard on public.transactions;
 
 update public.transactions
 set booking_date = (now() at time zone 'Asia/Jakarta')::date + case id
-      when 't-1' then -1 when 't-2' then 0 when 't-3' then 1 when 't-4' then -1
-      when 't-5' then -2 when 't-6' then -3 when 't-7' then 2 when 't-8' then 0
+      when 't-1' then -1 when 't-2' then 0 when 't-3' then 0 when 't-4' then -1
+      when 't-5' then -2 when 't-6' then -3 when 't-7' then -1 when 't-8' then 0
       when 't-9' then -4 when 't-10' then -5 else 0 end,
     booking_time = case id
       when 't-1' then time '09:20'
@@ -633,7 +633,7 @@ where t.id = 't-20'
     or t.transaction_type is distinct from 'BOOKING'
     or t.transaction_status is distinct from 'BOOKED'
     or t.queue_status is distinct from 'WAITING'
-    or t.booking_date is distinct from (now() at time zone 'Asia/Jakarta')::date + 3
+    or t.booking_date is distinct from (now() at time zone 'Asia/Jakarta')::date
     or t.booking_time is distinct from time '09:00'
     or t.duration_minutes is distinct from 30
     or t.bay_number is distinct from 4
@@ -648,7 +648,7 @@ select seed.id,seed.code,seed.customer_id,seed.vehicle_id,service.id,addon.id,se
   service.name || case when addon.id is not null then ' + '||addon.name else '' end,1,seed.amount,
   seed.payment_method,seed.payment_status,'NONE',seed.transaction_type,seed.transaction_status,seed.queue_status,
   (now() at time zone 'Asia/Jakarta')::date+seed.day_offset,seed.booking_time,seed.duration_minutes,seed.bay_number,
-  (((now() at time zone 'Asia/Jakarta')::date+seed.day_offset+seed.booking_time) at time zone 'Asia/Jakarta')
+  least((((now() at time zone 'Asia/Jakarta')::date+seed.day_offset+seed.booking_time) at time zone 'Asia/Jakarta'), now())
 from (values
  ('t-11','RS-SEED-001','rs-c-04','rs-v-04','svc-car',null::text,null::numeric,'SERVICE',50000,'CASH','PAID','WALK_IN','COMPLETED','COMPLETED',-2,time '09:20',50,null::integer),
  ('t-12','RS-SEED-002','rs-c-04','rs-v-05','svc-moto',null::text,null::numeric,'SERVICE',20000,'CASH','PAID','WALK_IN','COMPLETED','COMPLETED',-1,time '16:40',35,null::integer),
@@ -656,10 +656,10 @@ from (values
  ('t-14','RS-SEED-004','rs-c-06','rs-v-07','svc-self-moto',null::text,null::numeric,'SERVICE',10000,'CARD','PAID','BOOKING','COMPLETED','COMPLETED',-4,time '11:15',25,2),
  ('t-15','RS-SEED-005','c-1',null,'prd-shampoo',null::text,null::numeric,'PRODUCT',45000,'CASH','PAID','SHOP','COMPLETED','COMPLETED',-5,time '11:10',0,null::integer),
  ('t-16','RS-SEED-006','rs-c-07','rs-v-08','svc-car',null::text,null::numeric,'SERVICE',50000,'E_WALLET','PAID','BOOKING','COMPLETED','COMPLETED',-6,time '17:15',50,null::integer),
- ('t-17','RS-SEED-007','rs-c-04','rs-v-04','svc-car','addon-pickup',2.40,'SERVICE',60000,'QRIS','PAID','BOOKING','BOOKED','WAITING',1,time '10:00',50,null::integer),
- ('t-18','RS-SEED-008','rs-c-04','rs-v-05','svc-moto','addon-pickup-moto',2.00,'SERVICE',25000,'E_WALLET','PAID','BOOKING','BOOKED','WAITING',2,time '11:00',35,null::integer),
- ('t-19','RS-SEED-009','rs-c-09','rs-v-11','svc-self-car',null::text,null::numeric,'SERVICE',30000,'QRIS','PAID','BOOKING','BOOKED','WAITING',2,time '14:00',30,3),
- ('t-20','RS-SEED-010','rs-c-11','rs-v-13','svc-self-car',null::text,null::numeric,'SERVICE',30000,'CARD','PAID','BOOKING','BOOKED','WAITING',3,time '09:00',30,4)
+ ('t-17','RS-SEED-007','rs-c-04','rs-v-04','svc-car','addon-pickup',2.40,'SERVICE',60000,'QRIS','PAID','BOOKING','BOOKED','WAITING',0,time '10:00',50,null::integer),
+ ('t-18','RS-SEED-008','rs-c-04','rs-v-05','svc-moto','addon-pickup-moto',2.00,'SERVICE',25000,'E_WALLET','PAID','BOOKING','BOOKED','WAITING',-1,time '11:00',35,null::integer),
+ ('t-19','RS-SEED-009','rs-c-09','rs-v-11','svc-self-car',null::text,null::numeric,'SERVICE',30000,'QRIS','PAID','BOOKING','BOOKED','WAITING',-1,time '14:00',30,3),
+ ('t-20','RS-SEED-010','rs-c-11','rs-v-13','svc-self-car',null::text,null::numeric,'SERVICE',30000,'CARD','PAID','BOOKING','BOOKED','WAITING',0,time '09:00',30,4)
 ) as seed(id,code,customer_id,vehicle_id,item_id,addon_id,pickup_distance_km,item_type,amount,payment_method,payment_status,transaction_type,transaction_status,queue_status,day_offset,booking_time,duration_minutes,bay_number)
 join public.services_products service on service.id=seed.item_id
 left join public.services_products addon on addon.id=seed.addon_id

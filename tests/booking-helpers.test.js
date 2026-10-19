@@ -13,6 +13,7 @@ const {
   isValidDemoProductOrderResponse,
   normalizeTransactionStatusForDisplay,
   countActiveQueueTransactions,
+  filterQueueTransactionsForDate,
   resolveCustomerIdentity,
   validateServicePaymentMethod,
   isValidCustomerCapabilityToken,
@@ -45,6 +46,7 @@ const customerNameCanonicalizationSource = fs.readFileSync(path.join(__dirname, 
 const cleanupGeneratorSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000001_cleanup_demo_data_and_realistic_fallback.sql'), 'utf8');
 const adminRichDataSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000003_add_admin_and_rich_dummy_data.sql'), 'utf8');
 const paidDemoMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000004_mark_demo_transactions_paid.sql'), 'utf8');
+const demoDateCorrectionSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000005_cap_demo_transaction_dates.sql'), 'utf8');
 const demoSnapshotStart = demoProposalSource.search(/create(?:\s+or\s+replace)?\s+function public\.get_demo_admin_snapshot\(\)/i);
 const demoOrderStart = demoRpcSource.search(/create(?:\s+or\s+replace)?\s+function public\.create_demo_service_order\(p_order jsonb\)/i);
 const demoOrderEnd = demoRpcSource.search(/\nrevoke all on function public\.create_demo_service_order\(jsonb\)/i);
@@ -157,6 +159,18 @@ assert.equal(countActiveQueueTransactions([
   { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'CANCELLED', payment_status: 'PAID', queue_status: 'WAITING' },
   { item_type: 'PRODUCT', transaction_type: 'SHOP', transaction_status: 'PENDING', payment_status: 'PAID', queue_status: 'WAITING' }
 ]), 3);
+const queueFixture = [
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', payment_status: 'PAID', queue_status: 'WAITING', booking_date: '2026-10-19' },
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', payment_status: 'PAID', queue_status: 'COMPLETED', booking_date: '2026-10-19' },
+  { item_type: 'SERVICE', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', payment_status: 'PAID', queue_status: 'COMPLETED', booking_date: '2026-10-19', booking_time: '00:00', duration_minutes: 30 },
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', payment_status: 'PAID', queue_status: 'WASHING', booking_date: '2026-10-18' },
+  { item_type: 'PRODUCT', transaction_type: 'SHOP', transaction_status: 'COMPLETED', payment_status: 'PAID', queue_status: 'COMPLETED', booking_date: '2026-10-19' }
+];
+const dailyQueue = filterQueueTransactionsForDate(queueFixture, '2026-10-19');
+assert.equal(dailyQueue.length, 3);
+assert.equal(countActiveQueueTransactions(dailyQueue), 1);
+assert.equal(dailyQueue.filter(tx => tx.queue_status === 'COMPLETED').length, 2);
+assert.match(appSource, /renderAdminTransactionList\(db\.transactions, 'Seluruh transaksi studio\.'/);
 assert.match(appSource, /const stages = \['WAITING', 'WASHING', 'COMPLETED'\]/);
 assert.match(appSource, /'self-service'\) tab = 'overview'/);
 assert.doesNotMatch(appSource.slice(appSource.indexOf('function renderAdminTransactionList'), appSource.indexOf('\nfunction renderAdminCustomers')), /data-action="delete|data-delete-transaction/);
@@ -306,6 +320,7 @@ assert.match(adminRichDataSource, /generate_series\(1, 28\)/);
 assert.match(adminRichDataSource, /floor\(\(sequence\.n - 1\) \* 90\.0 \/ 27\)/);
 assert.match(adminRichDataSource, /when 0 then 'CASH'[\s\S]*when 1 then 'QRIS'[\s\S]*when 2 then 'E_WALLET'[\s\S]*else 'CARD'/);
 assert.match(adminRichDataSource, /when 0 then 'COMPLETED'[\s\S]*when 1 then 'BOOKED'[\s\S]*else 'PENDING'/);
+assert.match(adminRichDataSource, /when 1 then local_day\.today[\s\S]*else local_day\.today - 1/);
 assert.match(adminRichDataSource, /'Bambang Pamungkas'[\s\S]*'Doni Tata'[\s\S]*'Budi Santoso'/);
 assert.match(adminRichDataSource, /join public\.customers customer_row on customer_row\.phone = seed\.customer_phone[\s\S]*join public\.vehicles vehicle_row on vehicle_row\.customer_id = customer_row\.id[\s\S]*vehicle_row\.plate = seed\.vehicle_plate/);
 assert.match(adminRichDataSource, /select seed\.transaction_id, seed\.transaction_code, customer_row\.id, vehicle_row\.id/);
@@ -316,6 +331,9 @@ assert.match(paidDemoMigrationSource, /set_config\('rinse\.payment_update', 'on'
 assert.match(paidDemoMigrationSource, /payment_status not in \('PAID', 'REFUNDED'\)/);
 assert.match(paidDemoMigrationSource, /transaction_status <> 'CANCELLED'/);
 assert.doesNotMatch(paidDemoMigrationSource, /create table|alter table/i);
+assert.match(demoDateCorrectionSource, /disable trigger transactions_integrity_guard[\s\S]*set booking_date[\s\S]*booking_date > jakarta_today\.today[\s\S]*transaction_row\.id like 'rich-tx-%'[\s\S]*enable trigger transactions_integrity_guard/);
+assert.match(cleanupGeneratorSource, /'seed-tx-rina-self-service'[\s\S]*\(now\(\) at time zone 'Asia\/Jakarta'\)::date, time '13:00'/);
+assert.doesNotMatch(cleanupGeneratorSource, /current_date\s*\+\s*(1|30)/);
 assert.match(appSource, /\['create_demo_service_order', 'create_demo_product_order'\]\.includes\(name\)\)\s*\{\s*requestSession = \{ access_token: SUPABASE_PUBLISHABLE_KEY \};/);
 assert.match(appSource, /payment-status-\$\{String\(tx\.payment_status\)\.toLowerCase\(\)\}/);
 assert.match(polishSource, /\.payment-status-paid\s*\{\s*color:\s*#26724e/i);

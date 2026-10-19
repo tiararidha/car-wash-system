@@ -214,6 +214,15 @@ function countActiveQueueTransactions(records = []) {
     && (tx.transaction_type !== 'BOOKING' || ['ACTIVE', 'COMPLETED'].includes(String(tx.transaction_status || '').toUpperCase()))
     && ['WAITING', 'WASHING', 'FINISHING'].includes(String(tx.queue_status || 'WAITING').toUpperCase())).length;
 }
+function filterQueueTransactionsForDate(records = [], queueDate) {
+  return records.filter(tx => tx?.item_type === 'SERVICE'
+    && tx.booking_date === queueDate
+    && String(tx.payment_status || '').toUpperCase() === 'PAID'
+    && !['CANCELLED', 'EXPIRED'].includes(String(tx.transaction_status || '').toUpperCase())
+    && !['PENDING', 'COMPLETED'].includes(String(tx.refund_status || 'NONE').toUpperCase())
+    && (tx.transaction_type !== 'BOOKING' || ['ACTIVE', 'COMPLETED'].includes(String(tx.transaction_status || '').toUpperCase()))
+    && ['WAITING', 'WASHING', 'FINISHING', 'COMPLETED'].includes(String(tx.queue_status || 'WAITING').toUpperCase()));
+}
 
 function hasAdminRole(user) {
   return user?.app_metadata?.rinse_role === 'admin';
@@ -234,6 +243,7 @@ if (typeof window === 'undefined') {
     isValidDemoProductOrderResponse,
     normalizeTransactionStatusForDisplay,
     countActiveQueueTransactions,
+    filterQueueTransactionsForDate,
     resolveCustomerIdentity,
     isValidCustomerCapabilityToken,
     requireCustomerCapabilityToken,
@@ -417,22 +427,21 @@ const SEED = {
 };
 const seedToday = getJakartaDateString();
 const seedYesterday = addDaysToJakartaDate(seedToday, -1);
-const seedTomorrow = addDaysToJakartaDate(seedToday, 1);
 const activeSeed = SEED.transactions.find(tx => tx.id === 't-2');
 const activeStarted = new Date(Date.now() - 8 * 60000);
 activeSeed.booking_date = seedToday;
 activeSeed.booking_time = getJakartaTimeString(activeStarted);
 activeSeed.created_at = activeStarted.toISOString();
 SEED.transactions.find(tx => tx.id === 't-1').booking_date = seedYesterday;
-SEED.transactions.find(tx => tx.id === 't-3').booking_date = seedTomorrow;
+SEED.transactions.find(tx => tx.id === 't-3').booking_date = seedYesterday;
 SEED.transactions.find(tx => tx.id === 't-3').bay_number = 1;
 SEED.transactions.find(tx => tx.id === 't-4').booking_date = seedYesterday;
-for (const [id, offset] of [['t-5', -2], ['t-6', -3], ['t-7', 2], ['t-8', 0], ['t-9', -4], ['t-10', -5]]) {
+for (const [id, offset] of [['t-5', -2], ['t-6', -3], ['t-7', -2], ['t-8', 0], ['t-9', -2], ['t-10', -2]]) {
   const transaction = SEED.transactions.find(tx => tx.id === id);
   transaction.booking_date = addDaysToJakartaDate(seedToday, offset);
   transaction.created_at = new Date(Date.now() + offset * 86400000).toISOString();
 }
-for (const [id, offset] of [['t-11', -1], ['t-12', 0], ['t-13', 1], ['t-14', 0], ['t-15', 1], ['t-16', 2], ['t-17', -2], ['t-18', 3], ['t-19', -1], ['t-20', 4]]) {
+for (const [id, offset] of [['t-11', -1], ['t-12', 0], ['t-13', -1], ['t-14', 0], ['t-15', -1], ['t-16', 0], ['t-17', -2], ['t-18', -1], ['t-19', -1], ['t-20', 0]]) {
   const transaction = SEED.transactions.find(tx => tx.id === id);
   transaction.booking_date = addDaysToJakartaDate(seedToday, offset);
 }
@@ -613,8 +622,9 @@ function normalizeOperationalTransaction(tx = {}) {
       return normalized;
     }
     if (endsAt <= Date.now()) {
-      normalized.transaction_status = normalized.transaction_status === 'ACTIVE'
-        && ['WASHING', 'FINISHING', 'COMPLETED'].includes(normalized.queue_status) ? 'COMPLETED' : 'EXPIRED';
+      normalized.transaction_status = normalized.transaction_status === 'COMPLETED'
+        || (normalized.transaction_status === 'ACTIVE' && ['WASHING', 'FINISHING', 'COMPLETED'].includes(normalized.queue_status))
+        ? 'COMPLETED' : 'EXPIRED';
       normalized.queue_status = 'COMPLETED';
     } else if (normalized.payment_status === 'PAID' && normalized.transaction_status === 'BOOKED' && startsAt <= Date.now()) {
       normalized.transaction_status = 'ACTIVE';
@@ -637,11 +647,8 @@ function isRevenueTransaction(tx) {
     && !['CANCELLED', 'EXPIRED'].includes(transactionStatus)
     && !['PENDING', 'COMPLETED'].includes(refundStatus);
 }
-function getOperationalQueueTransactions(records = []) {
-  return getOperationalTransactions(records).filter(tx => tx.item_type === 'SERVICE'
-    && isRevenueTransaction(tx)
-    && (tx.transaction_type !== 'BOOKING' || ['ACTIVE', 'COMPLETED'].includes(tx.transaction_status))
-    && ['WAITING', 'WASHING', 'FINISHING', 'COMPLETED'].includes(tx.queue_status || 'WAITING'));
+function getOperationalQueueTransactions(records = [], queueDate = getJakartaDateString()) {
+  return filterQueueTransactionsForDate(getOperationalTransactions(records), queueDate);
 }
 function statusLabel(value) {
   return ({ AVAILABLE: 'Tersedia', OCCUPIED: 'Digunakan', RESERVED: 'Dipesan', PAID: 'Lunas', PENDING: 'Belum Dibayar', FAILED: 'Gagal', REFUNDED: 'Pengembalian Dana', NONE: 'Tidak ada', COMPLETED: 'Selesai', BOOKED: 'Terkonfirmasi', ACTIVE: 'Sedang Berlangsung', CANCELLED: 'Dibatalkan', EXPIRED: 'Hangus', WAITING: 'Menunggu', WASHING: 'Dicuci', FINISHING: 'Tahap Akhir', CASH: 'Tunai', QRIS: 'QRIS', E_WALLET: 'Dompet digital', CARD: 'Kartu' })[String(value || '').toUpperCase()] || String(value || '').replaceAll('_', ' ');
