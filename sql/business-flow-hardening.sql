@@ -19,7 +19,7 @@ alter table public.transactions add constraint transactions_transaction_status_c
 drop trigger if exists transactions_integrity_guard on public.transactions;
 
 update public.transactions
-set booking_date = least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19') + case id
+set booking_date = (now() at time zone 'Asia/Jakarta')::date + case id
       when 't-1' then -1 when 't-2' then 0 when 't-3' then 0 when 't-4' then -1
       when 't-5' then -2 when 't-6' then -3 when 't-7' then -1 when 't-8' then 0
       when 't-9' then -4 when 't-10' then -5 else 0 end,
@@ -249,8 +249,8 @@ declare
   expected_amount integer;
   local_now timestamp := clock_timestamp() at time zone 'Asia/Jakarta';
 begin
-  if new.booking_date > least(date '2026-10-19', local_now::date) then
-    raise exception 'Tanggal transaksi tidak boleh melewati 19 Oktober 2026 WIB.';
+  if new.booking_date > local_now::date and new.transaction_type <> 'BOOKING' then
+    raise exception 'Tanggal transaksi tidak boleh melewati hari ini.';
   end if;
   if new.booking_time < time '08:00' or new.booking_time > time '21:00' then
     raise exception 'Transaksi hanya dapat dijadwalkan pukul 08.00–21.00 WIB.';
@@ -264,6 +264,10 @@ begin
       and new.id not like 'rich-tx-%'
       and (local_now::time < time '08:00' or local_now::time > time '21:00') then
       raise exception 'Transaksi baru hanya dapat dibuat pada 08.00–21.00 WIB.';
+    end if;
+    if (new.transaction_type = 'SHOP' or coalesce(auth.role(), '') = 'authenticated')
+      and ((new.booking_date + new.booking_time) at time zone 'Asia/Jakarta') > clock_timestamp() then
+      raise exception 'Transaksi baru tidak boleh melebihi waktu saat ini.';
     end if;
     if new.id not in ('t-11','t-12','t-13','t-14','t-15','t-16','t-17','t-18','t-19','t-20')
       and new.id not like 'rich-tx-%' then
@@ -284,7 +288,17 @@ begin
 
   if tg_op = 'INSERT' then
     if new.item_type = 'PRODUCT' then
-      if new.addon_id is not null or new.amount <> catalog_price * new.quantity then raise exception 'Nominal produk tidak sesuai katalog.'; end if;
+      if new.addon_id is not null
+        or new.amount <> catalog_price * new.quantity + new.shipping_fee then
+        raise exception 'Nominal produk tidak sesuai katalog.';
+      end if;
+      if new.fulfillment_method = 'COURIER'
+        and ((not exists (select 1 from public.transactions where fulfillment_order_id = new.fulfillment_order_id)
+            and new.shipping_fee <> 10000)
+          or (exists (select 1 from public.transactions where fulfillment_order_id = new.fulfillment_order_id)
+            and new.shipping_fee <> 0)) then
+        raise exception 'Ongkir kurir harus dibayar satu kali per checkout.';
+      end if;
     else
       if new.addon_id is not null then
         select price, duration into addon_price, addon_duration from public.services_products
@@ -673,8 +687,8 @@ insert into public.transactions (
 select seed.id,seed.code,seed.customer_id,seed.vehicle_id,service.id,addon.id,seed.pickup_distance_km,seed.item_type,
   service.name || case when addon.id is not null then ' + '||addon.name else '' end,1,seed.amount,
   seed.payment_method,seed.payment_status,'NONE',seed.transaction_type,seed.transaction_status,seed.queue_status,
-  least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19')+seed.day_offset,seed.booking_time,seed.duration_minutes,seed.bay_number,
-  ((least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19')+seed.day_offset+seed.booking_time) at time zone 'Asia/Jakarta')
+  (now() at time zone 'Asia/Jakarta')::date+seed.day_offset,seed.booking_time,seed.duration_minutes,seed.bay_number,
+  (((now() at time zone 'Asia/Jakarta')::date+seed.day_offset+seed.booking_time) at time zone 'Asia/Jakarta')
 from (values
  ('t-11','RS-SEED-001','rs-c-04','rs-v-04','svc-car',null::text,null::numeric,'SERVICE',50000,'CASH','PAID','WALK_IN','COMPLETED','COMPLETED',-2,time '09:20',50,null::integer),
  ('t-12','RS-SEED-002','rs-c-04','rs-v-05','svc-moto',null::text,null::numeric,'SERVICE',20000,'CASH','PAID','WALK_IN','COMPLETED','COMPLETED',-1,time '16:40',35,null::integer),

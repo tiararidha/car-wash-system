@@ -173,7 +173,7 @@ $$;
 
 create temporary table rich_dummy_transactions on commit drop as
 with local_day as (
-  select least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19') as today
+  select (now() at time zone 'Asia/Jakarta')::date as today
 ), numbered as (
   select sequence.n,
     ((sequence.n - 1) % 14) + 1 as person_ordinal,

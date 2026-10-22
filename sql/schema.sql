@@ -49,12 +49,18 @@ create table if not exists public.transactions (
   transaction_type text not null check (transaction_type in ('BOOKING', 'WALK_IN', 'SHOP')),
   transaction_status text not null default 'PENDING' check (transaction_status in ('PENDING', 'BOOKED', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'EXPIRED')),
   queue_status text not null default 'WAITING' check (queue_status in ('WAITING', 'WASHING', 'FINISHING', 'COMPLETED')),
-  booking_date date not null default least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19'),
+  booking_date date not null default (now() at time zone 'Asia/Jakarta')::date,
   booking_time time not null default least(greatest((now() at time zone 'Asia/Jakarta')::time, time '08:00'), time '21:00'),
   duration_minutes integer not null default 0 check (duration_minutes >= 0),
   bay_number integer check (bay_number between 1 and 4),
   addon_id text references public.services_products(id) on delete restrict,
   pickup_distance_km numeric(4, 2) check (pickup_distance_km is null or pickup_distance_km between 0.01 and 3),
+  fulfillment_method text not null default 'PICKUP' check (fulfillment_method in ('PICKUP', 'COURIER')),
+  fulfillment_address text,
+  fulfillment_order_id uuid,
+  shipping_fee integer not null default 0 check (shipping_fee in (0, 10000)),
+  check ((fulfillment_method = 'PICKUP' and fulfillment_address is null and shipping_fee = 0)
+    or (fulfillment_method = 'COURIER' and nullif(trim(fulfillment_address), '') is not null and fulfillment_order_id is not null)),
   completed_at timestamptz,
   refund_status text not null default 'NONE' check (refund_status in ('NONE', 'PENDING', 'COMPLETED')),
   created_at timestamptz not null default now()
@@ -71,6 +77,8 @@ create index if not exists transactions_item_idx on public.transactions(item_id)
 create index if not exists transactions_date_idx on public.transactions(booking_date desc);
 create index if not exists transactions_queue_idx on public.transactions(queue_status, transaction_status);
 create index if not exists services_products_type_active_idx on public.services_products(item_type, active);
+create unique index if not exists transactions_one_shipping_fee_per_order_idx
+  on public.transactions(fulfillment_order_id) where shipping_fee = 10000;
 
 alter table public.customers enable row level security;
 alter table public.vehicles enable row level security;
@@ -185,6 +193,10 @@ declare
   product_price integer;
   product_name text;
   expected_payment_status text;
+  fulfillment_method_value text;
+  fulfillment_address_value text;
+  fulfillment_order_id_value uuid;
+  shipping_fee_value integer;
 begin
   sale_quantity := greatest(1, coalesce((p_transaction ->> 'quantity')::integer, 1));
   select stock, price, name into product_stock, product_price, product_name from public.services_products
@@ -193,16 +205,29 @@ begin
   if product_stock < sale_quantity then raise exception 'Stok produk tidak mencukupi.'; end if;
   expected_payment_status := 'PENDING';
   if p_transaction ->> 'payment_status' <> expected_payment_status then raise exception 'Status pembayaran tidak sesuai metode.'; end if;
+  fulfillment_method_value := upper(coalesce(p_transaction ->> 'fulfillment_method', 'PICKUP'));
+  fulfillment_address_value := nullif(trim(p_transaction ->> 'fulfillment_address'), '');
+  fulfillment_order_id_value := nullif(p_transaction ->> 'fulfillment_order_id', '')::uuid;
+  shipping_fee_value := coalesce((p_transaction ->> 'shipping_fee')::integer, 0);
+  if fulfillment_method_value not in ('PICKUP', 'COURIER')
+    or shipping_fee_value not in (0, 10000)
+    or (fulfillment_method_value = 'PICKUP' and (shipping_fee_value <> 0 or fulfillment_address_value is not null))
+    or (fulfillment_method_value = 'COURIER' and (fulfillment_address_value is null or fulfillment_order_id_value is null)) then
+    raise exception 'Detail pemenuhan produk tidak valid.';
+  end if;
   update public.services_products set stock = stock - sale_quantity, updated_at = now()
   where id = p_transaction ->> 'item_id' returning stock into new_stock;
   insert into public.transactions (id, code, customer_id, vehicle_id, item_id, item_type, item_name, quantity, amount,
     payment_method, payment_status, transaction_type, transaction_status, queue_status, booking_date, booking_time,
-    duration_minutes, bay_number, created_at)
+    duration_minutes, bay_number, fulfillment_method, fulfillment_address, fulfillment_order_id,
+    shipping_fee, created_at)
   values (p_transaction ->> 'id', p_transaction ->> 'code', p_transaction ->> 'customer_id', null,
     p_transaction ->> 'item_id', 'PRODUCT', product_name, sale_quantity,
-    product_price * sale_quantity, p_transaction ->> 'payment_method', expected_payment_status,
+    product_price * sale_quantity + shipping_fee_value, p_transaction ->> 'payment_method', expected_payment_status,
     'SHOP', 'PENDING', 'WAITING', (p_transaction ->> 'booking_date')::date,
-    (p_transaction ->> 'booking_time')::time, 0, null, coalesce((p_transaction ->> 'created_at')::timestamptz, now()));
+    (p_transaction ->> 'booking_time')::time, 0, null,
+    fulfillment_method_value, fulfillment_address_value, fulfillment_order_id_value, shipping_fee_value,
+    coalesce((p_transaction ->> 'created_at')::timestamptz, now()));
   return new_stock;
 end;
 $$;
@@ -331,12 +356,12 @@ insert into public.services_products (id, item_type, name, category, type, descr
   ('addon-tire', 'ADD_ON', 'Tire dressing', 'ADD_ON', null, 'Finishing satin agar ban tampak hitam bersih.', 15000, 8, 0, 0, true, 'https://images.pexels.com/photos/7154623/pexels-photo-7154623.jpeg?auto=compress&cs=tinysrgb&w=700'),
   ('addon-pickup', 'ADD_ON', 'Antar-Jemput Mobil', 'PICKUP', null, 'Penjemputan dan pengantaran mobil, maksimal 3 km pulang-pergi.', 10000, 0, 0, 0, true, 'https://images.pexels.com/photos/6873176/pexels-photo-6873176.jpeg?auto=compress&cs=tinysrgb&w=700'),
   ('addon-pickup-moto', 'ADD_ON', 'Antar-Jemput Motor', 'PICKUP', null, 'Penjemputan dan pengantaran motor, maksimal 3 km pulang-pergi.', 5000, 0, 0, 0, true, 'https://images.pexels.com/photos/36709685/pexels-photo-36709685.jpeg?auto=compress&cs=tinysrgb&w=700'),
-  ('prd-shampoo', 'PRODUCT', 'Sampo Cuci Mobil pH Netral', 'WASH & CARE', null, 'Sampo khusus kendaraan, aman untuk lapisan wax · 500 ml.', 45000, 0, 22, 6, true, 'https://images.pexels.com/photos/4674366/pexels-photo-4674366.jpeg?auto=compress&cs=tinysrgb&w=700'),
-  ('prd-cloth', 'PRODUCT', 'Kain Premium Microfiber', 'TOOLS', null, 'Serat lembut dan tebal untuk mengeringkan bodi tanpa goresan · 40 × 40 cm.', 40000, 0, 13, 5, true, 'https://images.pexels.com/photos/11370616/pexels-photo-11370616.jpeg?auto=compress&cs=tinysrgb&w=700'),
-  ('prd-tire', 'PRODUCT', 'Semir Ban Satin', 'PROTECTION', null, 'Perawatan ban dengan hasil hitam satin, bukan licin berminyak · 250 ml.', 60000, 0, 9, 4, true, 'https://images.pexels.com/photos/7154623/pexels-photo-7154623.jpeg?auto=compress&cs=tinysrgb&w=700'),
-  ('prd-wax', 'PRODUCT', 'Liquid Wax Kilap Dalam', 'PROTECTION', null, 'Wax cair untuk kilap dan perlindungan cat · 250 ml.', 115000, 0, 8, 4, true, 'https://images.pexels.com/photos/20042050/pexels-photo-20042050.jpeg?auto=compress&cs=tinysrgb&w=700'),
-  ('prd-interior', 'PRODUCT', 'Pembersih Interior', 'INTERIOR CARE', null, 'Pembersih jok dan trim interior untuk perawatan rutin · 300 ml.', 50000, 0, 11, 4, true, 'https://images.pexels.com/photos/17029947/pexels-photo-17029947.jpeg?auto=compress&cs=tinysrgb&w=700'),
-  ('prd-glass', 'PRODUCT', 'Pembersih Kaca Otomotif', 'GLASS CARE', null, 'Pembersih kaca untuk hasil bening tanpa bekas lap · 300 ml.', 40000, 0, 10, 4, true, 'https://images.pexels.com/photos/9462100/pexels-photo-9462100.jpeg?auto=compress&cs=tinysrgb&w=700')
+  ('prd-cloth', 'PRODUCT', 'Lap Microfiber Bodi & Kaca', 'PERLENGKAPAN', null, 'Kain lap halus berdaya serap tinggi, aman untuk bodi dan kaca tanpa meninggalkan goresan.', 45000, 0, 13, 5, true, 'https://images.pexels.com/photos/11370616/pexels-photo-11370616.jpeg?auto=compress&cs=tinysrgb&w=700'),
+  ('prd-interior', 'PRODUCT', 'Pembersih Interior & Jok', 'PERAWATAN INTERIOR', null, 'Cairan pembersih untuk mengangkat debu, noda makanan, dan kotoran pada jok serta dasbor.', 50000, 0, 11, 4, true, 'https://images.pexels.com/photos/17029947/pexels-photo-17029947.jpeg?auto=compress&cs=tinysrgb&w=700'),
+  ('prd-glass', 'PRODUCT', 'Pembersih Kaca Mobil', 'PERAWATAN KACA', null, 'Membersihkan bercak air dan kotoran pada kaca kendaraan agar pandangan kembali bening.', 40000, 0, 10, 4, true, 'https://images.pexels.com/photos/9462100/pexels-photo-9462100.jpeg?auto=compress&cs=tinysrgb&w=700'),
+  ('prd-shampoo', 'PRODUCT', 'Sampo Mobil pH Netral', 'CUCI & PERAWATAN', null, 'Sampo cuci bodi busa melimpah, aman digunakan sehari-hari tanpa merusak cat.', 45000, 0, 22, 6, true, 'https://images.pexels.com/photos/4674366/pexels-photo-4674366.jpeg?auto=compress&cs=tinysrgb&w=700'),
+  ('prd-tire', 'PRODUCT', 'Semir Pengkilap Ban', 'PERLINDUNGAN', null, 'Semir ban untuk membuat warna hitam terlihat pekat, mengkilap, dan bersih tahan lama.', 60000, 0, 9, 4, true, 'https://images.pexels.com/photos/7154623/pexels-photo-7154623.jpeg?auto=compress&cs=tinysrgb&w=700'),
+  ('prd-wax', 'PRODUCT', 'Pengkilap Bodi (Wax Spray)', 'PERLINDUNGAN', null, 'Semprotan pengkilap cat instan yang memberi efek daun talas agar air dan debu tidak mudah menempel.', 115000, 0, 8, 4, true, 'https://images.pexels.com/photos/20042050/pexels-photo-20042050.jpeg?auto=compress&cs=tinysrgb&w=700')
 on conflict (id) do update set item_type = excluded.item_type, name = excluded.name, category = excluded.category,
   type = excluded.type, description = excluded.description, price = excluded.price, duration = excluded.duration,
   min_stock = excluded.min_stock, active = excluded.active, image = excluded.image, updated_at = now();
@@ -346,11 +371,11 @@ insert into public.transactions (id, code, customer_id, vehicle_id, item_id, ite
   ('t-2', 'RS-260930-1088', 'c-2', 'v-2', 'svc-self-moto', 'SERVICE', 'Self-Service Motorcycle', 1, 10000, 'QRIS', 'PAID', 'BOOKING', 'ACTIVE', 'WASHING', (now() at time zone 'Asia/Jakarta')::date, (now() at time zone 'Asia/Jakarta')::time - interval '8 minutes', 25, 2, now() - interval '8 minutes'),
   ('t-3', 'RS-261001-0107', 'c-3', 'v-3', 'svc-self-car', 'SERVICE', 'Self-Service Car', 1, 30000, 'E_WALLET', 'PAID', 'BOOKING', 'BOOKED', 'WAITING', (now() at time zone 'Asia/Jakarta')::date, '14:30', 30, 1, now()),
   ('t-4', 'RS-260929-0781', 'c-2', 'v-2', 'svc-moto', 'SERVICE', 'Professional Motorcycle Wash', 1, 20000, 'CASH', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED', (now() at time zone 'Asia/Jakarta')::date - 1, '16:40', 35, null, now() - interval '1 day'),
-  ('t-5', 'RS-260928-0551', 'c-1', null, 'prd-shampoo', 'PRODUCT', 'Sampo Cuci Mobil pH Netral', 2, 90000, 'CASH', 'PAID', 'SHOP', 'COMPLETED', 'COMPLETED', (now() at time zone 'Asia/Jakarta')::date - 2, '11:10', 0, null, now() - interval '2 days'),
+  ('t-5', 'RS-260928-0551', 'c-1', null, 'prd-shampoo', 'PRODUCT', 'Sampo Mobil pH Netral', 2, 90000, 'CASH', 'PAID', 'SHOP', 'COMPLETED', 'COMPLETED', (now() at time zone 'Asia/Jakarta')::date - 2, '11:10', 0, null, now() - interval '2 days'),
   ('t-6', 'RS-260927-0332', 'c-3', 'v-3', 'svc-car', 'SERVICE', 'Professional Car Wash', 1, 50000, 'QRIS', 'PAID', 'WALK_IN', 'COMPLETED', 'COMPLETED', (now() at time zone 'Asia/Jakarta')::date - 3, '15:25', 50, null, now() - interval '3 days'),
   ('t-7', 'RS-261002-0216', 'c-2', 'v-2', 'svc-moto', 'SERVICE', 'Professional Motorcycle Wash', 1, 20000, 'CARD', 'PAID', 'BOOKING', 'BOOKED', 'WAITING', (now() at time zone 'Asia/Jakarta')::date, '10:30', 35, null, now()),
   ('t-8', 'RS-260930-1134', 'c-3', 'v-3', 'svc-car', 'SERVICE', 'Professional Car Wash', 1, 50000, 'CASH', 'PAID', 'WALK_IN', 'ACTIVE', 'WAITING', (now() at time zone 'Asia/Jakarta')::date, (now() at time zone 'Asia/Jakarta')::time - interval '3 minutes', 50, null, now() - interval '3 minutes'),
-  ('t-9', 'RS-260926-0972', 'c-1', null, 'prd-cloth', 'PRODUCT', 'Kain Premium Microfiber', 1, 40000, 'QRIS', 'PAID', 'SHOP', 'COMPLETED', 'COMPLETED', (now() at time zone 'Asia/Jakarta')::date - 4, '12:05', 0, null, now() - interval '4 days'),
+  ('t-9', 'RS-260926-0972', 'c-1', null, 'prd-cloth', 'PRODUCT', 'Lap Microfiber Bodi & Kaca', 1, 45000, 'QRIS', 'PAID', 'SHOP', 'COMPLETED', 'COMPLETED', (now() at time zone 'Asia/Jakarta')::date - 4, '12:05', 0, null, now() - interval '4 days'),
   ('t-10', 'RS-260925-0821', 'c-3', 'v-3', 'svc-self-car', 'SERVICE', 'Self-Service Car', 1, 30000, 'E_WALLET', 'PAID', 'BOOKING', 'COMPLETED', 'COMPLETED', (now() at time zone 'Asia/Jakarta')::date - 5, '17:15', 30, 4, now() - interval '5 days')
 on conflict (id) do update set code = excluded.code, customer_id = excluded.customer_id, vehicle_id = excluded.vehicle_id,
   item_id = excluded.item_id, item_type = excluded.item_type, item_name = excluded.item_name, quantity = excluded.quantity,
@@ -361,7 +386,7 @@ on conflict (id) do update set code = excluded.code, customer_id = excluded.cust
 
 with fixture_schedule as (
   select transaction_row.id,
-    least(transaction_row.booking_date, date '2026-10-19') as booking_date,
+    transaction_row.booking_date as booking_date,
     case
       when transaction_row.item_type = 'SERVICE' and transaction_row.duration_minutes between 1 and 780
         then least(greatest(transaction_row.booking_time, time '08:00'), time '21:00' - make_interval(mins => transaction_row.duration_minutes))

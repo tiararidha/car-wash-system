@@ -17,6 +17,8 @@ const {
   filterQueueTransactionsForDate,
   resolveCustomerIdentity,
   validateServicePaymentMethod,
+  productShippingFee,
+  calculateProductAmount,
   isStudioOpenAt,
   validateTransactionSchedule,
   getMaxAllowedTransactionDate,
@@ -51,7 +53,7 @@ const cleanupGeneratorSource = fs.readFileSync(path.join(__dirname, '..', 'supab
 const adminRichDataSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000003_add_admin_and_rich_dummy_data.sql'), 'utf8');
 const paidDemoMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000004_mark_demo_transactions_paid.sql'), 'utf8');
 const demoDateCorrectionSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000005_cap_demo_transaction_dates.sql'), 'utf8');
-const wibScheduleMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000006_transaction_wib_operating_hours.sql'), 'utf8');
+const wibScheduleMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261022000000_dynamic_transaction_time_and_product_fulfillment.sql'), 'utf8');
 const demoSnapshotStart = demoProposalSource.search(/create(?:\s+or\s+replace)?\s+function public\.get_demo_admin_snapshot\(\)/i);
 const demoOrderStart = demoRpcSource.search(/create(?:\s+or\s+replace)?\s+function public\.create_demo_service_order\(p_order jsonb\)/i);
 const demoOrderEnd = demoRpcSource.search(/\nrevoke all on function public\.create_demo_service_order\(jsonb\)/i);
@@ -164,14 +166,16 @@ assert.equal(countActiveQueueTransactions([
   { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'CANCELLED', payment_status: 'PAID', queue_status: 'WAITING' },
   { item_type: 'PRODUCT', transaction_type: 'SHOP', transaction_status: 'PENDING', payment_status: 'PAID', queue_status: 'WAITING' }
 ]), 3);
+const queueToday = getMaxAllowedTransactionDate(new Date());
+const queueYesterday = getMaxAllowedTransactionDate(new Date(Date.now() - 86400000));
 const queueFixture = [
-  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', payment_status: 'PAID', queue_status: 'WAITING', booking_date: '2026-10-19' },
-  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', payment_status: 'PAID', queue_status: 'COMPLETED', booking_date: '2026-10-19' },
-  { item_type: 'SERVICE', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', payment_status: 'PAID', queue_status: 'COMPLETED', booking_date: '2026-10-19', booking_time: '00:00', duration_minutes: 30 },
-  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', payment_status: 'PAID', queue_status: 'WASHING', booking_date: '2026-10-18' },
-  { item_type: 'PRODUCT', transaction_type: 'SHOP', transaction_status: 'COMPLETED', payment_status: 'PAID', queue_status: 'COMPLETED', booking_date: '2026-10-19' }
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', payment_status: 'PAID', queue_status: 'WAITING', booking_date: queueToday },
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', payment_status: 'PAID', queue_status: 'COMPLETED', booking_date: queueToday },
+  { item_type: 'SERVICE', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', payment_status: 'PAID', queue_status: 'COMPLETED', booking_date: queueToday, booking_time: '00:00', duration_minutes: 30 },
+  { item_type: 'SERVICE', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', payment_status: 'PAID', queue_status: 'WASHING', booking_date: queueYesterday },
+  { item_type: 'PRODUCT', transaction_type: 'SHOP', transaction_status: 'COMPLETED', payment_status: 'PAID', queue_status: 'COMPLETED', booking_date: queueToday }
 ];
-const dailyQueue = filterQueueTransactionsForDate(queueFixture, '2026-10-19');
+const dailyQueue = filterQueueTransactionsForDate(queueFixture, queueToday);
 assert.equal(dailyQueue.length, 3);
 assert.equal(countActiveQueueTransactions(dailyQueue), 1);
 assert.equal(dailyQueue.filter(tx => tx.queue_status === 'COMPLETED').length, 2);
@@ -274,6 +278,26 @@ assert.match(demoProductOrderSource, /insert into public\.transactions\s*\(/);
 assert.match(demoProductOrderSource, /insert into private\.demo_transaction_registry\(transaction_id,request_id,request_fingerprint\)/);
 assert.match(demoProductSource, /grant execute on function public\.create_demo_product_order\(jsonb\) to anon/);
 assert.doesNotMatch(demoProductSource, /grant execute on function public\.create_demo_product_order\(jsonb\) to authenticated/i);
+assert.match(wibScheduleMigrationSource, /fulfillment_method text not null default 'PICKUP'/);
+assert.match(schemaSource, /fulfillment_method text not null default 'PICKUP'/);
+assert.match(wibScheduleMigrationSource, /add column if not exists fulfillment_address text/);
+assert.match(wibScheduleMigrationSource, /add column if not exists shipping_fee integer not null default 0/);
+assert.match(wibScheduleMigrationSource, /transactions_one_shipping_fee_per_order_idx/);
+assert.match(wibScheduleMigrationSource, /Ongkir kurir harus dibayar satu kali per checkout/);
+assert.match(schemaSource, /transactions_one_shipping_fee_per_order_idx/);
+assert.match(wibScheduleMigrationSource, /delete from public\.transactions where item_id = 'prd-perfume'/);
+assert.match(wibScheduleMigrationSource, /delete from public\.services_products where id = 'prd-perfume'/);
+assert.doesNotMatch(wibScheduleMigrationSource, /'prd-perfume',\s*'PRODUCT'/);
+assert.doesNotMatch(appSource, /prd-perfume|Parfum Mobil|Parfum \/ Pewangi/);
+assert.doesNotMatch(schemaSource, /prd-perfume|Parfum Mobil|Parfum \/ Pewangi/);
+assert.match(wibScheduleMigrationSource, /request_fingerprint_value[\s\S]*fulfillment_method_value/);
+assert.match(wibScheduleMigrationSource, /case when p_order \? 'fulfillment_method' then/);
+assert.match(wibScheduleMigrationSource, /fulfillment_method,\s*fulfillment_address,\s*fulfillment_order_id,\s*shipping_fee/);
+assert.match(wibScheduleMigrationSource, /create or replace function public\.create_demo_product_order_pending/);
+assert.match(wibScheduleMigrationSource, /saved_transaction := public\.create_demo_product_order_pending\(p_order\)/);
+assert.match(wibScheduleMigrationSource, /return private\.simulate_demo_payment\(saved_transaction/);
+assert.match(wibScheduleMigrationSource, /Tanggal transaksi tidak boleh melewati hari ini/);
+assert.match(wibScheduleMigrationSource, /Transaksi baru tidak boleh melebihi waktu saat ini/);
 assert.match(simulatedPaymentSource, /rename to create_demo_service_order_pending/);
 assert.match(simulatedPaymentSource, /rename to create_demo_product_order_pending/);
 assert.match(simulatedPaymentSource, /set_config\('rinse\.payment_update','on',true\)/);
@@ -337,14 +361,13 @@ assert.match(paidDemoMigrationSource, /payment_status not in \('PAID', 'REFUNDED
 assert.match(paidDemoMigrationSource, /transaction_status <> 'CANCELLED'/);
 assert.doesNotMatch(paidDemoMigrationSource, /create table|alter table/i);
 assert.match(demoDateCorrectionSource, /disable trigger transactions_integrity_guard[\s\S]*set booking_date[\s\S]*booking_date > jakarta_today\.today[\s\S]*transaction_row\.id like 'rich-tx-%'[\s\S]*enable trigger transactions_integrity_guard/);
-assert.match(wibScheduleMigrationSource, /least\(\(clock_timestamp\(\) at time zone 'Asia\/Jakarta'\)::date, date '2026-10-19'\)/);
-assert.match(wibScheduleMigrationSource, /new\.booking_date > least\(date '2026-10-19', local_now::date\)/);
+assert.match(wibScheduleMigrationSource, /new\.booking_date > local_now::date/);
 assert.match(wibScheduleMigrationSource, /new\.booking_time < time '08:00' or new\.booking_time > time '21:00'/);
 assert.match(wibScheduleMigrationSource, /new\.created_at := clock_timestamp\(\)/);
 assert.match(wibScheduleMigrationSource, /before insert or update on public\.transactions/);
 assert.match(appSource, /dateField\.max = getMaxAllowedTransactionDate\(\)/);
 assert.match(appSource, /timeField\.min = '08:00'[\s\S]*timeField\.max = '21:00'/);
-assert.match(cleanupGeneratorSource, /'seed-tx-rina-self-service'[\s\S]*least\(\(now\(\) at time zone 'Asia\/Jakarta'\)::date, date '2026-10-19'\), time '13:00'/);
+assert.match(cleanupGeneratorSource, /'seed-tx-rina-self-service'[\s\S]*\(now\(\) at time zone 'Asia\/Jakarta'\)::date, time '13:00'/);
 assert.doesNotMatch(cleanupGeneratorSource, /current_date\s*\+\s*(1|30)/);
 assert.match(appSource, /\['create_demo_service_order', 'create_demo_product_order'\]\.includes\(name\)\)\s*\{\s*requestSession = \{ access_token: SUPABASE_PUBLISHABLE_KEY \};/);
 assert.match(appSource, /payment-status-\$\{String\(tx\.payment_status\)\.toLowerCase\(\)\}/);
@@ -365,6 +388,8 @@ assert.match(capabilitySource, /revoke all on public\.customers, public\.vehicle
 assert.match(capabilitySource, /grant select, insert, update, delete on public\.customers, public\.vehicles, public\.services_products, public\.transactions to authenticated/);
 assert.match(capabilitySource, /create policy "Capability customer catalog read" on public\.services_products\s+for select to anon using \(active = true\)/);
 assert.match(capabilitySource, /for all to authenticated using \(public\.is_rinse_admin\(\)\) with check \(public\.is_rinse_admin\(\)\)/);
+assert.match(capabilitySource, /fulfillment_address, fulfillment_order_id, shipping_fee/);
+assert.match(capabilitySource, /product\.price \* sale_quantity \+ shipping_fee_value/);
 
 for (const method of ['QRIS', 'E_WALLET', 'CARD']) {
   assert.equal(validateServicePaymentMethod(method, 'BOOKING'), method);
@@ -373,19 +398,31 @@ for (const method of ['QRIS', 'E_WALLET', 'CARD']) {
 assert.equal(validateServicePaymentMethod('CASH', 'WALK_IN'), 'CASH');
 assert.throws(() => validateServicePaymentMethod('CASH', 'BOOKING'), /Self-Service/);
 assert.throws(() => validateServicePaymentMethod('BANK_TRANSFER', 'BOOKING'), /Pilih metode pembayaran/);
-assert.equal(getMaxAllowedTransactionDate(new Date('2026-10-19T14:00:00.000Z')), '2026-10-19');
-assert.equal(isStudioOpenAt(new Date('2026-10-19T01:00:00.000Z')), true);
-assert.equal(isStudioOpenAt(new Date('2026-10-19T14:00:00.000Z')), true);
-assert.equal(isStudioOpenAt(new Date('2026-10-19T00:59:00.000Z')), false);
-assert.equal(isStudioOpenAt(new Date('2026-10-19T14:01:00.000Z')), false);
-assert.equal(isStudioOpenAt(new Date('2026-10-19T14:00:01.000Z')), false);
-assert.equal(isStudioOpenAt(new Date('2026-10-19T17:00:00.000Z')), false);
-assert.equal(validateTransactionSchedule('2026-10-19', '08:00', 0, new Date('2026-10-19T10:00:00.000Z')), true);
-assert.equal(validateTransactionSchedule('2026-10-19', '20:00', 60, new Date('2026-10-19T10:00:00.000Z')), true);
-assert.throws(() => validateTransactionSchedule('2026-10-20', '10:00', 0, new Date('2026-10-19T10:00:00.000Z')), /19 Oktober 2026/);
-assert.throws(() => validateTransactionSchedule('2026-10-19', '07:59', 0), /08.00–21.00 WIB/);
-assert.throws(() => validateTransactionSchedule('2026-10-19', '21:01', 0), /08.00–21.00 WIB/);
-assert.throws(() => validateTransactionSchedule('2026-10-19', '20:11', 50), /selesai paling lambat/);
+assert.equal(productShippingFee('PICKUP'), 0);
+assert.equal(productShippingFee('COURIER'), 10000);
+assert.equal(productShippingFee('COURIER', false), 0);
+assert.throws(() => productShippingFee('INVALID'), /Pilih metode pemenuhan/);
+assert.equal(calculateProductAmount(45000, 2, productShippingFee('PICKUP')), 90000);
+assert.equal(calculateProductAmount(45000, 2, productShippingFee('COURIER')), 100000);
+assert.equal(calculateProductAmount(45000, 2, productShippingFee('COURIER', false)), 90000);
+assert.throws(() => calculateProductAmount(45000, 1.5, 10000), /Nominal produk tidak valid/);
+const scheduleTestDate = getMaxAllowedTransactionDate(new Date());
+const scheduleTestNow = new Date(`${scheduleTestDate}T10:00:00+07:00`);
+const scheduleTime = time => new Date(`${scheduleTestDate}T${time}:00+07:00`);
+const scheduleTomorrow = getMaxAllowedTransactionDate(new Date(scheduleTestNow.getTime() + 86400000));
+assert.equal(getMaxAllowedTransactionDate(scheduleTestNow), scheduleTestDate);
+assert.equal(isStudioOpenAt(scheduleTime('08:00')), true);
+assert.equal(isStudioOpenAt(scheduleTime('21:00')), true);
+assert.equal(isStudioOpenAt(scheduleTime('07:59')), false);
+assert.equal(isStudioOpenAt(scheduleTime('21:01')), false);
+assert.equal(isStudioOpenAt(new Date(`${scheduleTestDate}T21:00:01+07:00`)), false);
+assert.equal(validateTransactionSchedule(scheduleTestDate, '08:00', 0, scheduleTestNow), true);
+assert.equal(validateTransactionSchedule(scheduleTestDate, '20:00', 60, scheduleTestNow, true), true);
+assert.throws(() => validateTransactionSchedule(scheduleTestDate, '18:00', 0, scheduleTestNow), /waktu saat ini/);
+assert.throws(() => validateTransactionSchedule(scheduleTomorrow, '10:00', 0, scheduleTestNow), /hari ini/);
+assert.throws(() => validateTransactionSchedule(scheduleTestDate, '07:59', 0, scheduleTestNow), /08.00–21.00 WIB/);
+assert.throws(() => validateTransactionSchedule(scheduleTestDate, '21:01', 0, scheduleTestNow), /08.00–21.00 WIB/);
+assert.throws(() => validateTransactionSchedule(scheduleTestDate, '20:11', 50, new Date(`${scheduleTestDate}T22:00:00+07:00`)), /selesai paling lambat/);
 assert.equal(isValidIndonesianPlate('H 1234 NP'), true);
 assert.equal(isValidIndonesianPlate('ab 12 c'), true);
 assert.equal(isValidIndonesianPlate('1234'), false);
@@ -421,12 +458,31 @@ const validProductResponse = {
   id: 'a1e096b2-ee77-410b-8a68-e7a68057d9f3', code: 'RS-261012-3950ADC5', customer_id: 'customer-id',
   vehicle_id: null, item_id: 'prd-shampoo', item_type: 'PRODUCT', transaction_type: 'SHOP',
   payment_method: 'CASH', quantity: 2, amount: 90000, payment_status: 'PAID',
-  transaction_status: 'PENDING', refund_status: 'NONE', queue_status: 'WAITING',
+  transaction_status: 'PENDING', refund_status: 'NONE', queue_status: 'WAITING', fulfillment_method: 'PICKUP',
+  fulfillment_address: null, shipping_fee: 0, fulfillment_order_id: null,
   duration_minutes: 0, bay_number: null, booking_date: '2026-10-12', booking_time: '10:11:00'
 };
-const validProductExpectation = { item_id: 'prd-shampoo', quantity: 2, payment_method: 'CASH', amount: 90000 };
+const validProductExpectation = { item_id: 'prd-shampoo', quantity: 2, payment_method: 'CASH', fulfillment_method: 'PICKUP', fulfillment_address: null, shipping_fee: 0, fulfillment_order_id: null, amount: 90000 };
 assert.equal(isValidDemoProductOrderResponse(validProductResponse, validProductExpectation), true);
 assert.equal(isValidDemoProductOrderResponse({ ...validProductResponse, amount: 1 }, validProductExpectation), false);
+assert.equal(isValidDemoProductOrderResponse({ ...validProductResponse, fulfillment_method: 'COURIER' }, validProductExpectation), false);
+assert.equal(isValidDemoProductOrderResponse({ ...validProductResponse, shipping_fee: 10000, amount: 100000 }, validProductExpectation), false);
+const validCourierProductResponse = {
+  ...validProductResponse,
+  amount: 100000,
+  fulfillment_method: 'COURIER',
+  fulfillment_address: 'Jl. Pahlawan 12, Semarang',
+  shipping_fee: 10000,
+  fulfillment_order_id: 'b7e64c8f-7c96-4610-8a51-2735300df431'
+};
+assert.equal(isValidDemoProductOrderResponse(validCourierProductResponse, {
+  ...validProductExpectation,
+  fulfillment_method: 'COURIER',
+  fulfillment_address: 'Jl. Pahlawan 12, Semarang',
+  shipping_fee: 10000,
+  fulfillment_order_id: 'b7e64c8f-7c96-4610-8a51-2735300df431',
+  amount: 100000
+}), true);
 assert.equal(isValidDemoProductOrderResponse({ ...validProductResponse, transaction_status: 'PAID' }, validProductExpectation), false);
 assert.equal(normalizeTransactionStatusForDisplay({ payment_status: 'PAID', transaction_status: 'PENDING' }), 'WAITING');
 assert.equal(normalizeTransactionStatusForDisplay({ payment_status: 'PENDING', transaction_status: 'PENDING' }), 'PENDING');
@@ -475,6 +531,35 @@ assert.match(persistenceSource, /rpcRequest\('create_demo_service_order',\s*\{\s
 assert.match(persistenceSource, /rpcRequest\('create_demo_product_order',\s*\{\s*p_order:/);
 assert.match(persistenceSource, /isValidDemoProductOrderResponse\(result/);
 assert.match(persistenceSource, /request_id: requestId/);
+assert.match(persistenceSource, /fulfillment_method: tx\.fulfillment_method/);
+assert.match(appSource, /name="fulfillment_method" value="PICKUP"/);
+assert.match(appSource, /name="fulfillment_method" value="COURIER"/);
+assert.match(appSource, /Metode pemenuhan/);
+assert.match(appSource, /form\.querySelector\('#fulfillment-summary strong'\)\.textContent = fulfillmentLabel/);
+assert.match(appSource, /Khusus pengiriman lokal \(Maks\. 10 km dari studio\)\. Biaya ongkir flat Rp 10\.000\./);
+assert.match(appSource, /name="fulfillment_address"/);
+assert.match(appSource, /amount: calculateProductAmount\(product\.price, quantity, shippingFee\)/);
+assert.match(appSource, /shipping_fee_paid/);
+assert.match(appSource, /Alamat Pengiriman/);
+assert.match(appSource, /fulfillment_address: fulfillmentAddress \|\| null/);
+assert.match(appSource, /shipping_fee: shippingFee/);
+assert.match(appSource, /fulfillment_order_id/);
+assert.match(productSubmitSource, /fulfillment_method: fulfillmentMethod/);
+assert.match(appSource, /const fulfillmentFieldset = document\.createElement\('fieldset'\)/);
+assert.match(appSource, /function productFulfillmentDetails\(transaction\)/);
+for (const [name, description] of [
+  ['Lap Microfiber Bodi & Kaca', 'Kain lap halus berdaya serap tinggi, aman untuk bodi dan kaca tanpa meninggalkan goresan.'],
+  ['Pembersih Interior & Jok', 'Cairan pembersih untuk mengangkat debu, noda makanan, dan kotoran pada jok serta dasbor.'],
+  ['Pembersih Kaca Mobil', 'Membersihkan bercak air dan kotoran pada kaca kendaraan agar pandangan kembali bening.'],
+  ['Sampo Mobil pH Netral', 'Sampo cuci bodi busa melimpah, aman digunakan sehari-hari tanpa merusak cat.'],
+  ['Semir Pengkilap Ban', 'Semir ban untuk membuat warna hitam terlihat pekat, mengkilap, dan bersih tahan lama.'],
+  ['Pengkilap Bodi (Wax Spray)', 'Semprotan pengkilap cat instan yang memberi efek daun talas agar air dan debu tidak mudah menempel.']
+]) {
+  assert.ok(appSource.includes(`name: '${name}'`), `Missing product ${name}`);
+  assert.ok(appSource.includes(`description: '${description}'`), `Missing product description for ${name}`);
+  assert.ok(schemaSource.includes(`'${name}'`), `Missing SQL product ${name}`);
+  assert.ok(schemaSource.includes(`'${description}'`), `Missing SQL product description for ${name}`);
+}
 assert.match(persistenceSource, /isValidServiceOrderResponse\(result/);
 assert.match(persistenceSource, /return tx/);
 assert.match(appSource, /result\.payment_status === 'PAID'/);

@@ -266,6 +266,10 @@ declare
   sale_quantity integer;
   new_stock integer;
   payment_method_value text;
+  fulfillment_method_value text;
+  fulfillment_address_value text;
+  fulfillment_order_id_value uuid;
+  shipping_fee_value integer;
 begin
   if p_transaction is null or jsonb_typeof(p_transaction) <> 'object' then
     raise exception 'Payload pesanan tidak valid.';
@@ -284,6 +288,15 @@ begin
   if payment_method_value is null or payment_method_value not in ('CASH', 'QRIS', 'E_WALLET', 'CARD') then
     raise exception 'Metode pembayaran tidak valid.';
   end if;
+  fulfillment_method_value := upper(coalesce(p_transaction ->> 'fulfillment_method', 'PICKUP'));
+  fulfillment_address_value := nullif(trim(coalesce(p_transaction ->> 'fulfillment_address', '')), '');
+  fulfillment_order_id_value := nullif(p_transaction ->> 'fulfillment_order_id', '')::uuid;
+  shipping_fee_value := coalesce((p_transaction ->> 'shipping_fee')::integer, 0);
+  if fulfillment_method_value not in ('PICKUP', 'COURIER') or shipping_fee_value not in (0, 10000)
+    or (fulfillment_method_value = 'PICKUP' and (shipping_fee_value <> 0 or fulfillment_address_value is not null))
+    or (fulfillment_method_value = 'COURIER' and (fulfillment_address_value is null or fulfillment_order_id_value is null)) then
+    raise exception 'Alamat atau biaya pengiriman tidak valid.';
+  end if;
   select * into product from public.services_products
   where id = p_transaction ->> 'item_id' and item_type = 'PRODUCT' and active for update;
   if not found then raise exception 'Produk tidak ditemukan atau tidak aktif.'; end if;
@@ -293,13 +306,14 @@ begin
   insert into public.transactions (
     id, code, customer_id, vehicle_id, item_id, item_type, item_name, quantity, amount,
     payment_method, payment_status, refund_status, transaction_type, transaction_status,
-    queue_status, booking_date, booking_time, duration_minutes, created_at
+    queue_status, booking_date, booking_time, duration_minutes, fulfillment_method,
+    fulfillment_address, fulfillment_order_id, shipping_fee, created_at
   ) values (
     p_transaction ->> 'id', p_transaction ->> 'code', owner_id, null, product.id,
-    'PRODUCT', product.name, sale_quantity, product.price * sale_quantity,
+    'PRODUCT', product.name, sale_quantity, product.price * sale_quantity + shipping_fee_value,
     payment_method_value, 'PENDING', 'NONE', 'SHOP', 'PENDING', 'WAITING',
     (p_transaction ->> 'booking_date')::date, (p_transaction ->> 'booking_time')::time,
-    0, now()
+    0, fulfillment_method_value, fulfillment_address_value, fulfillment_order_id_value, shipping_fee_value, now()
   );
   return new_stock;
 end;

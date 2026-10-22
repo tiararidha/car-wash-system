@@ -20,7 +20,6 @@ function parseJakartaDateTime(dateString, timeString) {
   if (!dateString || !timeString) return new Date();
   return new Date(`${dateString}T${timeString}:00+07:00`);
 }
-const MAX_TRANSACTION_DATE = '2026-10-19';
 function getWibDateParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -31,24 +30,19 @@ function getWibDateParts(date = new Date()) {
 function isStudioOpenAt(date = new Date()) {
   const parts = getWibDateParts(date);
   const minuteOfDay = Number(parts.hour) * 60 + Number(parts.minute) + Number(parts.second) / 60;
-  return `${parts.year}-${parts.month}-${parts.day}` <= getMaxAllowedTransactionDate(date)
-    && minuteOfDay >= 8 * 60
+  return minuteOfDay >= 8 * 60
     && minuteOfDay <= 21 * 60;
 }
 function getMaxAllowedTransactionDate(now = new Date()) {
   const parts = getWibDateParts(now);
-  return [`${parts.year}-${parts.month}-${parts.day}`, MAX_TRANSACTION_DATE].sort()[0];
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 function assertStudioOpenAt(date = new Date()) {
-  const parts = getWibDateParts(date);
-  if (`${parts.year}-${parts.month}-${parts.day}` > getMaxAllowedTransactionDate(date)) {
-    throw new Error('Tanggal transaksi tidak boleh melewati 19 Oktober 2026.');
-  }
   if (!isStudioOpenAt(date)) {
     throw new Error('Transaksi hanya dapat dibuat pukul 08.00–21.00 WIB.');
   }
 }
-function validateTransactionSchedule(dateString, timeString, durationMinutes = 0, now = new Date()) {
+function validateTransactionSchedule(dateString, timeString, durationMinutes = 0, now = new Date(), allowFuture = false) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateString || ''))
     || (() => {
       const parts = getWibDateParts(new Date(`${dateString}T12:00:00+07:00`));
@@ -57,13 +51,16 @@ function validateTransactionSchedule(dateString, timeString, durationMinutes = 0
     throw new Error('Tanggal transaksi tidak valid.');
   }
   if (dateString > getMaxAllowedTransactionDate(now)) {
-    throw new Error('Tanggal transaksi tidak boleh melewati 19 Oktober 2026.');
+    throw new Error('Tanggal transaksi tidak boleh melewati hari ini.');
   }
   const timeMatch = /^(\d{2}):(\d{2})$/.exec(String(timeString || ''));
   if (!timeMatch) throw new Error('Jam transaksi tidak valid.');
   const minuteOfDay = Number(timeMatch[1]) * 60 + Number(timeMatch[2]);
   if (minuteOfDay < 8 * 60 || minuteOfDay > 21 * 60) {
     throw new Error('Jam transaksi harus berada di antara 08.00–21.00 WIB.');
+  }
+  if (!allowFuture && parseJakartaDateTime(dateString, timeString) > now) {
+    throw new Error('Transaksi tidak boleh melebihi waktu saat ini.');
   }
   const duration = Number(durationMinutes);
   if (!Number.isFinite(duration) || duration < 0 || minuteOfDay + duration > 21 * 60) {
@@ -78,7 +75,8 @@ function assertServiceScheduleAvailable(durationMinutes, now = new Date()) {
     getJakartaDateString(scheduledStart),
     getJakartaTimeString(scheduledStart),
     durationMinutes,
-    now
+    now,
+    true
   );
 }
 function mergePersistedTransaction(transaction, savedTransaction) {
@@ -99,6 +97,22 @@ function isValidIndonesianPlate(value = '') {
 }
 function isValidRequestId(value = '') {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+function productShippingFee(method, isFeeCarrier = true) {
+  if (method === 'PICKUP') return 0;
+  if (method === 'COURIER') return isFeeCarrier ? 10000 : 0;
+  throw new Error('Pilih metode pemenuhan produk.');
+}
+const COURIER_FLAT_RATE = 10000;
+function calculateProductAmount(unitPrice, quantity, shippingFee = 0) {
+  if (!Number.isSafeInteger(Number(unitPrice)) || Number(unitPrice) < 0
+    || !Number.isSafeInteger(Number(quantity)) || Number(quantity) < 1
+    || ![0, COURIER_FLAT_RATE].includes(Number(shippingFee))) {
+    throw new Error('Nominal produk tidak valid.');
+  }
+  const amount = Number(unitPrice) * Number(quantity) + Number(shippingFee);
+  if (!Number.isSafeInteger(amount) || amount < 0) throw new Error('Nominal produk tidak valid.');
+  return amount;
 }
 function isValidServiceOrderResponse(result, expected) {
   if (!result || typeof result !== 'object' || !expected) return false;
@@ -131,6 +145,10 @@ function isValidDemoProductOrderResponse(result, expected) {
     && result.item_type === 'PRODUCT'
     && result.transaction_type === 'SHOP'
     && result.payment_method === expected.payment_method
+    && result.fulfillment_method === expected.fulfillment_method
+    && result.fulfillment_address === expected.fulfillment_address
+    && result.shipping_fee === expected.shipping_fee
+    && result.fulfillment_order_id === expected.fulfillment_order_id
     && result.quantity === expected.quantity
     && result.amount === expected.amount
     && result.payment_status === 'PAID'
@@ -302,6 +320,8 @@ if (typeof window === 'undefined') {
     mergePersistedTransaction,
     removeTransactionFromState,
     validateServicePaymentMethod,
+    productShippingFee,
+    calculateProductAmount,
     isStudioOpenAt,
     validateTransactionSchedule,
     getMaxAllowedTransactionDate,
@@ -390,12 +410,12 @@ const CATALOG_COPY = {
   'addon-vacuum': { name: 'Interior Vacuum', description: 'Pembersihan debu dan kotoran dari karpet serta kabin kendaraan.', image: PHOTOS.addonVacuum },
   'addon-wax': { name: 'Spray Wax', description: 'Lapisan kilap tambahan untuk membantu menjaga hasil cuci.', image: PHOTOS.addonWax },
   'addon-tire': { name: 'Tire Dressing', description: 'Finishing satin untuk tampilan ban yang bersih.', image: PHOTOS.addonTire },
-  'prd-shampoo': { name: 'Sampo Mobil pH Netral', category: 'CUCI & PERAWATAN', description: 'Sampo kendaraan pH netral untuk perawatan rutin tanpa mengganggu lapisan wax.', image: PHOTOS.shampoo },
-  'prd-cloth': { name: 'Kain Microfiber 40 × 40 cm', category: 'PERLENGKAPAN', description: 'Kain microfiber lembut dengan daya serap tinggi · 40 × 40 cm.', image: PHOTOS.microfiber },
-  'prd-tire': { name: 'Semir Ban Satin', category: 'PERLINDUNGAN', description: 'Perawatan ban dengan hasil hitam satin dan tampilan rapi · 250 ml.', image: PHOTOS.tireShine },
-  'prd-wax': { name: 'Wax Cair Pelindung Cat', category: 'PERLINDUNGAN', description: 'Wax cair untuk menambah kilap dan membantu melindungi permukaan cat · 250 ml.', image: PHOTOS.wax },
-  'prd-interior': { name: 'Pembersih Interior Mobil', category: 'PERAWATAN INTERIOR', description: 'Pembersih untuk jok dan trim interior kendaraan · 300 ml.', image: PHOTOS.interior },
-  'prd-glass': { name: 'Pembersih Kaca Mobil', category: 'PERAWATAN KACA', description: 'Pembersih kaca kendaraan untuk hasil bening tanpa bekas lap · 300 ml.', image: PHOTOS.glass }
+  'prd-shampoo': { name: 'Sampo Mobil pH Netral', category: 'CUCI & PERAWATAN', description: 'Sampo cuci bodi busa melimpah, aman digunakan sehari-hari tanpa merusak cat.', image: PHOTOS.shampoo },
+  'prd-cloth': { name: 'Lap Microfiber Bodi & Kaca', category: 'PERLENGKAPAN', description: 'Kain lap halus berdaya serap tinggi, aman untuk bodi dan kaca tanpa meninggalkan goresan.', image: PHOTOS.microfiber },
+  'prd-tire': { name: 'Semir Pengkilap Ban', category: 'PERLINDUNGAN', description: 'Semir ban untuk membuat warna hitam terlihat pekat, mengkilap, dan bersih tahan lama.', image: PHOTOS.tireShine },
+  'prd-wax': { name: 'Pengkilap Bodi (Wax Spray)', category: 'PERLINDUNGAN', description: 'Semprotan pengkilap cat instan yang memberi efek daun talas agar air dan debu tidak mudah menempel.', image: PHOTOS.wax },
+  'prd-interior': { name: 'Pembersih Interior & Jok', category: 'PERAWATAN INTERIOR', description: 'Cairan pembersih untuk mengangkat debu, noda makanan, dan kotoran pada jok serta dasbor.', image: PHOTOS.interior },
+  'prd-glass': { name: 'Pembersih Kaca Mobil', category: 'PERAWATAN KACA', description: 'Membersihkan bercak air dan kotoran pada kaca kendaraan agar pandangan kembali bening.', image: PHOTOS.glass }
 };
 
 function catalogItem(item) {
@@ -463,23 +483,23 @@ const SEED = {
   services_products: [
     ...SERVICES.map(item => ({ ...item, item_type: 'SERVICE', active: true })),
     ...ADDONS.map(item => ({ ...item, item_type: 'ADD_ON', category: 'ADD_ON', active: true })),
-    { id: 'prd-shampoo', item_type: 'PRODUCT', name: 'Sampo Cuci Mobil pH Netral', category: 'WASH & CARE', price: 45000, stock: 22, min_stock: 6, active: true, image: PHOTOS.shampoo, description: 'Sampo khusus kendaraan, aman untuk lapisan wax · 500 ml.' },
-    { id: 'prd-cloth', item_type: 'PRODUCT', name: 'Kain Premium Microfiber', category: 'TOOLS', price: 45000, stock: 13, min_stock: 5, active: true, image: PHOTOS.microfiber, description: 'Serat lembut dan tebal untuk mengeringkan bodi tanpa goresan · 40 × 40 cm.' },
-    { id: 'prd-tire', item_type: 'PRODUCT', name: 'Semir Ban Satin', category: 'PROTECTION', price: 60000, stock: 9, min_stock: 4, active: true, image: PHOTOS.tireShine, description: 'Perawatan ban dengan hasil hitam satin, bukan licin berminyak · 250 ml.' },
-    { id: 'prd-wax', item_type: 'PRODUCT', name: 'Liquid Wax Kilap Dalam', category: 'PROTECTION', price: 115000, stock: 8, min_stock: 4, active: true, image: PHOTOS.wax, description: 'Wax cair untuk kilap dan perlindungan cat · 250 ml.' },
-    { id: 'prd-interior', item_type: 'PRODUCT', name: 'Pembersih Interior', category: 'INTERIOR CARE', price: 50000, stock: 11, min_stock: 4, active: true, image: PHOTOS.interior, description: 'Pembersih jok dan trim interior untuk perawatan rutin · 300 ml.' },
-    { id: 'prd-glass', item_type: 'PRODUCT', name: 'Pembersih Kaca Otomotif', category: 'GLASS CARE', price: 40000, stock: 10, min_stock: 4, active: true, image: PHOTOS.glass, description: 'Pembersih kaca untuk hasil bening tanpa bekas lap · 300 ml.' }
+    { id: 'prd-cloth', item_type: 'PRODUCT', name: 'Lap Microfiber Bodi & Kaca', category: 'PERLENGKAPAN', price: 45000, stock: 13, min_stock: 5, active: true, image: PHOTOS.microfiber, description: 'Kain lap halus berdaya serap tinggi, aman untuk bodi dan kaca tanpa meninggalkan goresan.' },
+    { id: 'prd-interior', item_type: 'PRODUCT', name: 'Pembersih Interior & Jok', category: 'PERAWATAN INTERIOR', price: 50000, stock: 11, min_stock: 4, active: true, image: PHOTOS.interior, description: 'Cairan pembersih untuk mengangkat debu, noda makanan, dan kotoran pada jok serta dasbor.' },
+    { id: 'prd-glass', item_type: 'PRODUCT', name: 'Pembersih Kaca Mobil', category: 'PERAWATAN KACA', price: 40000, stock: 10, min_stock: 4, active: true, image: PHOTOS.glass, description: 'Membersihkan bercak air dan kotoran pada kaca kendaraan agar pandangan kembali bening.' },
+    { id: 'prd-shampoo', item_type: 'PRODUCT', name: 'Sampo Mobil pH Netral', category: 'CUCI & PERAWATAN', price: 45000, stock: 22, min_stock: 6, active: true, image: PHOTOS.shampoo, description: 'Sampo cuci bodi busa melimpah, aman digunakan sehari-hari tanpa merusak cat.' },
+    { id: 'prd-tire', item_type: 'PRODUCT', name: 'Semir Pengkilap Ban', category: 'PERLINDUNGAN', price: 60000, stock: 9, min_stock: 4, active: true, image: PHOTOS.tireShine, description: 'Semir ban untuk membuat warna hitam terlihat pekat, mengkilap, dan bersih tahan lama.' },
+    { id: 'prd-wax', item_type: 'PRODUCT', name: 'Pengkilap Bodi (Wax Spray)', category: 'PERLINDUNGAN', price: 115000, stock: 8, min_stock: 4, active: true, image: PHOTOS.wax, description: 'Semprotan pengkilap cat instan yang memberi efek daun talas agar air dan debu tidak mudah menempel.' }
   ],
   transactions: [
     { id: 't-1', code: 'RS-260929-1042', customer_id: 'c-1', vehicle_id: 'v-1', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-29', booking_time: '09:20', duration_minutes: 50, created_at: '2026-09-29T09:20:00' },
     { id: 't-2', code: 'RS-260930-1088', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-self-moto', item_type: 'SERVICE', item_name: 'Self-Service Motorcycle', quantity: 1, amount: 10000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'ACTIVE', queue_status: 'WASHING', booking_date: '2026-09-30', booking_time: '10:05', duration_minutes: 25, bay_number: 2, created_at: '2026-09-30T10:05:00' },
     { id: 't-3', code: 'RS-261001-0107', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car', quantity: 1, amount: 30000, payment_method: 'E_WALLET', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-01', booking_time: '14:30', duration_minutes: 30, bay_number: 1, created_at: '2026-09-30T10:15:00' },
     { id: 't-4', code: 'RS-260929-0781', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Professional Motorcycle Wash', quantity: 1, amount: 20000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-29', booking_time: '16:40', duration_minutes: 35, created_at: '2026-09-29T16:40:00' },
-    { id: 't-5', code: 'RS-260928-0551', customer_id: 'c-1', vehicle_id: null, item_id: 'prd-shampoo', item_type: 'PRODUCT', item_name: 'Sampo Cuci Mobil pH Netral', quantity: 2, amount: 90000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'SHOP', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-28', booking_time: '11:10', duration_minutes: 0, created_at: '2026-09-28T11:10:00' },
+    { id: 't-5', code: 'RS-260928-0551', customer_id: 'c-1', vehicle_id: null, item_id: 'prd-shampoo', item_type: 'PRODUCT', item_name: 'Sampo Mobil pH Netral', quantity: 2, amount: 90000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'SHOP', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-28', booking_time: '11:10', duration_minutes: 0, created_at: '2026-09-28T11:10:00' },
     { id: 't-6', code: 'RS-260927-0332', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-27', booking_time: '15:25', duration_minutes: 50, created_at: '2026-09-27T15:25:00' },
     { id: 't-7', code: 'RS-261002-0216', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Professional Motorcycle Wash', quantity: 1, amount: 20000, payment_method: 'CARD', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-02', booking_time: '10:30', duration_minutes: 35, created_at: '2026-09-30T10:30:00' },
     { id: 't-8', code: 'RS-260930-1134', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', queue_status: 'WAITING', booking_date: '2026-09-30', booking_time: '10:30', duration_minutes: 50, created_at: '2026-09-30T10:27:00' },
-    { id: 't-9', code: 'RS-260926-0972', customer_id: 'c-1', vehicle_id: null, item_id: 'prd-cloth', item_type: 'PRODUCT', item_name: 'Kain Premium Microfiber', quantity: 1, amount: 45000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'SHOP', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-26', booking_time: '12:05', duration_minutes: 0, created_at: '2026-09-26T12:05:00' },
+    { id: 't-9', code: 'RS-260926-0972', customer_id: 'c-1', vehicle_id: null, item_id: 'prd-cloth', item_type: 'PRODUCT', item_name: 'Lap Microfiber Bodi & Kaca', quantity: 1, amount: 45000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'SHOP', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-26', booking_time: '12:05', duration_minutes: 0, created_at: '2026-09-26T12:05:00' },
     { id: 't-10', code: 'RS-260925-0821', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car', quantity: 1, amount: 30000, payment_method: 'E_WALLET', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-25', booking_time: '17:15', duration_minutes: 30, bay_number: 4, created_at: '2026-09-25T17:15:00' },
     { id: 't-11', code: 'RS-261004-1171', customer_id: 'c-4', vehicle_id: 'v-4', item_id: 'svc-car', addon_id: 'addon-pickup', pickup_distance_km: 2.4, item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 60000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-04', booking_time: '08:40', duration_minutes: 50 },
     { id: 't-12', code: 'RS-261005-1388', customer_id: 'c-5', vehicle_id: 'v-6', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car', quantity: 1, amount: 30000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-10-05', booking_time: '10:15', duration_minutes: 30, bay_number: 3 },
@@ -493,8 +513,7 @@ const SEED = {
     { id: 't-20', code: 'RS-261009-2417', customer_id: 'c-1', vehicle_id: 'v-1', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'CASH', payment_status: 'REFUNDED', transaction_type: 'BOOKING', transaction_status: 'CANCELLED', queue_status: 'COMPLETED', booking_date: '2026-10-09', booking_time: '17:10', duration_minutes: 50 }
   ]
 };
-const MAX_SEED_TIMESTAMP = new Date(`${MAX_TRANSACTION_DATE}T23:59:59.999+07:00`).getTime();
-const rawSeedNow = Math.min(Date.now(), MAX_SEED_TIMESTAMP);
+const rawSeedNow = Date.now();
 const rawSeedDate = getJakartaDateString(new Date(rawSeedNow));
 const rawSeedParts = getJakartaDateParts(new Date(rawSeedNow));
 const rawSeedMinute = Number(rawSeedParts.hour) * 60 + Number(rawSeedParts.minute);
@@ -542,6 +561,7 @@ const SUPABASE_REQUEST_TIMEOUT_MS = 15000;
 const AUTH_SESSION_KEY = 'rinse-admin-session';
 const CART_KEY = 'rinse-society-cart';
 const PRODUCT_REQUEST_IDS_KEY = 'rinse-product-request-ids';
+const PRODUCT_CHECKOUT_KEY = 'rinse-product-checkout';
 const CUSTOMER_CAPABILITIES_KEY = 'rinse-customer-capabilities';
 const EMPTY_DB = { customers: [], vehicles: [], services_products: [], transactions: [] };
 let db = structuredClone(EMPTY_DB);
@@ -568,6 +588,20 @@ function clearProductRequestIds(productIds) {
   for (const productId of productIds) delete requestIds[productId];
   if (Object.keys(requestIds).length) localStorage.setItem(PRODUCT_REQUEST_IDS_KEY, JSON.stringify(requestIds));
   else localStorage.removeItem(PRODUCT_REQUEST_IDS_KEY);
+}
+function readProductCheckoutState() {
+  let value = {};
+  try { value = JSON.parse(localStorage.getItem(PRODUCT_CHECKOUT_KEY) || '{}'); } catch (_) {}
+  return {
+    order_id: isValidRequestId(value.order_id) ? value.order_id : crypto.randomUUID(),
+    fulfillment_method: ['PICKUP', 'COURIER'].includes(value.fulfillment_method) ? value.fulfillment_method : 'PICKUP',
+    fulfillment_address: String(value.fulfillment_address || ''),
+    fee_item_id: String(value.fee_item_id || ''),
+    shipping_fee_paid: value.shipping_fee_paid === true
+  };
+}
+function saveProductCheckoutState(value) {
+  localStorage.setItem(PRODUCT_CHECKOUT_KEY, JSON.stringify(value));
 }
 let cart = readStoredCart();
 let supabaseSession = readAuthSession();
@@ -725,6 +759,12 @@ function getOperationalQueueTransactions(records = [], queueDate = getJakartaDat
 }
 function statusLabel(value) {
   return ({ AVAILABLE: 'Tersedia', OCCUPIED: 'Digunakan', RESERVED: 'Dipesan', PAID: 'Lunas', PENDING: 'Belum Dibayar', FAILED: 'Gagal', REFUNDED: 'Pengembalian Dana', NONE: 'Tidak ada', COMPLETED: 'Selesai', BOOKED: 'Terkonfirmasi', ACTIVE: 'Sedang Berlangsung', CANCELLED: 'Dibatalkan', EXPIRED: 'Hangus', WAITING: 'Menunggu', WASHING: 'Dicuci', FINISHING: 'Tahap Akhir', CASH: 'Tunai', QRIS: 'QRIS', E_WALLET: 'Dompet digital', CARD: 'Kartu' })[String(value || '').toUpperCase()] || String(value || '').replaceAll('_', ' ');
+}
+function fulfillmentLabel(method) {
+  return method === 'COURIER' ? 'Pengiriman Online / Kurir' : 'Ambil di Studio (Pick-up)';
+}
+function productFulfillmentDetails(transaction) {
+  return `<small>Pemenuhan: ${escapeHtml(fulfillmentLabel(transaction.fulfillment_method))}</small>${transaction.fulfillment_method === 'COURIER' ? `<small>Alamat Pengiriman: ${escapeHtml(transaction.fulfillment_address || '')}</small>` : ''}<small>Ongkir: ${money(transaction.shipping_fee || 0)}</small>`;
 }
 function transactionStatusLabel(transaction) {
   return statusLabel(normalizeTransactionStatusForDisplay(transaction));
@@ -1274,9 +1314,43 @@ function renderCartDialog(content) {
   simplifyUiSymbols(content);
 }
 function renderProductCheckout(content) {
-  const total = Object.entries(cart).reduce((sum, [id, row]) => sum + (db.services_products.find(item => item.id === id)?.price || 0) * row.quantity, 0);
+  const productIds = Object.keys(cart);
+  const fulfillment = readProductCheckoutState();
+  if (!fulfillment.shipping_fee_paid && !productIds.includes(fulfillment.fee_item_id)) fulfillment.fee_item_id = '';
+  if (fulfillment.fulfillment_method === 'COURIER' && !fulfillment.shipping_fee_paid && !fulfillment.fee_item_id) fulfillment.fee_item_id = productIds[0] || '';
+  saveProductCheckoutState(fulfillment);
+  const subtotal = Object.entries(cart).reduce((sum, [id, row]) => sum + calculateProductAmount(db.services_products.find(item => item.id === id)?.price || 0, row.quantity), 0);
+  const shippingFee = productShippingFee(fulfillment.fulfillment_method, fulfillment.fulfillment_method === 'COURIER' && !fulfillment.shipping_fee_paid && !!fulfillment.fee_item_id);
+  const total = subtotal + shippingFee;
   const requestIds = Object.fromEntries(Object.keys(cart).map(id => [id, getProductRequestId(id)]));
-  content.innerHTML = `<p class="eyebrow">PEMBAYARAN PRODUK</p><h2>Perawatan pilihan<br><em>segera di tangan Anda.</em></h2><form id="product-checkout-form" class="dialog-form"><input type="hidden" name="request_ids" value="${escapeHtml(JSON.stringify(requestIds))}"><label>Nama lengkap<input name="name" required placeholder="Nama lengkap"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label><fieldset class="payment-options"><legend>Metode pembayaran</legend>${['CASH', 'QRIS', 'E_WALLET', 'CARD'].map((method, index) => `<label><input type="radio" name="payment" value="${method}" ${index === 0 ? 'checked' : ''}><span>${method === 'E_WALLET' ? 'E-Wallet' : method}</span></label>`).join('')}</fieldset><div class="dialog-total"><span>Total pembayaran</span><strong>${money(total)}</strong></div><button class="button button-dark button-full" type="submit">Bayar sekarang <span>↗</span></button><small>Pembayaran disimulasikan dan dicatat lunas setelah pesanan tersimpan.</small></form>`;
+  content.innerHTML = `<p class="eyebrow">PEMBAYARAN PRODUK</p><h2>Perawatan pilihan<br><em>segera di tangan Anda.</em></h2><form id="product-checkout-form" class="dialog-form"><input type="hidden" name="request_ids" value="${escapeHtml(JSON.stringify(requestIds))}"><label>Nama lengkap<input name="name" required placeholder="Nama lengkap"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label><fieldset id="product-fulfillment-options" class="payment-options fulfillment-options"><legend>Metode pemenuhan</legend><label><input type="radio" name="fulfillment_method" value="PICKUP" ${fulfillment.fulfillment_method === 'PICKUP' ? 'checked' : ''} ${fulfillment.shipping_fee_paid ? 'disabled' : ''}><span>Ambil di Studio (Pick-up)</span></label><label><input type="radio" name="fulfillment_method" value="COURIER" ${fulfillment.fulfillment_method === 'COURIER' ? 'checked' : ''} ${fulfillment.shipping_fee_paid ? 'disabled' : ''}><span>Pengiriman Online / Kurir</span></label><p id="courier-note" ${fulfillment.fulfillment_method !== 'COURIER' ? 'hidden' : ''}>Khusus pengiriman lokal (Maks. 10 km dari studio). Biaya ongkir flat Rp 10.000.</p><label id="delivery-address-label" ${fulfillment.fulfillment_method !== 'COURIER' ? 'hidden' : ''}>Alamat Pengiriman<textarea name="fulfillment_address" rows="2" maxlength="500" ${fulfillment.fulfillment_method !== 'COURIER' || fulfillment.shipping_fee_paid ? 'disabled' : 'required'}>${escapeHtml(fulfillment.fulfillment_address)}</textarea></label></fieldset><div id="fulfillment-summary" class="dialog-total"><span>Metode pemenuhan</span><strong>${fulfillmentLabel(fulfillment.fulfillment_method)}</strong></div><div id="shipping-summary" class="dialog-total"><span>Ongkir</span><strong>${money(shippingFee)}</strong></div><fieldset class="payment-options"><legend>Metode pembayaran</legend>${['CASH', 'QRIS', 'E_WALLET', 'CARD'].map((method, index) => `<label><input type="radio" name="payment" value="${method}" ${index === 0 ? 'checked' : ''}><span>${method === 'E_WALLET' ? 'E-Wallet' : method}</span></label>`).join('')}</fieldset><div class="dialog-total"><span>Total pembayaran</span><strong id="product-checkout-total">${money(total)}</strong></div><button class="button button-dark button-full" type="submit">Bayar sekarang <span>↗</span></button><small>Pembayaran disimulasikan dan dicatat lunas setelah pesanan tersimpan.</small></form>`;
+    content.innerHTML = `<p class="eyebrow">PEMBAYARAN PRODUK</p><h2>Perawatan pilihan<br><em>segera di tangan Anda.</em></h2><form id="product-checkout-form" class="dialog-form"><input type="hidden" name="request_ids" value="${escapeHtml(JSON.stringify(requestIds))}">${fulfillment.shipping_fee_paid ? `<input type="hidden" name="fulfillment_method" value="${fulfillment.fulfillment_method}">` : ''}<label>Nama lengkap<input name="name" required placeholder="Nama lengkap"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label><fieldset id="product-fulfillment-options" class="payment-options fulfillment-options"><legend>Metode pemenuhan</legend><label><input type="radio" name="fulfillment_method" value="PICKUP" ${fulfillment.fulfillment_method === 'PICKUP' ? 'checked' : ''} ${fulfillment.shipping_fee_paid ? 'disabled' : ''}><span>Ambil di Studio (Pick-up)</span></label><label><input type="radio" name="fulfillment_method" value="COURIER" ${fulfillment.fulfillment_method === 'COURIER' ? 'checked' : ''} ${fulfillment.shipping_fee_paid ? 'disabled' : ''}><span>Pengiriman Online / Kurir</span></label><p id="courier-note" ${fulfillment.fulfillment_method !== 'COURIER' ? 'hidden' : ''}>Khusus pengiriman lokal (Maks. 10 km dari studio). Biaya ongkir flat Rp 10.000.</p><label id="delivery-address-label" ${fulfillment.fulfillment_method !== 'COURIER' ? 'hidden' : ''}>Alamat Pengiriman<textarea name="fulfillment_address" rows="2" maxlength="500" ${fulfillment.fulfillment_method !== 'COURIER' || fulfillment.shipping_fee_paid ? 'disabled' : 'required'}>${escapeHtml(fulfillment.fulfillment_address)}</textarea></label></fieldset><div id="fulfillment-summary" class="dialog-total"><span>Metode pemenuhan</span><strong>${fulfillmentLabel(fulfillment.fulfillment_method)}</strong></div><div id="delivery-address-summary" class="dialog-total" ${fulfillment.fulfillment_method !== 'COURIER' ? 'hidden' : ''}><span>Alamat Pengiriman</span><strong>${escapeHtml(fulfillment.fulfillment_address)}</strong></div><div id="shipping-summary" class="dialog-total"><span>Ongkir</span><strong>${money(shippingFee)}</strong></div><fieldset class="payment-options"><legend>Metode pembayaran</legend>${['CASH', 'QRIS', 'E_WALLET', 'CARD'].map((method, index) => `<label><input type="radio" name="payment" value="${method}" ${index === 0 ? 'checked' : ''}><span>${method === 'E_WALLET' ? 'E-Wallet' : method}</span></label>`).join('')}</fieldset><div class="dialog-total"><span>Total pembayaran</span><strong id="product-checkout-total">${money(total)}</strong></div><button class="button button-dark button-full" type="submit">Bayar sekarang <span>↗</span></button><small>Pembayaran disimulasikan dan dicatat lunas setelah pesanan tersimpan.</small></form>`;
+  const form = content.querySelector('#product-checkout-form');
+  const updateFulfillment = () => {
+    const method = form.elements.fulfillment_method.value;
+    fulfillment.fulfillment_method = method;
+    fulfillment.fulfillment_address = method === 'COURIER' ? form.elements.fulfillment_address.value.trim() : '';
+    if (method === 'COURIER' && !fulfillment.shipping_fee_paid && !fulfillment.fee_item_id) fulfillment.fee_item_id = productIds[0] || '';
+    if (method === 'PICKUP' && !fulfillment.shipping_fee_paid) fulfillment.fee_item_id = '';
+    saveProductCheckoutState(fulfillment);
+    const fee = productShippingFee(method, method === 'COURIER' && !fulfillment.shipping_fee_paid && !!fulfillment.fee_item_id);
+    form.querySelector('#courier-note').hidden = method !== 'COURIER';
+    form.querySelector('#delivery-address-label').hidden = method !== 'COURIER';
+    form.elements.fulfillment_address.disabled = method !== 'COURIER' || fulfillment.shipping_fee_paid;
+    form.elements.fulfillment_address.required = method === 'COURIER' && !fulfillment.shipping_fee_paid;
+    form.querySelector('#fulfillment-summary strong').textContent = fulfillmentLabel(method);
+      form.querySelector('#delivery-address-summary').hidden = method !== 'COURIER';
+      form.querySelector('#delivery-address-summary strong').textContent = fulfillment.fulfillment_address;
+      productFulfillmentDetails(tx)
+    form.querySelector('#shipping-summary strong').textContent = money(fee);
+    form.querySelector('#product-checkout-total').textContent = money(subtotal + fee);
+  };
+  form.querySelector('#product-fulfillment-options').addEventListener('change', updateFulfillment);
+  form.elements.fulfillment_address.addEventListener('input', () => {
+    fulfillment.fulfillment_address = form.elements.fulfillment_address.value;
+    form.querySelector('#delivery-address-summary strong').textContent = fulfillment.fulfillment_address;
+    saveProductCheckoutState(fulfillment);
+  });
   simplifyUiSymbols(content);
 }
 function makeCode() { return `RS-${getJakartaDateString().slice(2).replaceAll('-', '')}-${Math.floor(1000 + Math.random() * 9000)}`; }
@@ -1342,13 +1416,21 @@ async function persistTransaction(tx, ownerToken = null, requestId = null) {
         customer_phone: tx.customer_phone,
         item_id: tx.item_id,
         quantity: tx.quantity,
-        payment_method: tx.payment_method
+        payment_method: tx.payment_method,
+        fulfillment_method: tx.fulfillment_method,
+        fulfillment_address: tx.fulfillment_address,
+        shipping_fee: tx.shipping_fee,
+        fulfillment_order_id: tx.fulfillment_order_id
       };
       const result = await rpcRequest('create_demo_product_order', { p_order: productOrderPayload });
       if (!isValidDemoProductOrderResponse(result, {
         item_id: tx.item_id,
         quantity: tx.quantity,
         payment_method: tx.payment_method,
+        fulfillment_method: tx.fulfillment_method,
+        fulfillment_address: tx.fulfillment_address,
+        shipping_fee: tx.shipping_fee,
+        fulfillment_order_id: tx.fulfillment_order_id,
         amount: tx.amount
       })) throw new Error('Database belum mengonfirmasi penyimpanan pesanan produk.');
       mergePersistedTransaction(tx, result);
@@ -1433,8 +1515,17 @@ async function submitProducts(form) {
   const phone = String(data.get('phone') || '').trim();
   if (customerName.length < 2) throw new Error('Masukkan nama lengkap.');
   const normalizedPhone = toSupabasePhone(phone);
+  const fulfillmentMethod = String(data.get('fulfillment_method') || '');
+  if (!['PICKUP', 'COURIER'].includes(fulfillmentMethod)) throw new Error('Pilih metode pemenuhan produk.');
+  const fulfillment = readProductCheckoutState();
+  const fulfillmentAddress = fulfillmentMethod === 'COURIER' ? String(data.get('fulfillment_address') || fulfillment.fulfillment_address).trim() : '';
+  if (fulfillmentMethod === 'COURIER' && !fulfillmentAddress) throw new Error('Masukkan alamat pengiriman.');
+  fulfillment.fulfillment_method = fulfillmentMethod;
+  fulfillment.fulfillment_address = fulfillmentAddress;
+  saveProductCheckoutState(fulfillment);
   const lines = Object.entries(cart).filter(([id, row]) => row.quantity && db.services_products.some(item => item.id === id));
   if (!lines.length) throw new Error('Keranjang masih kosong.');
+  if (fulfillmentMethod === 'COURIER' && !fulfillment.shipping_fee_paid && !fulfillment.fee_item_id) fulfillment.fee_item_id = lines[0][0];
   for (const [id, row] of lines) {
     const product = db.services_products.find(item => item.id === id);
     const quantity = Number(row.quantity);
@@ -1455,6 +1546,8 @@ async function submitProducts(form) {
   for (const [id, row] of lines) {
     const product = db.services_products.find(item => item.id === id);
     const quantity = Number(row.quantity);
+    const shippingFee = productShippingFee(fulfillmentMethod,
+      fulfillmentMethod === 'COURIER' && !fulfillment.shipping_fee_paid && id === fulfillment.fee_item_id);
     const requestId = requestIds[id];
     if (!isValidRequestId(requestId)) throw new Error('Kunci permintaan produk tidak valid. Buka kembali checkout lalu coba lagi.');
     try {
@@ -1462,13 +1555,22 @@ async function submitProducts(form) {
         id: crypto.randomUUID(), code: makeCode(), customer_id: customer?.id || null,
         customer_name: customerName, customer_phone: normalizedPhone, vehicle_id: null,
         item_id: id, item_type: 'PRODUCT', item_name: product.name, quantity,
-        amount: product.price * quantity, payment_method: data.get('payment'),
+        amount: calculateProductAmount(product.price, quantity, shippingFee), payment_method: data.get('payment'),
+        fulfillment_method: fulfillmentMethod,
+        fulfillment_address: fulfillmentAddress || null,
+        shipping_fee: shippingFee,
+        fulfillment_order_id: fulfillment.order_id,
         payment_status: 'PAID', refund_status: 'NONE', transaction_type: 'SHOP',
         transaction_status: 'PENDING', queue_status: 'WAITING',
         booking_date: getJakartaDateString(transactionNow), booking_time: getJakartaTimeString(transactionNow),
         duration_minutes: 0, created_at: transactionNow.toISOString()
       };
       const savedTransaction = await persistTransaction(transaction, customerResult?.owner_token || null, requestId);
+      if (shippingFee) {
+        fulfillment.shipping_fee_paid = true;
+        fulfillment.fee_item_id = '';
+        saveProductCheckoutState(fulfillment);
+      }
       completedIds.push(id);
       completedTransactions.push(savedTransaction);
     } catch (error) {
@@ -1477,17 +1579,20 @@ async function submitProducts(form) {
       clearProductRequestIds(completedIds);
       localStorage.setItem(CART_KEY, JSON.stringify(cart));
       try { await loadPublicData(); } catch (_) {}
-      document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">!</div><p class="eyebrow">PESANAN SEBAGIAN TERCATAT</p><h2>Produk yang belum diproses<br><em>tetap di keranjang.</em></h2><p class="dialog-intro">Sebagian produk berhasil dipesan. Periksa keranjang sebelum mencoba lagi.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span><span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Tutup</button></div>`;
+      document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">!</div><p class="eyebrow">PESANAN SEBAGIAN TERCATAT</p><h2>Produk yang belum diproses<br><em>tetap di keranjang.</em></h2><p class="dialog-intro">Sebagian produk berhasil dipesan. Periksa keranjang sebelum mencoba lagi.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span><span>${fulfillmentLabel(saved.fulfillment_method)}</span><span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Tutup</button></div>`;
+        document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">!</div><p class="eyebrow">PESANAN SEBAGIAN TERCATAT</p><h2>Produk yang belum diproses<br><em>tetap di keranjang.</em></h2><p class="dialog-intro">Sebagian produk berhasil dipesan. Periksa keranjang sebelum mencoba lagi.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span>${productFulfillmentDetails(saved)}<span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Tutup</button></div>`;
       render();
       return;
     }
   }
   cart = {};
   localStorage.removeItem(CART_KEY);
+  localStorage.removeItem(PRODUCT_CHECKOUT_KEY);
   clearProductRequestIds(lines.map(([id]) => id));
   try { await loadPublicData(); }
   catch (_) { showToast('Pesanan tersimpan, tetapi katalog belum dapat diperbarui.', 'error'); }
-  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">PESANAN TERCATAT</p><h2>Pembayaran berhasil.</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama pesanan produk.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span><span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Kembali ke studio <span>↗</span></button></div>`;
+  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">PESANAN TERCATAT</p><h2>Pembayaran berhasil.</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama pesanan produk.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span><span>${fulfillmentLabel(saved.fulfillment_method)}</span><span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Kembali ke studio <span>↗</span></button></div>`;
+    document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">PESANAN TERCATAT</p><h2>Pembayaran berhasil.</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama pesanan produk.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span>${productFulfillmentDetails(saved)}<span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Kembali ke studio <span>↗</span></button></div>`;
   render();
 }
 function renderReportsLegacy() {
@@ -1540,7 +1645,11 @@ function renderAdminTransactionList(records, title, eyebrow) {
     const paymentAction = canConfirmCash ? `<button class="payment-mark-paid" type="button" data-payment-paid="${escapeHtml(tx.id)}">Tandai Lunas</button>` : '';
     const refundAction = tx.refund_status === 'PENDING' ? `<button class="payment-mark-paid" type="button" data-refund-complete="${escapeHtml(tx.id)}">Catat Pengembalian Dana</button>` : '';
     const refundStatus = tx.refund_status === 'PENDING' ? '<small>Pengembalian Dana: menunggu proses manual</small>' : tx.refund_status === 'COMPLETED' ? '<small>Pengembalian Dana: selesai</small>' : '';
-    const pickupAddress = ['addon-pickup', 'addon-pickup-moto'].includes(tx.addon_id) && customer?.address ? `<small>Alamat Antar-Jemput: ${escapeHtml(customer.address)}</small><small>Jarak pulang-pergi: ${escapeHtml(tx.pickup_distance_km)} km</small>` : '';
+    const pickupAddress = tx.item_type === 'PRODUCT'
+      ? productFulfillmentDetails(tx)
+      : ['addon-pickup', 'addon-pickup-moto'].includes(tx.addon_id) && customer?.address
+        ? `<small>Alamat Antar-Jemput: ${escapeHtml(customer.address)}</small><small>Jarak pulang-pergi: ${escapeHtml(tx.pickup_distance_km)} km</small>`
+        : '';
     return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small>${pickupAddress}</span><span class="transaction-item">${escapeHtml(tx.item_name || (tx.item_type === 'PRODUCT' ? 'Pembelian produk' : 'Layanan cuci'))}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${refundStatus}${paymentAction}${refundAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${transactionStatusLabel(tx)}</span><span class="transaction-amount">${money(tx.amount)}</span><span class="transaction-row-actions"><button type="button" aria-label="Edit transaksi ${escapeHtml(tx.code)}" data-edit-transaction="${escapeHtml(tx.id)}">Edit</button><button type="button" aria-label="Batalkan transaksi ${escapeHtml(tx.code)}" data-admin-remove="${escapeHtml(tx.id)}">Batal</button></span></div>`;
   }).join('')
     .replaceAll('>Batal</button>', '>Hapus</button>')
@@ -1606,6 +1715,38 @@ function setupAdminTransactionForm(content) {
   quantityField.value = String(Number(db.transactions.find(tx => tx.id === form.elements.transaction_id.value)?.quantity) || 1);
   quantityLabel.append(quantityField);
   form.elements.amount.closest('.form-two').before(quantityLabel);
+  const fulfillmentFieldset = document.createElement('fieldset');
+  fulfillmentFieldset.className = 'payment-options fulfillment-options';
+  fulfillmentFieldset.innerHTML = `<legend>Metode pemenuhan</legend><label><input type="radio" name="fulfillment_method" value="PICKUP" ${(db.transactions.find(tx => tx.id === form.elements.transaction_id.value)?.fulfillment_method || 'PICKUP') === 'PICKUP' ? 'checked' : ''}><span>Ambil di Studio (Pick-up)</span></label><label><input type="radio" name="fulfillment_method" value="COURIER" ${db.transactions.find(tx => tx.id === form.elements.transaction_id.value)?.fulfillment_method === 'COURIER' ? 'checked' : ''}><span>Pengiriman Online / Kurir</span></label>`;
+  quantityLabel.before(fulfillmentFieldset);
+  const fulfillmentTransaction = db.transactions.find(tx => tx.id === form.elements.transaction_id.value);
+  const adminShippingFee = method => method !== 'COURIER' ? 0
+    : fulfillmentTransaction?.fulfillment_method === 'COURIER'
+      ? Number(fulfillmentTransaction.shipping_fee) || 0
+      : COURIER_FLAT_RATE;
+  const deliveryNote = document.createElement('p');
+  deliveryNote.textContent = 'Khusus pengiriman lokal (Maks. 10 km dari studio). Biaya ongkir flat Rp 10.000.';
+  deliveryNote.hidden = fulfillmentTransaction?.fulfillment_method !== 'COURIER';
+  fulfillmentFieldset.after(deliveryNote);
+  const deliveryAddressLabel = document.createElement('label');
+  deliveryAddressLabel.textContent = 'Alamat Pengiriman';
+  deliveryAddressLabel.hidden = fulfillmentTransaction?.fulfillment_method !== 'COURIER';
+  const deliveryAddressField = document.createElement('textarea');
+  deliveryAddressField.name = 'fulfillment_address';
+  deliveryAddressField.rows = 2;
+  deliveryAddressField.maxLength = 500;
+  deliveryAddressField.value = fulfillmentTransaction?.fulfillment_address || '';
+  deliveryAddressField.required = fulfillmentTransaction?.fulfillment_method === 'COURIER';
+  deliveryAddressLabel.append(deliveryAddressField);
+  deliveryNote.after(deliveryAddressLabel);
+  const deliveryAddressSummary = document.createElement('div');
+  deliveryAddressSummary.className = 'dialog-total';
+  deliveryAddressSummary.innerHTML = `<span>Alamat Pengiriman</span><strong>${escapeHtml(fulfillmentTransaction?.fulfillment_address || '')}</strong>`;
+  deliveryAddressLabel.after(deliveryAddressSummary);
+  const shippingSummary = document.createElement('div');
+  shippingSummary.className = 'dialog-total';
+  shippingSummary.innerHTML = `<span>Ongkir</span><strong>${money(fulfillmentTransaction?.shipping_fee || 0)}</strong>`;
+  deliveryAddressLabel.after(shippingSummary);
   const itemField = form.elements.item_id;
   const vehicleFields = form.elements.vehicle_model?.closest('.form-two');
   const queueLabel = form.elements.queue_status?.closest('label');
@@ -1617,22 +1758,40 @@ function setupAdminTransactionForm(content) {
     itemField.innerHTML = items.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${money(item.price)}</option>`).join('');
     if (items.some(item => item.id === previousItemId)) itemField.value = previousItemId;
     const item = items.find(row => row.id === itemField.value);
-    if (updateAmount && item) form.elements.amount.value = String(Number(item.price) * Number(quantityField.value || 1));
+    if (item) {
+      const fee = type === 'PRODUCT' ? adminShippingFee(form.elements.fulfillment_method.value) : 0;
+      shippingSummary.querySelector('strong').textContent = money(fee);
+      if (updateAmount) form.elements.amount.value = String(calculateProductAmount(item.price, quantityField.value || 1, fee));
+    }
     if (vehicleFields) {
       vehicleFields.hidden = type !== 'SERVICE';
       vehicleFields.querySelectorAll('input').forEach(input => { input.disabled = type !== 'SERVICE'; input.required = type === 'SERVICE'; });
     }
     if (queueLabel) queueLabel.hidden = type !== 'SERVICE';
     if (queueField) { queueField.disabled = type !== 'SERVICE'; queueField.required = type === 'SERVICE'; }
+    fulfillmentFieldset.hidden = type !== 'PRODUCT';
+    fulfillmentFieldset.querySelectorAll('input').forEach(input => { input.disabled = type !== 'PRODUCT'; });
+    deliveryNote.hidden = type !== 'PRODUCT' || form.elements.fulfillment_method.value !== 'COURIER';
+    deliveryAddressLabel.hidden = type !== 'PRODUCT' || form.elements.fulfillment_method.value !== 'COURIER';
+    deliveryAddressField.disabled = type !== 'PRODUCT' || form.elements.fulfillment_method.value !== 'COURIER';
+    deliveryAddressField.required = type === 'PRODUCT' && form.elements.fulfillment_method.value === 'COURIER';
+    deliveryAddressSummary.hidden = type !== 'PRODUCT' || form.elements.fulfillment_method.value !== 'COURIER';
+    shippingSummary.hidden = type !== 'PRODUCT';
   };
   typeField.addEventListener('change', () => updateItems(true));
+  fulfillmentFieldset.addEventListener('change', () => updateItems(true));
+  deliveryAddressField.addEventListener('input', () => {
+    deliveryAddressSummary.querySelector('strong').textContent = deliveryAddressField.value;
+  });
   itemField.addEventListener('change', () => {
     const item = db.services_products.find(row => row.id === itemField.value);
-    if (item) form.elements.amount.value = String(Number(item.price) * Number(quantityField.value || 1));
+    if (item) form.elements.amount.value = String(calculateProductAmount(item.price, quantityField.value || 1,
+      typeField.value === 'PRODUCT' ? adminShippingFee(form.elements.fulfillment_method.value) : 0));
   });
   quantityField.addEventListener('change', () => {
     const item = db.services_products.find(row => row.id === itemField.value);
-    if (item) form.elements.amount.value = String(Number(item.price) * Number(quantityField.value || 1));
+    if (item) form.elements.amount.value = String(calculateProductAmount(item.price, quantityField.value || 1,
+      typeField.value === 'PRODUCT' ? adminShippingFee(form.elements.fulfillment_method.value) : 0));
   });
   updateItems();
 }
@@ -1648,7 +1807,7 @@ async function saveAdminTransaction(form) {
   if (!item) throw new Error('Layanan atau produk tidak ditemukan. Muat ulang katalog.');
   const transaction = data.transaction_id ? db.transactions.find(tx => tx.id === data.transaction_id) : null;
   if (data.transaction_id && !transaction) throw new Error('Transaksi tidak ditemukan.');
-  validateTransactionSchedule(data.booking_date, data.booking_time, item.item_type === 'SERVICE' ? Number(item.duration) || 0 : 0);
+  validateTransactionSchedule(data.booking_date, data.booking_time, item.item_type === 'SERVICE' ? Number(item.duration) || 0 : 0, new Date());
   if (!transaction) assertStudioOpenAt();
   const changes = {
     item_id: item.id,
@@ -1663,6 +1822,21 @@ async function saveAdminTransaction(form) {
     booking_time: data.booking_time,
     duration_minutes: Number(item.duration) || 0
   };
+  if (item.item_type === 'PRODUCT') {
+    const fulfillmentMethod = data.fulfillment_method || transaction?.fulfillment_method || 'PICKUP';
+    const shippingFee = fulfillmentMethod === 'COURIER'
+      ? transaction?.fulfillment_method === 'COURIER' ? Number(transaction.shipping_fee) || 0 : COURIER_FLAT_RATE
+      : 0;
+    const fulfillmentAddress = fulfillmentMethod === 'COURIER' ? String(data.fulfillment_address || '').trim() : '';
+    if (fulfillmentMethod === 'COURIER' && !fulfillmentAddress) throw new Error('Masukkan alamat pengiriman.');
+    changes.amount = amount;
+    changes.fulfillment_method = fulfillmentMethod;
+    changes.fulfillment_address = fulfillmentAddress || null;
+    changes.shipping_fee = shippingFee;
+    changes.fulfillment_order_id = fulfillmentMethod === 'COURIER'
+      ? transaction?.fulfillment_order_id || crypto.randomUUID()
+      : null;
+  }
   if (item.item_type === 'SERVICE') changes.queue_status = data.queue_status;
   if (transaction) {
     await patchRow('transactions', transaction.id, changes);
@@ -1690,7 +1864,7 @@ async function saveAdminTransaction(form) {
     item_id: item.id,
     item_type: item.item_type,
     item_name: item.name,
-    quantity: 1,
+    quantity,
     ...changes,
     transaction_type: transactionType,
     queue_status: item.item_type === 'SERVICE' ? data.queue_status : 'COMPLETED',
@@ -2294,6 +2468,7 @@ document.addEventListener('click', async event => {
     cart[id].quantity += Number(change.dataset.delta);
     if (cart[id].quantity <= 0) delete cart[id];
     localStorage.setItem(CART_KEY, JSON.stringify(cart));
+    if (!Object.keys(cart).length) localStorage.removeItem(PRODUCT_CHECKOUT_KEY);
     renderCartDialog(document.getElementById('dialog-content')); render(); return;
   }
   const tab = event.target.closest('[data-admin-tab]');

@@ -3,7 +3,7 @@ begin;
 alter table public.transactions disable trigger transactions_integrity_guard;
 
 with transaction_limit as (
-  select least((clock_timestamp() at time zone 'Asia/Jakarta')::date, date '2026-10-19') as max_date
+  select (clock_timestamp() at time zone 'Asia/Jakarta')::date as max_date
 ), fixture_schedule as (
   select transaction_row.id,
     least(transaction_row.booking_date, transaction_limit.max_date) as booking_date,
@@ -48,8 +48,8 @@ begin
       or old.duration_minutes is distinct from new.duration_minutes;
   end if;
   if schedule_changed then
-    if new.booking_date > least(date '2026-10-19', local_now::date) then
-      raise exception 'Tanggal transaksi tidak boleh melewati 19 Oktober 2026 WIB.';
+    if new.booking_date > local_now::date and new.transaction_type <> 'BOOKING' then
+      raise exception 'Tanggal transaksi tidak boleh melewati hari ini.';
     end if;
     if new.booking_time < time '08:00' or new.booking_time > time '21:00' then
       raise exception 'Transaksi hanya dapat dijadwalkan pukul 08.00–21.00 WIB.';
@@ -60,9 +60,8 @@ begin
     end if;
   end if;
   if tg_op = 'INSERT' then
-    if local_now::date > date '2026-10-19'
-      or local_now::time < time '08:00' or local_now::time > time '21:00' then
-      raise exception 'Transaksi baru hanya dapat dibuat pada 08.00–21.00 WIB hingga 19 Oktober 2026.';
+    if local_now::time < time '08:00' or local_now::time > time '21:00' then
+      raise exception 'Transaksi baru hanya dapat dibuat pada 08.00–21.00 WIB.';
     end if;
     new.created_at := clock_timestamp();
   end if;

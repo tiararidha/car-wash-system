@@ -37,7 +37,7 @@ where t.id = 't-20'
     or t.transaction_type is distinct from 'BOOKING'
     or t.transaction_status is distinct from 'BOOKED'
     or t.queue_status is distinct from 'WAITING'
-    or t.booking_date is distinct from least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19')
+    or t.booking_date is distinct from (now() at time zone 'Asia/Jakarta')::date
     or t.booking_time is distinct from time '09:00'
     or t.duration_minutes is distinct from 30
     or t.bay_number is distinct from 4
@@ -53,7 +53,7 @@ values (
   't-20', 'RS-SEED-010', 'rs-c-11', 'rs-v-13', 'svc-self-car', null, null,
   'SERVICE', 'Self-Service Car', 1, 30000, 'CARD', 'PAID',
   'NONE', 'BOOKING', 'BOOKED', 'WAITING',
-  least((now() at time zone 'Asia/Jakarta')::date, date '2026-10-19'), time '09:00', 30, 4, null,
+  (now() at time zone 'Asia/Jakarta')::date, time '09:00', 30, 4, null,
   now()
 )
 on conflict (id) do nothing;

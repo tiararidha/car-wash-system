@@ -57,38 +57,38 @@ insert into public.services_products (
     'https://images.pexels.com/photos/36709685/pexels-photo-36709685.jpeg?auto=compress&cs=tinysrgb&w=700'
   ),
   (
-    'prd-shampoo', 'PRODUCT', 'Sampo Cuci Mobil pH Netral', 'CUCI & PERAWATAN', null,
-    'Sampo kendaraan pH netral untuk perawatan rutin tanpa mengganggu lapisan wax · 500 ml.',
+    'prd-shampoo', 'PRODUCT', 'Sampo Mobil pH Netral', 'CUCI & PERAWATAN', null,
+    'Sampo cuci bodi busa melimpah, aman digunakan sehari-hari tanpa merusak cat.',
     45000, 0, 24, 6, true,
     'https://images.pexels.com/photos/9470891/pexels-photo-9470891.jpeg?auto=compress&cs=tinysrgb&w=700'
   ),
   (
-    'prd-cloth', 'PRODUCT', 'Kain Microfiber Premium', 'PERLENGKAPAN', null,
-    'Kain microfiber lembut dengan daya serap tinggi · 40 × 40 cm.',
+    'prd-cloth', 'PRODUCT', 'Lap Microfiber Bodi & Kaca', 'PERLENGKAPAN', null,
+    'Kain lap halus berdaya serap tinggi, aman untuk bodi dan kaca tanpa meninggalkan goresan.',
     45000, 0, 14, 5, true,
     'https://images.pexels.com/photos/39562202/pexels-photo-39562202.jpeg?auto=compress&cs=tinysrgb&w=700'
   ),
   (
-    'prd-tire', 'PRODUCT', 'Semir Ban Satin', 'PERLINDUNGAN', null,
-    'Perawatan ban dengan hasil hitam satin dan tampilan rapi · 250 ml.',
+    'prd-tire', 'PRODUCT', 'Semir Pengkilap Ban', 'PERLINDUNGAN', null,
+    'Semir ban untuk membuat warna hitam terlihat pekat, mengkilap, dan bersih tahan lama.',
     60000, 0, 9, 4, true,
     'https://images.pexels.com/photos/12920558/pexels-photo-12920558.jpeg?auto=compress&cs=tinysrgb&w=700'
   ),
   (
-    'prd-wax', 'PRODUCT', 'Wax Cair Kilap Dalam', 'PERLINDUNGAN', null,
-    'Wax cair untuk menambah kilap dan membantu melindungi permukaan cat · 250 ml.',
+    'prd-wax', 'PRODUCT', 'Pengkilap Bodi (Wax Spray)', 'PERLINDUNGAN', null,
+    'Semprotan pengkilap cat instan yang memberi efek daun talas agar air dan debu tidak mudah menempel.',
     125000, 0, 3, 5, true,
     'https://images.pexels.com/photos/7796591/pexels-photo-7796591.jpeg?auto=compress&cs=tinysrgb&w=700'
   ),
   (
-    'prd-interior', 'PRODUCT', 'Pembersih Interior', 'PERAWATAN INTERIOR', null,
-    'Pembersih untuk jok dan trim interior kendaraan · 300 ml.',
+    'prd-interior', 'PRODUCT', 'Pembersih Interior & Jok', 'PERAWATAN INTERIOR', null,
+    'Cairan pembersih untuk mengangkat debu, noda makanan, dan kotoran pada jok serta dasbor.',
     50000, 0, 11, 4, true,
     'https://images.pexels.com/photos/10566526/pexels-photo-10566526.jpeg?auto=compress&cs=tinysrgb&w=700'
   ),
   (
-    'prd-glass', 'PRODUCT', 'Pembersih Kaca Otomotif', 'PERAWATAN KACA', null,
-    'Pembersih kaca kendaraan untuk hasil bening tanpa bekas lap · 300 ml.',
+    'prd-glass', 'PRODUCT', 'Pembersih Kaca Mobil', 'PERAWATAN KACA', null,
+    'Membersihkan bercak air dan kotoran pada kaca kendaraan agar pandangan kembali bening.',
     40000, 0, 10, 4, true,
     'https://images.pexels.com/photos/11215808/pexels-photo-11215808.jpeg?auto=compress&cs=tinysrgb&w=700'
   )
