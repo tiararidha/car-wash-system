@@ -3,6 +3,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   hasAdminRole,
+  getServiceDuration,
+  calculateFinancialSummary,
+  formatServiceTimeRange,
+  formatTransactionTime,
   hasCustomerPhoneChanged,
   toSupabasePhone,
   verifiedPhoneMatchesInput,
@@ -43,6 +47,7 @@ const {
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const polishSource = fs.readFileSync(path.join(__dirname, '..', 'polish.css'), 'utf8');
+const themeSource = fs.readFileSync(path.join(__dirname, '..', 'theme.css'), 'utf8');
 const migrationSource = fs.readFileSync(path.join(__dirname, '..', 'sql', 'multi-addon-booking-integrity-proposal.sql'), 'utf8');
 const authorizationSource = fs.readFileSync(path.join(__dirname, '..', 'sql', 'admin-role-authorization-proposal.sql'), 'utf8');
 const operationsSource = fs.readFileSync(path.join(__dirname, '..', 'sql', 'business-flow-hardening.sql'), 'utf8');
@@ -62,6 +67,7 @@ const paidDemoMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supa
 const demoDateCorrectionSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000005_cap_demo_transaction_dates.sql'), 'utf8');
 const wibScheduleMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261022000000_dynamic_transaction_time_and_product_fulfillment.sql'), 'utf8');
 const legacyPerfumeCleanupSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025000000_remove_legacy_perfume_product.sql'), 'utf8');
+const canonicalDurationCogsMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025010000_canonical_service_duration_and_product_cogs.sql'), 'utf8');
 const demoSnapshotStart = demoProposalSource.search(/create(?:\s+or\s+replace)?\s+function public\.get_demo_admin_snapshot\(\)/i);
 const demoOrderStart = demoRpcSource.search(/create(?:\s+or\s+replace)?\s+function public\.create_demo_service_order\(p_order jsonb\)/i);
 const demoOrderEnd = demoRpcSource.search(/\nrevoke all on function public\.create_demo_service_order\(jsonb\)/i);
@@ -89,6 +95,9 @@ const serviceFormSource = appSource.slice(serviceFormStart, serviceFormEnd);
 const productFormStart = appSource.indexOf('function renderProductCheckout(content)');
 const productFormEnd = appSource.indexOf('\nfunction makeCode', productFormStart);
 const productFormSource = appSource.slice(productFormStart, productFormEnd);
+const productCardStart = appSource.indexOf('function productCard(');
+const productCardEnd = appSource.indexOf('\nfunction isAdminAuthorized', productCardStart);
+const productCardSource = appSource.slice(productCardStart, productCardEnd);
 const bookingRpcStart = migrationSource.indexOf('create or replace function public.record_service_transaction(');
 const bookingRpcEnd = migrationSource.indexOf('\ncreate or replace function public.reconcile_self_service_transactions()', bookingRpcStart);
 const bookingRpcSource = migrationSource.slice(bookingRpcStart, bookingRpcEnd);
@@ -110,6 +119,26 @@ assert.equal(hasAdminRole({ user_metadata: { rinse_role: 'admin' } }), false);
 assert.equal(isValidCustomerCapabilityToken(wrongOwnerCapabilityToken), true);
 assert.equal(isValidCustomerCapabilityToken('invalid-token'), false);
 assert.equal(isValidCustomerCapabilityToken(undefined), false);
+assert.equal(getServiceDuration('Self-Service Motorcycle'), 20);
+assert.equal(getServiceDuration('svc-self-moto', 25), 20);
+assert.equal(getServiceDuration('Self-Service Car'), 30);
+assert.equal(getServiceDuration('Professional Motorcycle Wash'), 35);
+assert.equal(getServiceDuration('Professional Car Wash'), 50);
+assert.equal(formatServiceTimeRange('11:02:00', getServiceDuration('Self-Service Motorcycle')), '11:02 - 11:22');
+assert.equal(formatTransactionTime({ item_type: 'SERVICE', item_name: 'Self-Service Car', booking_time: '11:02:00', duration_minutes: 25 }), '11:02 - 11:32');
+const financialSummary = calculateFinancialSummary([
+  { item_type: 'SERVICE', payment_status: 'PAID', transaction_status: 'COMPLETED', amount: 100 },
+  { item_type: 'PRODUCT', item_id: 'prd-one', payment_status: 'PAID', transaction_status: 'COMPLETED', amount: 100, shipping_fee: 10, quantity: 2, cogs_amount: 40 },
+  { item_type: 'PRODUCT', item_id: 'prd-cost-missing', payment_status: 'PAID', transaction_status: 'COMPLETED', amount: 50, quantity: 1, cogs_amount: null },
+  { item_type: 'PRODUCT', item_id: 'prd-two', payment_status: 'PENDING', transaction_status: 'PENDING', amount: 500, quantity: 1, unit_cost: 40 }
+]);
+assert.equal(financialSummary.serviceRevenue, 100);
+assert.equal(financialSummary.productRevenue, 140);
+assert.equal(financialSummary.shippingRevenue, 10);
+assert.equal(financialSummary.grossRevenue, 240);
+assert.equal(financialSummary.cogs, 40);
+assert.equal(financialSummary.grossProfit, 200);
+assert.equal(financialSummary.costRecordedCount, 1);
 assert.equal(sanitizeQuantity('3'), 3);
 assert.equal(sanitizeQuantity('0'), 1);
 assert.equal(sanitizeQuantity('invalid'), 1);
@@ -161,14 +190,29 @@ assert.match(legacyPerfumeCleanupSource, /delete from public\.transactions trans
 assert.match(legacyPerfumeCleanupSource, /where transaction_row\.item_id = 'prd-perfume'/);
 assert.match(legacyPerfumeCleanupSource, /lower\(trim\(name\)\) = 'pewangi' and price = 10000/);
 assert.match(legacyPerfumeCleanupSource, /delete from public\.services_products catalog_row/);
+assert.match(canonicalDurationCogsMigrationSource, /when 'svc-self-moto' then 20[\s\S]*when 'svc-self-car' then 30[\s\S]*when 'svc-moto' then 35[\s\S]*when 'svc-car' then 50/);
+assert.match(canonicalDurationCogsMigrationSource, /add column if not exists unit_cost integer/);
+assert.match(canonicalDurationCogsMigrationSource, /add column if not exists cogs_amount integer/);
+assert.match(canonicalDurationCogsMigrationSource, /new\.cogs_amount := product_unit_cost \* new\.quantity/);
+assert.match(canonicalDurationCogsMigrationSource, /revoke select on public\.services_products from public, anon, authenticated[\s\S]*grant select \(id, item_type, name, category, type, description, price, duration, stock, min_stock, active, image\)[\s\S]*to anon[\s\S]*grant select on public\.services_products to authenticated/);
+assert.match(canonicalDurationCogsMigrationSource, /Role-gated catalog and HPP access[\s\S]*auth\.jwt\(\) -> 'app_metadata' ->> 'rinse_role'[\s\S]*= 'admin'/);
+assert.match(appSource, /select=id,item_type,name,category,type,description,price,duration,stock,min_stock,active,image&item_type=eq\.PRODUCT/);
 assert.match(appSource, /item_type=eq\.PRODUCT&id=in\.\(\$\{PRODUCT_CATALOG_IDS\.join\(','\)\}\)&active=eq\.true/);
 assert.match(appSource, /item_type=eq\.SERVICE&active=eq\.true/);
 assert.match(appSource, /title: 'Produk Fisik'/);
 assert.match(appSource, /item\.item_type !== 'PRODUCT' \|\| PRODUCT_CATALOG_ID_SET\.has\(item\.id\)/);
 assert.match(appSource, /data-admin-catalog-filter/);
+assert.match(productCardSource, /class="stock-note">STOK \$\{product\.stock\}/);
+assert.doesNotMatch(productCardSource, /STOK MENIPIS|low-stock/);
+assert.match(appSource, /header-print-button/);
+assert.match(appSource, /Laporan Keuangan/);
+assert.match(themeSource, /\.product-buy\s*\{[\s\S]*?display:\s*flex[\s\S]*?justify-content:\s*center/);
+assert.match(themeSource, /\.stock-note\s*\{[\s\S]*?background:\s*#ecfdf5[\s\S]*?color:\s*#065f46/);
+assert.match(themeSource, /--navy-dark:\s*#091724/i);
+assert.match(themeSource, /--teal-accent:\s*#1db59b/i);
 assert.match(appSource, /group\.hidden = catalogFilter !== 'all'/);
-assert.match(indexSource, /app\.js\?v=20261025-zero-bug-polish/);
-assert.match(indexSource, /polish\.css\?v=20261025-admin-catalog-ledger/);
+assert.match(indexSource, /app\.js\?v=20261025-time-financial/);
+assert.match(indexSource, /polish\.css\?v=20261025-time-financial/);
 assert.match(appSource, /catalog-edit-button[^<]*type="button" data-edit-item/);
 assert.match(appSource, /function readStoredCart\(\)\s*\{\s*try\s*\{ return sanitizeCart\(JSON\.parse\(localStorage\.getItem\(CART_KEY\)/);
 const publicCatalogFixture = [
@@ -596,6 +640,7 @@ assert.equal(resolveCustomerIdentity({
 
 assert.notEqual(submitStart, -1);
 assert.match(submitSource, /validateServicePaymentMethod\(/);
+assert.match(submitSource, /assertServiceScheduleAvailable\(getServiceDuration\(/);
 assert.match(submitSource, /toSupabasePhone\(phone\)/);
 assert.match(submitSource, /payment_status: 'PAID'/);
 assert.match(submitSource, /String\(data\.get\('name'\) \|\| ''\)\.trim\(\)/);

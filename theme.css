@@ -1,8 +1,8 @@
 :root {
-  --deep-petrol: #08202D;
-  --navy-dark: #0B222F;
-  --teal-accent: #1FB8A8;
-  --mint-subtle: #E0F7F5;
+  --deep-petrol: #051424;
+  --navy-dark: #091724;
+  --teal-accent: #1DB59B;
+  --mint-subtle: #ECFDF5;
   --background: #F8FAFA;
   --card: #FFFFFF;
   --border: #E2E8F0;
@@ -15,7 +15,7 @@
   --paper: var(--background);
   --white: var(--card);
   --line: var(--border);
-  --green: #0F8D74;
+  --green: #0D9488;
   --amber: #C88A1B;
   --red: #D55A5A;
   --display: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
@@ -3311,23 +3311,23 @@ body.admin-mode .customer-search input {
 }
 
 :root {
-  --deep-petrol: #08202d;
-  --navy-dark: #0b222f;
-  --teal-accent: #1fb8a8;
-  --mint-subtle: #e0f7f5;
+  --deep-petrol: #051424;
+  --navy-dark: #091724;
+  --teal-accent: #1db59b;
+  --mint-subtle: #ecfdf5;
   --background: #f8fafa;
   --card: #fff;
   --border: #e2e8f0;
   --muted: #64748b;
-  --ink: #08202d;
-  --navy: #0b222f;
-  --blue: #1fb8a8;
-  --aqua: #1fb8a8;
-  --mint: #e0f7f5;
+  --ink: #051424;
+  --navy: #091724;
+  --blue: #1db59b;
+  --aqua: #1db59b;
+  --mint: #ecfdf5;
   --paper: #f8fafa;
   --white: #fff;
   --line: #e2e8f0;
-  --green: #0f8d74;
+  --green: #0d9488;
   --amber: #c88a1b;
   --red: #d55a5a;
   --display: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
@@ -3497,6 +3497,86 @@ h1, h2, h3, h4, .brand, .metric-card strong, .service-price, .hero-note strong,
 .quality-grid article { border-radius: 8px; }
 .service-banner { border-radius: 8px; }
 .closing-cta { border-radius: 8px; }
+
+button:not(.product-image) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.button, .product-buy, .text-link, .admin-nav, .catalog-filter,
+.history-filter, .payment-mark-paid, .catalog-edit-button,
+.toggle-active, .icon-button, .mobile-menu, .quantity-control button,
+.dialog-close { display: inline-flex; align-items: center; justify-content: center; text-align: center; }
+.button { gap: 8px; }
+.product-buy {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  gap: 6px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #091724;
+  color: #fff;
+  font: 600 13px/1.2 var(--body);
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(5, 20, 36, .14);
+  transition: background-color .16s ease, transform .16s ease;
+}
+.product-buy:hover { background: #0d9488; }
+.product-buy:active { transform: scale(.99); }
+.product-buy > span { flex: 0 0 auto; }
+.stock-note {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #ecfdf5;
+  color: #065f46;
+  font: 600 10px/1.2 var(--mono);
+  text-align: center;
+  white-space: nowrap;
+}
+.status, .payment-status, .transaction-state, .stock-indicator,
+.low-stock-count, .package-type, .bay-time, .connection-indicator,
+.catalog-status, .payment-method, .photo-tag {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.admin-nav { justify-content: center; text-align: center; }
+.button-dark, .button-primary, .button:not(.button-quiet) { background: #091724; }
+.button-dark:hover, .button-primary:hover, .button:not(.button-quiet):hover { background: #0d9488; }
+.brand-mark, .admin-brand .brand-mark { background: #091724; color: #2dd4bf; }
+.admin-sidebar { background: #091724; }
+.admin-nav.active { border-color: #0d9488; background: #0d9488; color: #fff; }
+.admin-nav.active > span { color: #fff; }
+.metric-card { background: #0c242c; }
+.flow-dialog::backdrop { background: rgba(5, 20, 36, .6); backdrop-filter: blur(3px); }
+.dialog-total { border-color: transparent; background: #e0f7f5; box-shadow: 0 0 22px rgba(29, 181, 155, .12); }
+
+@media (max-width: 560px) {
+  .admin-top-actions .header-print-button > span { display: none; }
+  .admin-top-actions .header-print-button { width: 42px; min-width: 42px; padding: 0; }
+}
+
+@media print {
+  body:has(#financial-print-report) .admin-topbar,
+  body:has(#financial-print-report) .admin-sidebar,
+  body:has(#financial-print-report) #sidebar,
+  body:has(#financial-print-report) .header-print-button,
+  body:has(#financial-print-report) .pagination { display: none !important; }
+}
 
 .admin-mode { background: #f8fafa; }
 .admin-mode .announcement, .admin-mode .site-header, .admin-mode .site-footer { display: none !important; }

@@ -105,6 +105,35 @@ function finiteNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }
+function getServiceDuration(serviceName, fallback = 0) {
+  const key = String(serviceName || '').trim().toLowerCase();
+  const durations = {
+    'self-service motorcycle': 20,
+    'svc-self-moto': 20,
+    'self-service car': 30,
+    'svc-self-car': 30,
+    'professional motorcycle wash': 35,
+    'svc-moto': 35,
+    'professional car wash': 50,
+    'svc-car': 50
+  };
+  return durations[key] || Math.max(0, finiteNumber(fallback));
+}
+function formatServiceTimeRange(startTime, durationMinutes) {
+  const match = /^(\d{2}):(\d{2})/.exec(String(startTime || ''));
+  if (!match) return '';
+  const start = Number(match[1]) * 60 + Number(match[2]);
+  const end = start + Math.max(0, finiteNumber(durationMinutes));
+  const format = minutes => `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  return `${format(start)} - ${format(end)}`;
+}
+function formatTransactionTime(transaction = {}) {
+  if (transaction.item_type !== 'SERVICE') return String(transaction.booking_time || '');
+  return formatServiceTimeRange(
+    transaction.booking_time,
+    getServiceDuration(transaction.item_name || transaction.item_id, transaction.duration_minutes)
+  ) || String(transaction.booking_time || '');
+}
 function isValidIndonesianPlate(value = '') {
   const normalized = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   return /^[A-Z]{1,2}[0-9]{1,4}[A-Z]{1,3}$/.test(normalized);
@@ -138,6 +167,40 @@ function shippingRevenueAmount(transaction = {}) {
 }
 function collectedAmount(transaction = {}) {
   return recognizedRevenueAmount(transaction) + shippingRevenueAmount(transaction);
+  }
+function calculateFinancialSummary(transactions = [], catalog = []) {
+  const paid = transactions.filter(tx => String(tx.payment_status || '').toUpperCase() === 'PAID'
+    && !['CANCELLED', 'EXPIRED'].includes(String(tx.transaction_status || '').toUpperCase())
+    && !['PENDING', 'COMPLETED'].includes(String(tx.refund_status || 'NONE').toUpperCase()));
+  const services = paid.filter(tx => tx.item_type === 'SERVICE');
+  const retail = paid.filter(tx => tx.item_type === 'PRODUCT');
+  const serviceRevenue = services.reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0);
+  const productRevenue = retail.reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0);
+  const shippingRevenue = paid.reduce((sum, tx) => sum + shippingRevenueAmount(tx), 0);
+  const retailCosts = retail.map(tx => {
+    const snapshot = Number(tx.cogs_amount);
+    const hasSnapshot = tx.cogs_amount !== null && tx.cogs_amount !== undefined
+      && Number.isFinite(snapshot) && snapshot >= 0;
+    return {
+      amount: hasSnapshot ? snapshot : 0,
+      recorded: hasSnapshot
+    };
+  });
+  const cogs = retailCosts.reduce((sum, item) => sum + item.amount, 0);
+  const grossRevenue = serviceRevenue + productRevenue;
+  const totalRevenue = grossRevenue + shippingRevenue;
+  return {
+    paid,
+    serviceRevenue,
+    productRevenue,
+    shippingRevenue,
+    grossRevenue,
+    totalRevenue,
+    cogs,
+    grossProfit: grossRevenue - cogs,
+    productCount: retail.length,
+    costRecordedCount: retailCosts.filter(item => item.recorded).length
+  };
 }
 function isValidServiceOrderResponse(result, expected) {
   if (!result || typeof result !== 'object' || !expected) return false;
@@ -393,6 +456,10 @@ if (typeof window === 'undefined') {
   const appExports = {
     normalizePhone,
     toSupabasePhone,
+    getServiceDuration,
+    calculateFinancialSummary,
+    formatServiceTimeRange,
+    formatTransactionTime,
     hasAdminRole,
     verifiedPhoneMatchesInput,
     hasCustomerPhoneChanged,
@@ -506,7 +573,11 @@ const CATALOG_COPY = {
 
 function catalogItem(item) {
   const copy = CATALOG_COPY[item.id] || {};
-  return { ...item, ...copy, image: copy.image || item.image || '' };
+  const normalized = { ...item, ...copy, image: copy.image || item.image || '' };
+  if (normalized.item_type === 'SERVICE' || ['REGULAR', 'SELF_SERVICE'].includes(String(normalized.category || '').toUpperCase())) {
+    normalized.duration = getServiceDuration(normalized.name || normalized.id, normalized.duration);
+  }
+  return normalized;
 }
 const PICKUP_ADDON_IDS = new Set(['addon-pickup', 'addon-pickup-moto']);
 function isPickupAddon(item) {
@@ -706,6 +777,7 @@ let activeAdminTab = 'overview';
 let serviceFilter = 'all';
 let productFilter = 'all';
 let catalogFilter = 'all';
+let reportPeriod = 'month';
 
 function isSupabaseConfigured() {
   return SUPABASE_URL.startsWith('https://') && SUPABASE_PUBLISHABLE_KEY.length > 20 && !SUPABASE_URL.includes('PASTE_') && !SUPABASE_PUBLISHABLE_KEY.includes('PASTE_');
@@ -791,7 +863,9 @@ function normalizeTransactionRecord(tx = {}) {
   const normalized = tx && typeof tx === 'object' ? { ...tx } : {};
   normalized.amount = finiteNumber(normalized.amount);
   normalized.quantity = sanitizeQuantity(normalized.quantity);
-  normalized.duration_minutes = Math.max(0, finiteNumber(normalized.duration_minutes));
+  normalized.duration_minutes = normalized.item_type === 'SERVICE'
+    ? getServiceDuration(normalized.item_name || normalized.item_id, normalized.duration_minutes)
+    : Math.max(0, finiteNumber(normalized.duration_minutes));
   normalized.shipping_fee = Math.max(0, finiteNumber(normalized.shipping_fee));
   const paymentStatus = String(normalized.payment_status || 'PENDING').toUpperCase();
   const transactionStatus = String(normalized.transaction_status || 'PENDING').toUpperCase();
@@ -815,7 +889,9 @@ function normalizeCatalogRecord(item = {}) {
     name: String(item.name || 'Item'),
     description: String(item.description || ''),
     price: Math.max(0, finiteNumber(item.price)),
-    duration: Math.max(durationFallback, finiteNumber(item.duration, durationFallback)),
+    duration: item.item_type === 'SERVICE'
+      ? getServiceDuration(item.name || item.id, Math.max(durationFallback, finiteNumber(item.duration, durationFallback)))
+      : Math.max(durationFallback, finiteNumber(item.duration, durationFallback)),
     stock: Math.max(0, finiteNumber(item.stock)),
     min_stock: Math.max(0, finiteNumber(item.min_stock))
   };
@@ -1167,7 +1243,40 @@ function reportTransactions() {
 function reportVehicle(transaction) {
   return getVehicle(transaction);
 }
+function currentReportPeriodKey(now = new Date()) {
+  const { year, month } = getWibDateParts(now);
+  return reportPeriod === 'year' ? year : `${year}-${month}`;
+}
+function currentReportPeriodLabel(now = new Date()) {
+  const { year, month } = getWibDateParts(now);
+  if (reportPeriod === 'year') return `Tahun ${year}`;
+  const monthName = new Date(`${year}-${month}-01T12:00:00+07:00`).toLocaleDateString('id-ID', {
+    timeZone: 'Asia/Jakarta', month: 'long', year: 'numeric'
+  });
+  return `Bulan ${monthName}`;
+}
+function reportPeriodTransactions() {
+  const key = currentReportPeriodKey();
+  return reportTransactions().filter(tx => String(tx.booking_date || '').startsWith(key));
+}
 function renderAdminMetrics() {
+  const studioStatus = document.querySelector('.admin-topbar .eyebrow');
+  if (studioStatus) {
+    const studioDate = new Intl.DateTimeFormat('id-ID', { dateStyle: 'full', timeZone: 'Asia/Jakarta' }).format(new Date());
+    studioStatus.textContent = `BANYUMANIK STUDIO · UNIT 01 AKTIF · ${studioDate} · ${getJakartaTimeString()} WIB`;
+  }
+  const reportLink = document.querySelector('.admin-nav[data-admin-tab="reports"]');
+  if (reportLink) reportLink.innerHTML = '<span>↗</span> Laporan Keuangan';
+  const adminActions = document.querySelector('.admin-top-actions');
+  if (adminActions && !adminActions.querySelector('[data-action="print-financial-report"]')) {
+    const printButton = document.createElement('button');
+    printButton.type = 'button';
+    printButton.className = 'button button-dark button-small header-print-button';
+    printButton.dataset.action = 'print-financial-report';
+    printButton.setAttribute('aria-label', 'Cetak Laporan Keuangan sebagai PDF');
+    printButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-4a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/><path d="M18 11h.01"/></svg><span>Cetak Laporan (PDF)</span>';
+    adminActions.insertBefore(printButton, adminActions.querySelector('[data-action="walkin"]'));
+  }
   if (!document.querySelector('.metric-grid')) return;
   updateQueueSidebarCount();
   const transactions = reportTransactions();
@@ -1238,10 +1347,9 @@ function renderHome() {
 }
 function productCard(sourceProduct, options = {}) {
   const product = catalogItem(sourceProduct);
-  const low = product.stock <= product.min_stock;
   const categoryAttribute = options.categoryFilter ? `data-product-category="${escapeHtml(options.categoryFilter)}"` : '';
   const hidden = options.categoryFilter && productFilter !== 'all' && options.categoryFilter !== productFilter ? 'hidden' : '';
-  return `<article class="product-card" ${categoryAttribute} ${hidden}><button class="product-image" data-product="${product.id}" aria-label="Tambahkan ${escapeHtml(product.name)} ke keranjang"><img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy"><span class="product-add">+</span></button><div class="product-info"><span class="eyebrow">${escapeHtml(product.category || 'PRODUK PERAWATAN')}</span><h3>${escapeHtml(product.name)}</h3><p>${escapeHtml(product.description || '')}</p><div class="product-price-row"><strong>${money(product.price)}</strong><span class="stock-note ${low ? 'low-stock' : ''}">${low ? 'STOK MENIPIS' : `STOK ${product.stock}`}</span></div><button class="product-buy" data-product="${product.id}">Tambah ke keranjang <span>↗</span></button></div></article>`;
+  return `<article class="product-card" ${categoryAttribute} ${hidden}><button class="product-image" data-product="${product.id}" aria-label="Tambahkan ${escapeHtml(product.name)} ke keranjang"><img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy"><span class="product-add">+</span></button><div class="product-info"><span class="eyebrow">${escapeHtml(product.category || 'PRODUK PERAWATAN')}</span><h3>${escapeHtml(product.name)}</h3><p>${escapeHtml(product.description || '')}</p><div class="product-price-row"><strong>${money(product.price)}</strong><span class="stock-note">STOK ${product.stock}</span></div><button class="product-buy" data-product="${product.id}">Tambah ke keranjang <span>↗</span></button></div></article>`;
 }
 function isAdminAuthorized() {
   return page === 'admin' && hasAdminRole(adminUser);
@@ -1267,9 +1375,15 @@ function renderBays() {
     const number = index + 1;
     const row = publicBays.find(item => Number(item.bay_number) === number);
     const state = ['AVAILABLE', 'RESERVED', 'OCCUPIED'].includes(row?.bay_status) ? row.bay_status : 'UNKNOWN';
-    return { number, state, type: row?.vehicle_type || null, duration: Number(row?.duration_minutes || 0), remaining: Number(row?.minutes_remaining || 0), time: row?.booking_time || null };
+    const type = row?.vehicle_type || null;
+    const serviceName = type === 'MOTOR' ? 'Self-Service Motorcycle' : 'Self-Service Car';
+    const duration = type ? getServiceDuration(serviceName, row?.duration_minutes) : Number(row?.duration_minutes || 0);
+    return { number, state, type, duration, remaining: Number(row?.minutes_remaining || 0), time: row?.booking_time || null };
   });
-  const packages = db.services_products.filter(isSelfServiceItem);
+  const packages = db.services_products.filter(isSelfServiceItem).map(item => ({
+    ...item,
+    duration: getServiceDuration(item.name || item.id, item.duration)
+  }));
   const availableCount = bays.filter(bay => bay.state === 'AVAILABLE').length;
   const reservedCount = bays.filter(bay => bay.state === 'RESERVED').length;
   const occupiedCount = bays.filter(bay => bay.state === 'OCCUPIED').length;
@@ -1280,7 +1394,8 @@ function renderBays() {
     const isReserved = normalizedState === 'RESERVED';
     const visual = PHOTOS.selfBay;
     const label = isOccupied ? (bay.type === 'MOTOR' ? 'DIGUNAKAN · Sepeda motor' : 'DIGUNAKAN · Mobil') : isReserved ? 'DIPESAN' : normalizedState === 'AVAILABLE' ? 'TERSEDIA' : 'STATUS BELUM TERSEDIA';
-    return `<article class="bay-card bay-${normalizedState.toLowerCase()}"><div class="bay-card-top"><span>B-${String(bay.number).padStart(2, '0')}</span>${statusBadge(normalizedState)}</div><div class="bay-visual"><img src="${visual}" alt="Fasilitas Self-Service untuk bay B-${String(bay.number).padStart(2, '0')}" loading="lazy"><span class="bay-number">${String(bay.number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><strong>${label}</strong><span>${isOccupied ? `${bay.duration || 0} menit · ${bay.remaining || 0} menit tersisa` : isReserved ? `${bay.time || 'Jadwal'} · dipesan` : 'Bay kosong · siap digunakan'}</span>${normalizedState === 'AVAILABLE' ? `<button class="text-link" data-action="self-service-book">Pesan Self-Service</button>` : `<span class="bay-time">${isOccupied ? `${bay.remaining || 0} menit tersisa` : `${bay.time || ''} · dipesan`}</span>`}</div></article>`;
+    const timeRange = formatServiceTimeRange(bay.time, bay.duration);
+    return `<article class="bay-card bay-${normalizedState.toLowerCase()}"><div class="bay-card-top"><span>B-${String(bay.number).padStart(2, '0')}</span>${statusBadge(normalizedState)}</div><div class="bay-visual"><img src="${visual}" alt="Fasilitas Self-Service untuk bay B-${String(bay.number).padStart(2, '0')}" loading="lazy"><span class="bay-number">${String(bay.number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><strong>${label}</strong><span>${isOccupied || isReserved ? timeRange || 'Jadwal tidak tersedia' : 'Bay kosong · siap digunakan'}</span>${normalizedState === 'AVAILABLE' ? `<button class="text-link" data-action="self-service-book">Pesan Self-Service</button>` : ''}</div></article>`;
   }).join('')}</div><div class="bay-note"><span class="bay-note-icon">i</span><p>Empat bay universal untuk mobil dan sepeda motor. Status ditentukan dari jadwal dan durasi sesi aktif.</p><button class="text-link" data-action="self-service-book">Mulai Self-Service</button></div></section><section class="section self-service-packages"><div class="section-heading compact-heading"><div><p class="eyebrow">PAKET SESI</p><h2>Pilihan paket Self-Service</h2><p>Paket mengikuti layanan dan harga yang tersedia di katalog studio.</p></div></div><div class="package-grid">${packages.map(item => `<article class="package-card"><span class="package-type">${item.type === 'MOTOR' ? 'MOTOR' : 'MOBIL'}</span><h3>${escapeHtml(catalogItem(item).name)}</h3><p>${Number(item.duration) || 0} menit di bay universal</p><strong>${money(item.price)}</strong><button class="button button-dark" type="button" data-self-service-type="${item.type}">Pilih paket</button></article>`).join('') || '<div class="empty-state">Paket Self-Service belum tersedia.</div>'}</div></section><section class="section self-service-guide"><div class="section-heading compact-heading"><div><p class="eyebrow">PANDUAN PENGGUNAAN</p><h2>Mulai sesi dalam tiga langkah</h2></div></div><ol class="guide-steps"><li><span>01</span><div><h3>Pilih kendaraan dan bay</h3><p>Tentukan jenis kendaraan, salah satu dari empat bay, serta waktu kunjungan.</p></div></li><li><span>02</span><div><h3>Pilih paket sesi</h3><p>Durasi dan harga mengikuti layanan Self-Service aktif yang tersedia di katalog.</p></div></li><li><span>03</span><div><h3>Konfirmasi pembayaran</h3><p>Booking tetap menunggu verifikasi pembayaran sebelum sesi dapat dimulai.</p></div></li></ol></section><section class="section self-service-facilities"><div><p class="eyebrow">INFORMASI STUDIO</p><h2>Empat bay, satu alur yang jelas.</h2></div><p>Status bay diperbarui dari jadwal sesi aktif. Pilih bay yang tersedia; booking belum mengaktifkan sesi sebelum pembayaran diverifikasi.</p></section>`;
 }
 function renderShop() {
@@ -1319,7 +1434,7 @@ function renderAdmin() {
 }
 function queueCard(tx) {
   const vehicle = getVehicle(tx), customer = getCustomer(tx);
-  return `<article class="queue-card"><div class="queue-card-top"><strong>${escapeHtml(tx.code)}</strong>${statusBadge(tx.payment_status)}</div><h3>${escapeHtml(vehicle?.plate || 'Penjualan produk')}</h3><p>${escapeHtml(tx.item_name || 'Layanan cuci')} · ${escapeHtml(customer?.full_name || 'Walk-in')}</p><div class="queue-card-foot"><span>${escapeHtml(tx.booking_time || 'Walk-in')} · ${tx.duration_minutes || 0} menit</span><select aria-label="Ubah status ${escapeHtml(tx.code)}" data-queue-id="${tx.id}">${['WAITING', 'WASHING', 'FINISHING', 'COMPLETED'].map(status => `<option value="${status}" ${tx.queue_status === status ? 'selected' : ''}>${statusLabel(status)}</option>`).join('')}</select></div></article>`;
+  return `<article class="queue-card"><div class="queue-card-top"><strong>${escapeHtml(tx.code)}</strong>${statusBadge(tx.payment_status)}</div><h3>${escapeHtml(vehicle?.plate || 'Penjualan produk')}</h3><p>${escapeHtml(tx.item_name || 'Layanan cuci')} · ${escapeHtml(customer?.full_name || 'Walk-in')}</p><div class="queue-card-foot"><span>${escapeHtml(formatTransactionTime(tx) || 'Walk-in')}</span><select aria-label="Ubah status ${escapeHtml(tx.code)}" data-queue-id="${tx.id}">${['WAITING', 'WASHING', 'FINISHING', 'COMPLETED'].map(status => `<option value="${status}" ${tx.queue_status === status ? 'selected' : ''}>${statusLabel(status)}</option>`).join('')}</select></div></article>`;
 }
 function renderQueueColumns(large) {
   const stages = ['WAITING', 'WASHING', 'COMPLETED'];
@@ -1571,7 +1686,7 @@ async function persistTransaction(tx, ownerToken = null, requestId = null) {
       transaction_status: expectedTransactionType === 'BOOKING' ? 'BOOKED' : 'PENDING',
       payment_method: tx.payment_method,
       amount: tx.amount,
-      duration_minutes: Number(service?.duration)
+      duration_minutes: getServiceDuration(service?.name || service?.id, service?.duration)
     })) {
       throw new Error('Database belum mengonfirmasi penyimpanan pesanan layanan.');
     }
@@ -1582,7 +1697,8 @@ async function persistTransaction(tx, ownerToken = null, requestId = null) {
 }
 async function submitService(form) {
   const data = new FormData(form);
-  assertServiceScheduleAvailable(Number(db.services_products.find(item => item.id === data.get('service_id'))?.duration) || 0);
+  const selectedService = db.services_products.find(item => item.id === data.get('service_id'));
+  assertServiceScheduleAvailable(getServiceDuration(selectedService?.name || selectedService?.id, selectedService?.duration));
   if (!databaseConnected) throw new Error('Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.');
   const service = db.services_products.find(item => item.id === data.get('service_id') && item.active !== false);
   if (!service) throw new Error('Layanan tidak ditemukan. Muat ulang katalog lalu coba lagi.');
@@ -1613,7 +1729,7 @@ async function submitService(form) {
 }
 function showConfirmation(tx) {
   const isSelfServiceSession = tx.transaction_type === 'BOOKING';
-  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">${isSelfServiceSession ? 'SESI SELF-SERVICE TERCATAT' : 'TRANSAKSI TERCATAT'}</p><h2>${isSelfServiceSession ? 'Sesi Self-Service dikonfirmasi.' : 'Pembayaran berhasil.'}</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama order Anda.</p><div class="pass-card"><div><span>KODE ORDER</span><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(tx.item_name)} · ${tx.booking_date} · ${tx.booking_time}</small></div><img class="fake-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=144x144&data=${encodeURIComponent(tx.code)}" alt="Kode order ${escapeHtml(tx.code)}"></div><div class="confirmation-details"><span>${money(tx.amount)}</span>${statusBadge(tx.payment_status)}${statusBadge(tx.payment_method)}</div><button class="button button-dark button-full" data-action="close-dialog">Selesai <span>↗</span></button></div>`;
+  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">${isSelfServiceSession ? 'SESI SELF-SERVICE TERCATAT' : 'TRANSAKSI TERCATAT'}</p><h2>${isSelfServiceSession ? 'Sesi Self-Service dikonfirmasi.' : 'Pembayaran berhasil.'}</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama order Anda.</p><div class="pass-card"><div><span>KODE ORDER</span><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(tx.item_name)} · ${tx.booking_date} · ${escapeHtml(formatTransactionTime(tx))}</small></div><img class="fake-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=144x144&data=${encodeURIComponent(tx.code)}" alt="Kode order ${escapeHtml(tx.code)}"></div><div class="confirmation-details"><span>${money(tx.amount)}</span><span class="payment-status payment-status-paid">LUNAS (SIMULASI)</span>${statusBadge(tx.payment_method)}</div><button class="button button-dark button-full" data-action="new-service-order">Buat pesanan baru</button></div>`;
 }
 async function submitProducts(form) {
   const transactionNow = new Date();
@@ -1742,6 +1858,41 @@ function renderFinancialPrintDocument() {
   }).join('');
   return `<article id="financial-print-report" class="financial-print-report"><header class="print-report-header"><div class="print-brand"><span class="print-brand-mark">R</span><div><strong>Rinse Society</strong><span>Wash Studio · Semarang</span></div></div><div class="print-report-title"><h1>Laporan Keuangan</h1><p>Periode: Seluruh tanggal · ${transactions.length} transaksi aktif</p><p>Tanggal cetak: ${escapeHtml(printedAt)}</p><p>Admin: ${escapeHtml(adminUser?.email || 'Admin studio')}</p></div></header><section class="print-summary"><h2>Ringkasan Keuangan</h2><div class="print-summary-grid"><div><span>Total Penerimaan Lunas</span><strong>${money(totalCollected)}</strong></div><div><span>Pendapatan Jasa</span><strong>${money(revenue(professionalWash) + revenue(selfService))}</strong></div><div><span>Professional Wash</span><strong>${money(revenue(professionalWash))}</strong></div><div><span>Self-Service</span><strong>${money(revenue(selfService))}</strong></div><div><span>Pendapatan Produk</span><strong>${money(revenue(products))}</strong></div><div><span>Pendapatan Ongkir</span><strong>${money(shippingRevenue)}</strong></div><div><span>Total Transaksi Aktif</span><strong>${transactions.length}</strong></div></div></section><section class="print-detail"><h2>Rincian Transaksi</h2><table><thead><tr><th>Tanggal / Jam</th><th>ID Transaksi</th><th>Pelanggan</th><th>Plat / Model</th><th>Layanan / Produk</th><th>Pendapatan</th><th>Ongkir</th><th>Total</th><th>Status</th></tr></thead><tbody>${details || '<tr><td colspan="9">Tidak ada transaksi aktif pada periode laporan.</td></tr>'}</tbody></table></section><footer class="print-report-footer"><span>Rinse Society Wash Studio</span><span>Dokumen laporan keuangan internal</span></footer></article>`;
 }
+function renderPeriodReports() {
+  const transactions = reportPeriodTransactions();
+  const summary = calculateFinancialSummary(transactions, db.services_products);
+  const vehiclesServed = new Set(summary.paid.filter(tx => tx.item_type === 'SERVICE' && tx.transaction_status === 'COMPLETED').map(tx => tx.vehicle_id).filter(Boolean)).size;
+  const hppLabel = summary.productCount === 0
+    ? 'Tidak ada penjualan retail pada periode'
+    : summary.costRecordedCount === summary.productCount
+      ? 'HPP dari biaya produk tercatat'
+      : `HPP belum lengkap · biaya tercatat ${summary.costRecordedCount}/${summary.productCount} transaksi`;
+  return `<header class="reports-heading"><div><p class="eyebrow">LAPORAN LABA RUGI</p><h2>Laporan Keuangan</h2><p>Perhitungan pendapatan hanya memasukkan transaksi lunas.</p></div><div class="report-heading-actions"><label class="report-period-control">Periode<select data-report-period aria-label="Periode laporan"><option value="month"${reportPeriod === 'month' ? ' selected' : ''}>Bulan Ini</option><option value="year"${reportPeriod === 'year' ? ' selected' : ''}>Tahun Ini</option></select></label><span class="report-period">${escapeHtml(currentReportPeriodLabel())} · ${transactions.length} transaksi</span><button class="button button-dark" type="button" data-action="print-financial-report">Cetak Laporan Keuangan</button></div></header><div class="report-grid report-summary-grid"><article class="report-card report-card-primary"><span>TOTAL PENDAPATAN KOTOR</span><strong>${money(summary.grossRevenue)}</strong><small>Jasa cuci + produk retail</small></article><article class="report-card"><span>PENDAPATAN JASA CUCI</span><strong>${money(summary.serviceRevenue)}</strong><small>Professional Wash + Self-Service</small></article><article class="report-card"><span>PENDAPATAN PRODUK RETAIL</span><strong>${money(summary.productRevenue)}</strong><small>${summary.productCount} transaksi produk lunas</small></article><article class="report-card"><span>HPP PRODUK RETAIL</span><strong>${money(summary.cogs)}</strong><small>${escapeHtml(hppLabel)}</small></article><article class="report-card report-card-primary"><span>LABA KOTOR</span><strong>${money(summary.grossProfit)}</strong><small>Pendapatan kotor dikurangi HPP retail</small></article><article class="report-card"><span>PENDAPATAN ONGKIR</span><strong>${money(summary.shippingRevenue)}</strong><small>Disajikan terpisah dari pendapatan produk</small></article><article class="report-card report-card-quiet"><span>TRANSAKSI LUNAS</span><strong>${summary.paid.length}</strong><small>${vehiclesServed} kendaraan selesai</small></article></div>`;
+}
+function renderPeriodFinancialPrintDocument() {
+  const transactions = reportPeriodTransactions().sort((a, b) => new Date(`${b.booking_date}T${b.booking_time || '00:00'}`) - new Date(`${a.booking_date}T${a.booking_time || '00:00'}`));
+  const summary = calculateFinancialSummary(transactions, db.services_products);
+  const printedAt = new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Jakarta' });
+  const accountRows = [
+    ['Pendapatan jasa cuci', summary.serviceRevenue],
+    ['Pendapatan penjualan produk retail', summary.productRevenue],
+    ['Total pendapatan kotor', summary.grossRevenue],
+    ['Pendapatan ongkir (disajikan terpisah)', summary.shippingRevenue],
+    ['Harga pokok penjualan produk retail (HPP)', -summary.cogs],
+    ['Laba kotor', summary.grossProfit]
+  ].map(([label, amount]) => `<tr><td>${label}</td><td class="print-number">${money(amount)}</td></tr>`).join('');
+  const details = transactions.map(tx => {
+    const customer = getCustomer(tx);
+    const recognized = isRevenueTransaction(tx);
+    const amount = recognized ? recognizedRevenueAmount(tx) : null;
+    const shipping = recognized ? shippingRevenueAmount(tx) : null;
+    return `<tr><td>${escapeHtml(tx.booking_date)} ${escapeHtml(tx.booking_time || '')}</td><td>${escapeHtml(tx.code)}</td><td>${escapeHtml(customer?.full_name || 'Pelanggan')}</td><td>${escapeHtml(tx.item_name || 'Item')}</td><td>${escapeHtml(statusLabel(tx.payment_status))}</td><td class="print-number">${amount === null ? '—' : money(amount)}</td><td class="print-number">${shipping === null ? '—' : money(shipping)}</td></tr>`;
+  }).join('');
+  const costNote = summary.productCount && summary.costRecordedCount < summary.productCount
+    ? `<p class="print-accounting-note">Perhatian: biaya pokok belum tercatat untuk ${summary.productCount - summary.costRecordedCount} transaksi produk. HPP dan laba kotor belum lengkap.</p>`
+    : '';
+  return `<article id="financial-print-report" class="financial-print-report"><header class="print-report-header"><div class="print-brand"><span class="print-brand-mark">R</span><div><strong>RINSE SOCIETY WASH STUDIO SEMARANG</strong><span>LAPORAN LABA RUGI OPERASIONAL</span></div></div><div class="print-report-title"><h1>Laporan Keuangan</h1><p>Periode: ${escapeHtml(currentReportPeriodLabel())}</p><p>Tanggal cetak: ${escapeHtml(printedAt)} WIB</p></div></header><section class="print-summary"><h2>Ringkasan Akun Keuangan</h2><table class="print-account-table"><thead><tr><th>Nama akun</th><th>Nilai (IDR)</th></tr></thead><tbody>${accountRows}</tbody></table>${costNote}<p class="print-accounting-note">Jumlah transaksi lunas: ${summary.paid.length} · ${summary.costRecordedCount}/${summary.productCount} transaksi produk memiliki data HPP.</p></section><section class="print-detail"><h2>Rincian Transaksi Periode</h2><table><thead><tr><th>Tanggal / Jam WIB</th><th>ID Transaksi</th><th>Pelanggan</th><th>Layanan / Produk</th><th>Status</th><th>Pendapatan</th><th>Ongkir</th></tr></thead><tbody>${details || '<tr><td colspan="7">Tidak ada transaksi pada periode laporan.</td></tr>'}</tbody></table></section><footer class="print-report-footer"><span>Dokumen internal · Rinse Society Wash Studio Semarang</span><span>Dicetak ${escapeHtml(printedAt)} WIB</span></footer><section class="print-signature"><p>Penanggung Jawab Keuangan</p><div><span>Manajer Studio / Kasir</span></div></section></article>`;
+}
 function renderAdminTransactionList(records, title, eyebrow) {
   const transactions = getOperationalTransactions(records)
     .filter(tx => !['CANCELLED', 'EXPIRED'].includes(tx.transaction_status))
@@ -1751,6 +1902,7 @@ function renderAdminTransactionList(records, title, eyebrow) {
   const rows = transactions.map(tx => {
     const customer = getCustomer(tx);
     const vehicle = getVehicle(tx);
+    const transactionTime = formatTransactionTime(tx);
     const canConfirmCash = tx.payment_status === 'PENDING' && tx.transaction_status === 'PENDING'
       && tx.payment_method === 'CASH' && ['WALK_IN', 'SHOP'].includes(tx.transaction_type);
     const paymentAction = canConfirmCash ? `<button class="payment-mark-paid" type="button" data-payment-paid="${escapeHtml(tx.id)}">Tandai Lunas</button>` : '';
@@ -1761,7 +1913,7 @@ function renderAdminTransactionList(records, title, eyebrow) {
       : ['addon-pickup', 'addon-pickup-moto'].includes(tx.addon_id) && customer?.address
         ? `<small>Alamat Antar-Jemput: ${escapeHtml(customer.address)}</small><small>Jarak pulang-pergi: ${escapeHtml(tx.pickup_distance_km)} km</small>`
         : '';
-    return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(tx.booking_time)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small>${pickupAddress}</span><span class="transaction-item">${escapeHtml(tx.item_name || (tx.item_type === 'PRODUCT' ? 'Pembelian produk' : 'Layanan cuci'))}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${refundStatus}${paymentAction}${refundAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${transactionStatusLabel(tx)}</span><span class="transaction-amount">${money(tx.amount)}</span><span class="transaction-row-actions"><button type="button" aria-label="Edit transaksi ${escapeHtml(tx.code)}" data-edit-transaction="${escapeHtml(tx.id)}">Edit</button><button type="button" aria-label="Batalkan transaksi ${escapeHtml(tx.code)}" data-admin-remove="${escapeHtml(tx.id)}">Batal</button></span></div>`;
+    return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(transactionTime)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small>${pickupAddress}</span><span class="transaction-item">${escapeHtml(tx.item_name || (tx.item_type === 'PRODUCT' ? 'Pembelian produk' : 'Layanan cuci'))}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${refundStatus}${paymentAction}${refundAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${transactionStatusLabel(tx)}</span><span class="transaction-amount">${money(tx.amount)}</span><span class="transaction-row-actions"><button type="button" aria-label="Edit transaksi ${escapeHtml(tx.code)}" data-edit-transaction="${escapeHtml(tx.id)}">Edit</button><button type="button" aria-label="Batalkan transaksi ${escapeHtml(tx.code)}" data-admin-remove="${escapeHtml(tx.id)}">Batal</button></span></div>`;
   }).join('')
     .replaceAll('>Batal</button>', '>Hapus</button>')
     .replaceAll('aria-label="Batalkan transaksi ', 'aria-label="Hapus transaksi ');
@@ -1796,6 +1948,20 @@ function setupAdminTransactionForm(content) {
   dateField.max = getMaxAllowedTransactionDate();
   timeField.min = '08:00';
   timeField.max = '21:00';
+  const timeRangeNote = document.createElement('small');
+  timeRangeNote.className = 'transaction-time-range';
+  timeField.closest('.form-two').after(timeRangeNote);
+  const updateTimeRange = () => {
+    const selected = catalogItems.find(item => item.id === form.elements.item_id.value);
+    const isService = selected?.item_type === 'SERVICE';
+    const duration = isService ? getServiceDuration(selected.name || selected.id, selected.duration) : 0;
+    const range = isService ? formatServiceTimeRange(timeField.value, duration) : '';
+    timeRangeNote.hidden = !range;
+    timeRangeNote.textContent = range ? `Rentang layanan: ${range} WIB` : '';
+  };
+  timeField.addEventListener('input', updateTimeRange);
+  form.elements.item_id.addEventListener('change', updateTimeRange);
+  updateTimeRange();
   if (!form.elements.transaction_id.value) {
     const now = new Date();
     dateField.value = getJakartaDateString(now);
@@ -2039,7 +2205,9 @@ function renderAdminBayStatus() {
     const started = tx && parseJakartaDateTime(tx.booking_date, tx.booking_time).getTime() <= Date.now();
     const status = !tx ? 'AVAILABLE' : tx.transaction_status === 'ACTIVE' || started ? 'OCCUPIED' : 'RESERVED';
     const label = status === 'OCCUPIED' ? 'DALAM PENGGUNAAN' : status === 'RESERVED' ? 'TERISI' : 'KOSONG';
-    const detail = tx ? `${vehicle?.type === 'MOTOR' ? 'Motor' : 'Mobil'}${vehicle?.plate ? ` · ${escapeHtml(vehicle.plate)}` : ''} · ${status === 'OCCUPIED' ? `${bayMinutesLeft(tx)} menit tersisa` : `${escapeHtml(tx.booking_time)} · terjadwal`}` : 'Siap digunakan';
+    const duration = tx ? getServiceDuration(tx.item_name || tx.item_id, tx.duration_minutes) : 0;
+    const timeRange = tx ? formatServiceTimeRange(tx.booking_time, duration) : '';
+    const detail = tx ? `${vehicle?.type === 'MOTOR' ? 'Motor' : 'Mobil'}${vehicle?.plate ? ` · ${escapeHtml(vehicle.plate)}` : ''} · ${timeRange || 'Waktu tidak tersedia'}` : 'Siap digunakan';
     return `<article class="admin-bay-indicator admin-bay-${status.toLowerCase()}" aria-label="Bay ${number}: ${label}"><strong>Bay ${number}</strong><span class="admin-bay-state">${label}</span><small>${detail}</small></article>`;
   }).join('');
   return `<section class="admin-panel admin-bay-status-panel"><div class="panel-heading"><div><p class="eyebrow">SELF-SERVICE · KETERSEDIAAN</p><h2>Status empat bay</h2></div><span class="updated-label"><i class="live-dot"></i> Diperbarui langsung</span></div><div class="admin-bay-indicators">${bays}</div></section>`;
@@ -2056,7 +2224,7 @@ function renderReportDetailsLegacy() {
   return `${chart('DAILY REVENUE', 'The last seven trading days', days, key => tx => tx.booking_date === key)}${chart('MONTHLY REVENUE', 'Month by month', months, key => tx => tx.booking_date.startsWith(key))}${vehicleSection}${productSection}`;
 }
 function renderReportDetails() {
-  const transactions = reportTransactions();
+  const transactions = reportPeriodTransactions();
   const paid = transactions.filter(isRevenueTransaction);
   const daily = dailyPaidRevenue(transactions);
   const periodKeys = new Set(daily.map(row => row.key));
@@ -2149,7 +2317,7 @@ function activateAdminTab(tab) {
   }
   if (tab === 'transactions') content.innerHTML = renderAdminTransactionList(db.transactions, 'Seluruh transaksi studio.', 'DAFTAR TRANSAKSI');
   if (tab === 'queue') content.innerHTML = `<div class="queue-toolbar"><div><p class="eyebrow">PENGELOLAAN AREA CUCI</p><h2>Pantau setiap kendaraan.</h2></div></div>${renderQueueColumns(true)}`;
-  else if (tab === 'reports') { content.innerHTML = renderReports(); content.insertAdjacentHTML('beforeend', renderReportDetails()); content.insertAdjacentHTML('beforeend', renderFinancialPrintDocument()); }
+  else if (tab === 'reports') { content.innerHTML = renderPeriodReports(); content.insertAdjacentHTML('beforeend', renderReportDetails()); content.insertAdjacentHTML('beforeend', renderPeriodFinancialPrintDocument()); }
   else if (tab === 'customers') {
     content.innerHTML = renderAdminCustomers();
     const searchField = content.querySelector('#customer-search');
@@ -2381,8 +2549,8 @@ async function logoutAdmin() {
 async function loadPublicData() {
   if (!isSupabaseConfigured()) throw new Error('Supabase belum dikonfigurasi. Pastikan URL dan publishable key benar.');
   const [physicalProducts, services, count, bays] = await Promise.all([
-    supabaseRequest('services_products', 'GET', null, `?select=*&item_type=eq.PRODUCT&id=in.(${PRODUCT_CATALOG_IDS.join(',')})&active=eq.true&order=name.asc`),
-    supabaseRequest('services_products', 'GET', null, '?select=*&item_type=eq.SERVICE&active=eq.true&order=name.asc'),
+    supabaseRequest('services_products', 'GET', null, `?select=id,item_type,name,category,type,description,price,duration,stock,min_stock,active,image&item_type=eq.PRODUCT&id=in.(${PRODUCT_CATALOG_IDS.join(',')})&active=eq.true&order=name.asc`),
+    supabaseRequest('services_products', 'GET', null, '?select=id,item_type,name,category,type,description,price,duration,stock,min_stock,active,image&item_type=eq.SERVICE&active=eq.true&order=name.asc'),
     rpcRequest('get_public_today_wash_count'),
     rpcRequest('get_public_bay_status')
   ]);
@@ -2479,6 +2647,21 @@ function addCatalogItem() {
   if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
   const content = document.getElementById('dialog-content');
   content.innerHTML = `<p class="eyebrow">KATALOG STUDIO</p><h2>Tambah item <em>baru.</em></h2><form id="catalog-form" class="dialog-form"><label>Nama item<input name="name" required></label><label>Jenis item<select name="item_type"><option value="SERVICE">LAYANAN</option><option value="PRODUCT">PRODUK</option><option value="ADD_ON">ADD-ON</option></select></label><label>Jenis kendaraan<select name="type"><option value="">Tidak terkait kendaraan</option><option value="CAR">Mobil</option><option value="MOTOR">Sepeda motor</option></select></label><label>Kategori<input name="category" placeholder="REGULAR, SELF_SERVICE, WASH & CARE"></label><label>Deskripsi<input name="description" required></label><div class="form-two"><label>Harga (Rp)<input name="price" type="number" min="0" step="1" value="0" required></label><label>Durasi (menit)<input name="duration" type="number" min="0" step="1" value="30"></label></div><div class="form-two"><label>Stok<input name="stock" type="number" min="0" step="1" value="0"></label><label>Stok minimum<input name="min_stock" type="number" min="0" step="1" value="5"></label></div><label>URL foto yang sesuai<input name="image" type="url" placeholder="https://..."></label><button class="button button-dark button-full" type="submit">Simpan ke katalog <span>↗</span></button></form>`;
+  const typeSelect = content.querySelector('#catalog-form [name="item_type"]');
+  const imageLabel = content.querySelector('#catalog-form [name="image"]').closest('label');
+  const costLabel = document.createElement('label');
+  const costInput = document.createElement('input');
+  costLabel.className = 'catalog-unit-cost-field';
+  costLabel.textContent = 'HPP per unit (Rp)';
+  costInput.name = 'unit_cost';
+  costInput.type = 'number';
+  costInput.min = '0';
+  costInput.step = '1';
+  costLabel.append(costInput);
+  imageLabel.before(costLabel);
+  const updateCostVisibility = () => { costLabel.hidden = typeSelect.value !== 'PRODUCT'; };
+  typeSelect.addEventListener('change', updateCostVisibility);
+  updateCostVisibility();
   document.getElementById('flow-dialog').showModal();
   simplifyUiSymbols(document.getElementById('flow-dialog'));
 }
@@ -2492,6 +2675,20 @@ function editCatalogItem(item) {
   }
   const content = document.getElementById('dialog-content');
   content.innerHTML = `<p class="eyebrow">UBAH KATALOG</p><h2>Perbarui <em>item.</em></h2><form id="catalog-edit-form" class="dialog-form"><input type="hidden" name="record_id" value="${escapeHtml(item.id || '')}"><label>Nama item<input name="name" value="${escapeHtml(item.name)}" required></label><label>Deskripsi<input name="description" value="${escapeHtml(item.description)}" required></label><label>URL foto<input name="image" type="url" value="${escapeHtml(item.image || '')}"></label><div class="form-two"><label>Harga (Rp)<input name="price" type="number" min="0" step="1" value="${item.price}" required></label><label>Status<select name="active"><option value="true" ${item.active !== false ? 'selected' : ''}>Aktif</option><option value="false" ${item.active === false ? 'selected' : ''}>Nonaktif</option></select></label></div>${item.item_type === 'PRODUCT' ? `<div class="form-two"><label>Stok<input name="stock" type="number" value="${item.stock}" min="0" step="1"></label><label>Stok minimum<input name="min_stock" type="number" value="${item.min_stock}" min="0" step="1"></label></div>` : ''}<button class="button button-dark button-full" type="submit">Simpan perubahan <span>↗</span></button></form>`;
+  if (item.item_type === 'PRODUCT') {
+    const stockRow = content.querySelector('#catalog-edit-form [name="stock"]').closest('.form-two');
+    const costLabel = document.createElement('label');
+    const costInput = document.createElement('input');
+    costLabel.className = 'catalog-unit-cost-field';
+    costLabel.textContent = 'HPP per unit (Rp)';
+    costInput.name = 'unit_cost';
+    costInput.type = 'number';
+    costInput.min = '0';
+    costInput.step = '1';
+    costInput.value = item.unit_cost ?? '';
+    costLabel.append(costInput);
+    stockRow.after(costLabel);
+  }
   document.getElementById('flow-dialog').showModal();
   simplifyUiSymbols(document.getElementById('flow-dialog'));
 }
@@ -2598,8 +2795,10 @@ document.addEventListener('click', async event => {
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (action) {
     if (action === 'close-dialog') document.getElementById('flow-dialog').close();
+    else if (action === 'new-service-order') openDialog('order');
     else if (action === 'print-financial-report') {
-      if (!isAdminAuthorized() || activeAdminTab !== 'reports') { showToast('Laporan hanya dapat dicetak dari akun Admin.', 'error'); return; }
+      if (!isAdminAuthorized()) { showToast('Laporan hanya dapat dicetak dari akun Admin.', 'error'); return; }
+      if (activeAdminTab !== 'reports') activateAdminTab('reports');
       window.print();
     }
     else if (action === 'home') setPage('home');
@@ -2743,6 +2942,7 @@ document.addEventListener('submit', async event => {
     if (!isAdminAuthorized()) { showFormErrorToast('Akses Admin terverifikasi diperlukan.'); return; }
     const data = Object.fromEntries(new FormData(event.target));
     const item = { id: crypto.randomUUID(), ...data, type: data.type || null, price: Math.max(0, finiteNumber(data.price)), duration: Math.max(0, finiteNumber(data.duration)), stock: Math.max(0, finiteNumber(data.stock)), min_stock: Math.max(0, finiteNumber(data.min_stock)), active: true, image: data.image || (data.item_type === 'PRODUCT' ? PHOTOS.detailing : PHOTOS.car) };
+    item.unit_cost = data.item_type === 'PRODUCT' && data.unit_cost !== '' ? Math.max(0, Math.round(finiteNumber(data.unit_cost))) : null;
     if (isPickupAddon(item)) { showFormErrorToast('Add-on antar-jemput tidak lagi tersedia.'); return; }
     try { await upsertRow('services_products', item); db.services_products.push(item); syncServiceCatalog(); document.getElementById('flow-dialog').close(); activateAdminTab('catalog'); showToast('Item ditambahkan ke katalog.'); }
     catch (error) { showFormErrorToast(error.message); }
@@ -2754,6 +2954,7 @@ document.addEventListener('submit', async event => {
     const item = db.services_products.find(product => product.id === data.record_id);
     if (!item || isPickupAddon(item)) { showFormErrorToast('Item tidak ditemukan atau tidak lagi dapat diedit.'); return; }
     const updated = { ...item, name: data.name, description: data.description, image: data.image || item.image, price: Math.max(0, finiteNumber(data.price)), active: data.active === 'true' };
+    if (item.item_type === 'PRODUCT') updated.unit_cost = data.unit_cost === '' ? null : Math.max(0, Math.round(finiteNumber(data.unit_cost)));
     if (isPickupAddon(updated)) { showFormErrorToast('Add-on antar-jemput tidak lagi tersedia.'); return; }
     if (data.stock !== undefined) { updated.stock = Math.max(0, finiteNumber(data.stock)); updated.min_stock = Math.max(0, finiteNumber(data.min_stock)); }
     try { await patchRow('services_products', item.id, updated); Object.assign(item, updated); syncServiceCatalog(); document.getElementById('flow-dialog').close(); activateAdminTab('catalog'); showToast('Perubahan katalog tersimpan.'); }
@@ -2761,6 +2962,11 @@ document.addEventListener('submit', async event => {
   }
 });
 document.addEventListener('change', async event => {
+  if (event.target.matches('[data-report-period]')) {
+    reportPeriod = event.target.value === 'year' ? 'year' : 'month';
+    activateAdminTab('reports');
+    return;
+  }
   if (event.target.matches('[data-queue-id]')) {
     const tx = db.transactions.find(item => item.id === event.target.dataset.queueId);
     const current = tx && normalizeOperationalTransaction(tx);
