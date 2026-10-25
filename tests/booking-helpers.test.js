@@ -19,6 +19,9 @@ const {
   validateServicePaymentMethod,
   productShippingFee,
   calculateProductAmount,
+  recognizedRevenueAmount,
+  shippingRevenueAmount,
+  collectedAmount,
   isStudioOpenAt,
   validateTransactionSchedule,
   getMaxAllowedTransactionDate,
@@ -56,6 +59,7 @@ const adminRichDataSource = fs.readFileSync(path.join(__dirname, '..', 'supabase
 const paidDemoMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000004_mark_demo_transactions_paid.sql'), 'utf8');
 const demoDateCorrectionSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261019000005_cap_demo_transaction_dates.sql'), 'utf8');
 const wibScheduleMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261022000000_dynamic_transaction_time_and_product_fulfillment.sql'), 'utf8');
+const legacyPerfumeCleanupSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025000000_remove_legacy_perfume_product.sql'), 'utf8');
 const demoSnapshotStart = demoProposalSource.search(/create(?:\s+or\s+replace)?\s+function public\.get_demo_admin_snapshot\(\)/i);
 const demoOrderStart = demoRpcSource.search(/create(?:\s+or\s+replace)?\s+function public\.create_demo_service_order\(p_order jsonb\)/i);
 const demoOrderEnd = demoRpcSource.search(/\nrevoke all on function public\.create_demo_service_order\(jsonb\)/i);
@@ -119,13 +123,44 @@ const localStorageFixture = {
   removeItem: key => legacyProductStorage.delete(key)
 };
 migrateProductStorage(localStorageFixture);
-assert.deepEqual(JSON.parse(legacyProductStorage.get('rinse-society-cart')), { 'prd-shampoo': { quantity: 1 } });
-assert.deepEqual(JSON.parse(legacyProductStorage.get('rinse-product-request-ids')), { 'prd-shampoo': 'valid-id' });
-assert.equal(JSON.parse(legacyProductStorage.get('rinse-product-checkout')).fee_item_id, '');
-assert.equal(legacyProductStorage.get('rinse-product-catalog-version'), '20261025');
+assert.equal(legacyProductStorage.has('rinse-society-cart'), false);
+assert.equal(legacyProductStorage.has('rinse-product-request-ids'), false);
+assert.equal(legacyProductStorage.has('rinse-product-checkout'), false);
+assert.equal(legacyProductStorage.get('rinse-product-catalog-version'), '20261025.1');
+const outdatedProductStorage = new Map([
+  ['rinse-society-cart', JSON.stringify({ 'prd-shampoo': { quantity: 1 } })],
+  ['rinse-product-catalog-version', '20261025']
+]);
+migrateProductStorage({
+  getItem: key => outdatedProductStorage.get(key) ?? null,
+  setItem: (key, value) => outdatedProductStorage.set(key, value),
+  removeItem: key => outdatedProductStorage.delete(key)
+});
+assert.equal(outdatedProductStorage.has('rinse-society-cart'), false);
+assert.equal(outdatedProductStorage.get('rinse-product-catalog-version'), '20261025.1');
+assert.equal(recognizedRevenueAmount({ item_type: 'PRODUCT', amount: 70000, shipping_fee: 10000 }), 60000);
+assert.equal(shippingRevenueAmount({ item_type: 'PRODUCT', amount: 70000, shipping_fee: 10000 }), 10000);
+assert.equal(collectedAmount({ item_type: 'PRODUCT', amount: 70000, shipping_fee: 10000 }), 70000);
+assert.equal(recognizedRevenueAmount({ item_type: 'SERVICE', amount: 50000, shipping_fee: 0 }), 50000);
 assert.match(wibScheduleMigrationSource, /delete from public\.transactions where item_id = 'prd-perfume';\s*delete from public\.services_products where id = 'prd-perfume' and item_type = 'PRODUCT';/);
+assert.match(legacyPerfumeCleanupSource, /delete from public\.transactions transaction_row[\s\S]*transaction_row\.item_id in \(select id from legacy_products\)/);
+assert.match(legacyPerfumeCleanupSource, /where transaction_row\.item_id = 'prd-perfume'/);
+assert.match(legacyPerfumeCleanupSource, /lower\(trim\(name\)\) = 'pewangi' and price = 10000/);
+assert.match(legacyPerfumeCleanupSource, /delete from public\.services_products catalog_row/);
+assert.match(appSource, /item_type=eq\.PRODUCT&id=in\.\(\$\{PRODUCT_CATALOG_IDS\.join\(','\)\}\)&active=eq\.true/);
+assert.match(appSource, /item_type=eq\.SERVICE&active=eq\.true/);
+assert.match(appSource, /title: 'Produk Fisik'/);
+assert.match(appSource, /item\.item_type !== 'PRODUCT' \|\| PRODUCT_CATALOG_ID_SET\.has\(item\.id\)/);
+assert.match(appSource, /data-admin-catalog-filter/);
+assert.match(appSource, /group\.hidden = catalogFilter !== 'all'/);
+assert.match(indexSource, /app\.js\?v=20261025-zero-bug-polish/);
+assert.match(indexSource, /polish\.css\?v=20261025-admin-catalog-ledger/);
+assert.match(appSource, /catalog-edit-button[^<]*type="button" data-edit-item/);
 assert.match(appSource, /function readStoredCart\(\)\s*\{\s*try\s*\{ return sanitizeCart\(JSON\.parse\(localStorage\.getItem\(CART_KEY\)/);
-const publicCatalogFixture = [{ id: 'svc-car', item_type: 'SERVICE', price: 50000, active: true }];
+const publicCatalogFixture = [
+  ...PRODUCT_CATALOG_IDS.map(id => ({ id, item_type: 'PRODUCT', price: 10000, stock: 4, active: true })),
+  { id: 'svc-car', item_type: 'SERVICE', price: 50000, duration: 50, active: true }
+];
 const publicBaysFixture = [1, 2, 3, 4].map(bay_number => ({
   bay_number, bay_status: 'AVAILABLE', vehicle_type: null, duration_minutes: 0, minutes_remaining: 0
 }));
@@ -134,6 +169,8 @@ assert.deepEqual(validatePublicDataResponse(publicCatalogFixture, 0, publicBaysF
   washCount: 0,
   bays: publicBaysFixture
 });
+assert.throws(() => validatePublicDataResponse([...publicCatalogFixture, { id: 'addon-wax', item_type: 'ADD_ON', price: 10000, active: true }], 0, publicBaysFixture), /Katalog Supabase/);
+assert.throws(() => validatePublicDataResponse(publicCatalogFixture.slice(1), 0, publicBaysFixture), /enam produk resmi/);
 assert.throws(() => validatePublicDataResponse(null, 0, publicBaysFixture), /Katalog Supabase/);
 assert.throws(() => validatePublicDataResponse(publicCatalogFixture, '0', publicBaysFixture), /jumlah kendaraan/);
 assert.throws(() => validatePublicDataResponse(publicCatalogFixture, 0, publicBaysFixture.slice(1)), /tepat empat bay/);
