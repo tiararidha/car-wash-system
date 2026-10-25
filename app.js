@@ -91,6 +91,20 @@ function validateServicePaymentMethod(paymentMethod, transactionType) {
   if (transactionType === 'BOOKING' && paymentMethod === 'CASH') throw new Error('Self-Service wajib menggunakan metode bayar digital.');
   return paymentMethod;
 }
+function sanitizeQuantity(value) {
+  return Math.max(1, parseInt(value, 10) || 1);
+}
+function paymentStatusForMethod(paymentMethod, selectedStatus = 'PENDING') {
+  if (selectedStatus === 'REFUNDED') return 'REFUNDED';
+  return ['QRIS', 'E_WALLET', 'TRANSFER', 'CARD'].includes(String(paymentMethod || '').toUpperCase()) ? 'PAID' : selectedStatus;
+}
+function safeRows(rows) {
+  return Array.isArray(rows) ? rows.filter(row => row && typeof row === 'object') : [];
+}
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
 function isValidIndonesianPlate(value = '') {
   const normalized = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   return /^[A-Z]{1,2}[0-9]{1,4}[A-Z]{1,3}$/.test(normalized);
@@ -395,6 +409,8 @@ if (typeof window === 'undefined') {
     getMaxAllowedTransactionDate,
     isValidIndonesianPlate,
     isValidRequestId,
+    sanitizeQuantity,
+    paymentStatusForMethod,
     isValidServiceOrderResponse,
     isValidDemoProductOrderResponse,
     normalizeTransactionStatusForDisplay,
@@ -769,10 +785,14 @@ function addDaysToJakartaDate(dateString, offsetDays) {
   date.setDate(date.getDate() + Number(offsetDays || 0));
   return getJakartaDateString(date);
 }
-function getVehicle(tx) { return db.vehicles.find(item => item.id === tx.vehicle_id); }
-function getCustomer(tx) { return db.customers.find(item => item.id === tx.customer_id); }
+function getVehicle(tx) { return safeRows(db?.vehicles).find(item => item.id === tx?.vehicle_id); }
+function getCustomer(tx) { return safeRows(db?.customers).find(item => item.id === tx?.customer_id); }
 function normalizeTransactionRecord(tx = {}) {
-  const normalized = { ...tx };
+  const normalized = tx && typeof tx === 'object' ? { ...tx } : {};
+  normalized.amount = finiteNumber(normalized.amount);
+  normalized.quantity = sanitizeQuantity(normalized.quantity);
+  normalized.duration_minutes = Math.max(0, finiteNumber(normalized.duration_minutes));
+  normalized.shipping_fee = Math.max(0, finiteNumber(normalized.shipping_fee));
   const paymentStatus = String(normalized.payment_status || 'PENDING').toUpperCase();
   const transactionStatus = String(normalized.transaction_status || 'PENDING').toUpperCase();
   const refundStatus = String(normalized.refund_status || 'NONE').toUpperCase();
@@ -787,6 +807,18 @@ function normalizeTransactionRecord(tx = {}) {
     }
   }
   return normalized;
+}
+function normalizeCatalogRecord(item = {}) {
+  const durationFallback = item.item_type === 'SERVICE' ? 1 : 0;
+  return {
+    ...item,
+    name: String(item.name || 'Item'),
+    description: String(item.description || ''),
+    price: Math.max(0, finiteNumber(item.price)),
+    duration: Math.max(durationFallback, finiteNumber(item.duration, durationFallback)),
+    stock: Math.max(0, finiteNumber(item.stock)),
+    min_stock: Math.max(0, finiteNumber(item.min_stock))
+  };
 }
 function normalizeOperationalTransaction(tx = {}) {
   const normalized = normalizeTransactionRecord(tx);
@@ -816,7 +848,7 @@ function normalizeOperationalTransaction(tx = {}) {
   return normalized;
 }
 function getOperationalTransactions(records = []) {
-  return records.map(tx => normalizeOperationalTransaction(tx));
+  return safeRows(records).map(tx => normalizeOperationalTransaction(tx));
 }
 function isRevenueTransaction(tx) {
   const paymentStatus = String(tx?.payment_status || 'PENDING').toUpperCase();
@@ -876,8 +908,9 @@ async function openAdmin() {
     await loadAdminData();
     render();
   } catch (error) {
+    adminDataState = 'error';
+    adminDataError = error.message || 'Data dashboard belum dapat dimuat.';
     render();
-    showToast(error.message || 'Data dashboard belum dapat dimuat.', 'error');
   }
 }
 function polishUiLabels(root) {
@@ -1128,7 +1161,7 @@ function renderRevenueLineChart(rows, className = '') {
   return `<svg class="revenue-line-chart ${className}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Tren pendapatan harian tujuh hari terakhir">${guides}<path class="chart-area" d="${path} L${points.at(-1)?.x || pad.left},${pad.top + plotHeight} L${points[0]?.x || pad.left},${pad.top + plotHeight} Z"/><path class="chart-line" d="${path}"/>${dots}</svg>`;
 }
 function reportTransactions() {
-  return getOperationalTransactions(db.transactions)
+  return getOperationalTransactions(db?.transactions)
     .filter(tx => !['CANCELLED', 'EXPIRED'].includes(tx.transaction_status));
 }
 function reportVehicle(transaction) {
@@ -1319,6 +1352,7 @@ function openDialog(kind, serviceId) {
       return;
     }
     renderAdminTransactionForm(content, kind === 'admin-transaction-edit' ? serviceId : null);
+    setupAdminTransactionForm(content);
   } else if (kind === 'walkin') {
     if (!isAdminAuthorized() || !adminDataReady) {
       showToast('Data dashboard belum tersedia untuk membuat transaksi langsung.', 'error');
@@ -1734,13 +1768,14 @@ function renderAdminTransactionList(records, title, eyebrow) {
   return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Data operasional studio dengan status pembayaran dan jadwal yang konsisten.</p></div><div class="transaction-actions"><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div><button class="button button-dark" type="button" data-action="admin-transaction-create">+ Transaksi</button></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span><span>KELOLA</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
 }
 function renderAdminTransactionForm(content, transactionId = null) {
-  const transaction = transactionId ? db.transactions.find(tx => tx.id === transactionId) : null;
+  const transaction = transactionId ? safeRows(db.transactions).find(tx => tx.id === transactionId) : null;
   if (transactionId && !transaction) {
-    showToast('Transaksi tidak ditemukan.', 'error');
+    content.innerHTML = '<div class="empty-state"><h3>Transaksi tidak ditemukan.</h3><p>Data mungkin sudah dihapus atau berubah. Tutup dialog dan muat ulang daftar transaksi.</p></div>';
     return;
   }
-  const itemType = transaction?.item_type || (db.services_products.some(item => item.item_type === 'SERVICE' && item.active !== false) ? 'SERVICE' : 'PRODUCT');
-  const items = db.services_products.filter(item => item.item_type === itemType && item.active !== false);
+  const catalog = safeRows(db.services_products);
+  const itemType = transaction?.item_type || (catalog.some(item => item.item_type === 'SERVICE' && item.active !== false) ? 'SERVICE' : 'PRODUCT');
+  const items = catalog.filter(item => item.item_type === itemType && item.active !== false);
   const selectedItem = items.find(item => item.id === transaction?.item_id) || items[0];
   if (!selectedItem) {
     content.innerHTML = '<div class="empty-state"><h3>Katalog belum tersedia.</h3><p>Tambahkan layanan atau produk sebelum mencatat transaksi.</p></div>';
@@ -1755,6 +1790,7 @@ function renderAdminTransactionForm(content, transactionId = null) {
 function setupAdminTransactionForm(content) {
   const form = content.querySelector('#admin-transaction-form');
   if (!form) return;
+  const catalogItems = safeRows(db?.services_products).map(normalizeCatalogRecord);
   const dateField = form.elements.booking_date;
   const timeField = form.elements.booking_time;
   dateField.max = getMaxAllowedTransactionDate();
@@ -1772,7 +1808,7 @@ function setupAdminTransactionForm(content) {
     select.name = 'item_type';
     select.required = true;
     select.innerHTML = [['SERVICE', 'Layanan'], ['PRODUCT', 'Produk']]
-      .filter(([type]) => db.services_products.some(item => item.item_type === type && item.active !== false))
+      .filter(([type]) => catalogItems.some(item => item.item_type === type && item.active !== false))
       .map(([type, label]) => `<option value="${type}" ${type === typeField.value ? 'selected' : ''}>${label}</option>`)
       .join('');
     const label = document.createElement('label');
@@ -1789,14 +1825,21 @@ function setupAdminTransactionForm(content) {
   quantityField.min = '1';
   quantityField.step = '1';
   quantityField.required = true;
-  quantityField.value = String(Number(db.transactions.find(tx => tx.id === form.elements.transaction_id.value)?.quantity) || 1);
+  const editingTransaction = safeRows(db.transactions).find(tx => tx.id === form.elements.transaction_id.value);
+  quantityField.value = String(sanitizeQuantity(editingTransaction?.quantity));
+  form.elements.amount.value = String(Math.max(0, finiteNumber(form.elements.amount.value, finiteNumber(catalogItems.find(item => item.id === form.elements.item_id.value)?.price))));
+  const paymentMethodField = form.elements.payment_method;
+  const paymentStatusField = form.elements.payment_status;
+  if (paymentMethodField && paymentStatusField) {
+    paymentStatusField.value = paymentStatusForMethod(paymentMethodField.value, paymentStatusField.value);
+  }
   quantityLabel.append(quantityField);
   form.elements.amount.closest('.form-two').before(quantityLabel);
   const fulfillmentFieldset = document.createElement('fieldset');
   fulfillmentFieldset.className = 'payment-options fulfillment-options';
-  fulfillmentFieldset.innerHTML = `<legend>Metode pemenuhan</legend><label><input type="radio" name="fulfillment_method" value="PICKUP" ${(db.transactions.find(tx => tx.id === form.elements.transaction_id.value)?.fulfillment_method || 'PICKUP') === 'PICKUP' ? 'checked' : ''}><span>Ambil di Studio (Pick-up)</span></label><label><input type="radio" name="fulfillment_method" value="COURIER" ${db.transactions.find(tx => tx.id === form.elements.transaction_id.value)?.fulfillment_method === 'COURIER' ? 'checked' : ''}><span>Pengiriman Online / Kurir</span></label>`;
+  fulfillmentFieldset.innerHTML = `<legend>Metode pemenuhan</legend><label><input type="radio" name="fulfillment_method" value="PICKUP" ${(editingTransaction?.fulfillment_method || 'PICKUP') === 'PICKUP' ? 'checked' : ''}><span>Ambil di Studio (Pick-up)</span></label><label><input type="radio" name="fulfillment_method" value="COURIER" ${editingTransaction?.fulfillment_method === 'COURIER' ? 'checked' : ''}><span>Pengiriman Online / Kurir</span></label>`;
   quantityLabel.before(fulfillmentFieldset);
-  const fulfillmentTransaction = db.transactions.find(tx => tx.id === form.elements.transaction_id.value);
+  const fulfillmentTransaction = editingTransaction;
   const adminShippingFee = method => method !== 'COURIER' ? 0
     : fulfillmentTransaction?.fulfillment_method === 'COURIER'
       ? Number(fulfillmentTransaction.shipping_fee) || 0
@@ -1830,7 +1873,7 @@ function setupAdminTransactionForm(content) {
   const queueField = form.elements.queue_status;
   const updateItems = (updateAmount = false) => {
     const type = typeField.value;
-    const items = db.services_products.filter(item => item.item_type === type && item.active !== false);
+    const items = catalogItems.filter(item => item.item_type === type && item.active !== false);
     const previousItemId = itemField.value;
     itemField.innerHTML = items.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${money(item.price)}</option>`).join('');
     if (items.some(item => item.id === previousItemId)) itemField.value = previousItemId;
@@ -1838,7 +1881,7 @@ function setupAdminTransactionForm(content) {
     if (item) {
       const fee = type === 'PRODUCT' ? adminShippingFee(form.elements.fulfillment_method.value) : 0;
       shippingSummary.querySelector('strong').textContent = money(fee);
-      if (updateAmount) form.elements.amount.value = String(calculateProductAmount(item.price, quantityField.value || 1, fee));
+      if (updateAmount) form.elements.amount.value = String(calculateProductAmount(finiteNumber(item.price), sanitizeQuantity(quantityField.value), fee));
     }
     if (vehicleFields) {
       vehicleFields.hidden = type !== 'SERVICE';
@@ -1857,17 +1900,21 @@ function setupAdminTransactionForm(content) {
   };
   typeField.addEventListener('change', () => updateItems(true));
   fulfillmentFieldset.addEventListener('change', () => updateItems(true));
+  paymentMethodField.addEventListener('change', () => {
+    if (paymentStatusField.value !== 'REFUNDED') paymentStatusField.value = paymentStatusForMethod(paymentMethodField.value, paymentStatusField.value);
+  });
   deliveryAddressField.addEventListener('input', () => {
     deliveryAddressSummary.querySelector('strong').textContent = deliveryAddressField.value;
   });
   itemField.addEventListener('change', () => {
-    const item = db.services_products.find(row => row.id === itemField.value);
-    if (item) form.elements.amount.value = String(calculateProductAmount(item.price, quantityField.value || 1,
+    const item = catalogItems.find(row => row.id === itemField.value);
+    if (item) form.elements.amount.value = String(calculateProductAmount(finiteNumber(item.price), sanitizeQuantity(quantityField.value),
       typeField.value === 'PRODUCT' ? adminShippingFee(form.elements.fulfillment_method.value) : 0));
   });
   quantityField.addEventListener('change', () => {
-    const item = db.services_products.find(row => row.id === itemField.value);
-    if (item) form.elements.amount.value = String(calculateProductAmount(item.price, quantityField.value || 1,
+    const item = catalogItems.find(row => row.id === itemField.value);
+    quantityField.value = String(sanitizeQuantity(quantityField.value));
+    if (item) form.elements.amount.value = String(calculateProductAmount(finiteNumber(item.price), sanitizeQuantity(quantityField.value),
       typeField.value === 'PRODUCT' ? adminShippingFee(form.elements.fulfillment_method.value) : 0));
   });
   updateItems();
@@ -1876,13 +1923,12 @@ async function saveAdminTransaction(form) {
   requireAdminAuthorization();
   if (!adminDataReady) throw new Error('Data dashboard belum siap.');
   const data = Object.fromEntries(new FormData(form));
-  const amount = Number(data.amount);
+  const amount = finiteNumber(data.amount, NaN);
   if (!Number.isSafeInteger(amount) || amount < 0) throw new Error('Nominal transaksi harus berupa angka bulat tidak negatif.');
-  const quantity = Number(data.quantity);
-  if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error('Jumlah item harus berupa bilangan bulat positif.');
-  const item = db.services_products.find(row => row.id === data.item_id && row.item_type === data.item_type);
+  const quantity = sanitizeQuantity(data.quantity);
+  const item = safeRows(db?.services_products).map(normalizeCatalogRecord).find(row => row.id === data.item_id && row.item_type === data.item_type);
   if (!item) throw new Error('Layanan atau produk tidak ditemukan. Muat ulang katalog.');
-  const transaction = data.transaction_id ? db.transactions.find(tx => tx.id === data.transaction_id) : null;
+  const transaction = data.transaction_id ? safeRows(db?.transactions).find(tx => tx.id === data.transaction_id) : null;
   if (data.transaction_id && !transaction) throw new Error('Transaksi tidak ditemukan.');
   validateTransactionSchedule(data.booking_date, data.booking_time, item.item_type === 'SERVICE' ? Number(item.duration) || 0 : 0, new Date());
   if (!transaction) assertStudioOpenAt();
@@ -1892,12 +1938,12 @@ async function saveAdminTransaction(form) {
     quantity,
     amount,
     payment_method: data.payment_method,
-    payment_status: data.payment_status,
+    payment_status: paymentStatusForMethod(data.payment_method, data.payment_status),
     transaction_status: data.transaction_status,
-    refund_status: data.payment_status === 'REFUNDED' ? 'COMPLETED' : 'NONE',
+    refund_status: paymentStatusForMethod(data.payment_method, data.payment_status) === 'REFUNDED' ? 'COMPLETED' : 'NONE',
     booking_date: data.booking_date,
     booking_time: data.booking_time,
-    duration_minutes: Number(item.duration) || 0
+    duration_minutes: Math.max(0, finiteNumber(item.duration))
   };
   if (item.item_type === 'PRODUCT') {
     const fulfillmentMethod = data.fulfillment_method || transaction?.fulfillment_method || 'PICKUP';
@@ -1945,7 +1991,7 @@ async function saveAdminTransaction(form) {
     ...changes,
     transaction_type: transactionType,
     queue_status: item.item_type === 'SERVICE' ? data.queue_status : 'COMPLETED',
-    refund_status: data.payment_status === 'REFUNDED' ? 'COMPLETED' : 'NONE',
+    refund_status: changes.payment_status === 'REFUNDED' ? 'COMPLETED' : 'NONE',
     created_at: new Date().toISOString()
   };
   await insertRow('transactions', created);
@@ -1959,12 +2005,16 @@ async function deleteAdminTransaction(transactionId) {
   db.transactions = removeTransactionFromState(db.transactions, transactionId);
 }
 function renderAdminCustomers() {
-  return `<div class="customer-toolbar"><div><p class="eyebrow">DATA PELANGGAN</p><h2>Pelanggan & Kendaraan</h2><p>Ringkasan kunjungan dan kendaraan terdaftar.</p></div><label class="customer-search" for="customer-search">Cari nama, nomor HP, atau plat<input id="customer-search" type="search" placeholder="Nama, nomor HP, atau plat"></label><span>${db.customers.length} pelanggan · ${db.vehicles.length} kendaraan</span></div><div class="customer-grid">${db.customers.map(customer => {
-    const vehicles = db.vehicles.filter(vehicle => vehicle.customer_id === customer.id);
-    const transactions = db.transactions.filter(tx => tx.customer_id === customer.id);
-    const initials = customer.full_name.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase();
-    const searchText = [customer.full_name, customer.phone, customer.email, customer.address, ...vehicles.flatMap(vehicle => [vehicle.plate, vehicle.model])].filter(Boolean).join(' ').toLocaleLowerCase('id-ID');
-    return `<article class="customer-card" data-customer-search="${escapeHtml(searchText)}"><div class="customer-card-heading"><span class="customer-avatar">${escapeHtml(initials)}</span><div><h3>${escapeHtml(customer.full_name)}</h3><p>${escapeHtml(customer.phone)}</p>${customer.email ? `<p class="customer-email">${escapeHtml(customer.email)}</p>` : ''}${customer.address ? `<p class="customer-address">${escapeHtml(customer.address)}</p>` : ''}</div></div><div class="customer-stats"><span><strong>${transactions.length}</strong> transaksi</span><span><strong>${vehicles.length}</strong> kendaraan</span></div><button class="text-link" type="button" data-edit-customer-address="${escapeHtml(customer.id)}">Ubah alamat</button><div class="customer-vehicles">${vehicles.map(vehicle => `<div class="customer-vehicle"><span class="vehicle-type">${vehicle.type === 'MOTOR' ? 'Motor' : 'Mobil'}</span><strong>${escapeHtml(vehicle.plate)}</strong><small>${escapeHtml(vehicle.model)}</small></div>`).join('') || '<span class="report-empty">Belum ada kendaraan terdaftar.</span>'}</div></article>`;
+  const customers = safeRows(db?.customers);
+  const vehiclesList = safeRows(db?.vehicles);
+  const transactionsList = safeRows(db?.transactions);
+  return `<div class="customer-toolbar"><div><p class="eyebrow">DATA PELANGGAN</p><h2>Pelanggan & Kendaraan</h2><p>Ringkasan kunjungan dan kendaraan terdaftar.</p></div><label class="customer-search" for="customer-search">Cari nama, nomor HP, atau plat<input id="customer-search" type="search" placeholder="Nama, nomor HP, atau plat"></label><span>${customers.length} pelanggan · ${vehiclesList.length} kendaraan</span></div><div class="customer-grid">${customers.map(customer => {
+    const vehicles = vehiclesList.filter(vehicle => vehicle.customer_id === customer.id);
+    const transactions = transactionsList.filter(tx => tx.customer_id === customer.id);
+    const fullName = String(customer.full_name || 'Pelanggan');
+    const initials = fullName.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase();
+    const searchText = [fullName, customer.phone, customer.email, customer.address, ...vehicles.flatMap(vehicle => [vehicle.plate, vehicle.model])].filter(Boolean).join(' ').toLocaleLowerCase('id-ID');
+    return `<article class="customer-card" data-customer-search="${escapeHtml(searchText)}"><div class="customer-card-heading"><span class="customer-avatar">${escapeHtml(initials)}</span><div><h3>${escapeHtml(fullName)}</h3><p>${escapeHtml(customer.phone || '')}</p>${customer.email ? `<p class="customer-email">${escapeHtml(customer.email)}</p>` : ''}${customer.address ? `<p class="customer-address">${escapeHtml(customer.address)}</p>` : ''}</div></div><div class="customer-stats"><span><strong>${transactions.length}</strong> transaksi</span><span><strong>${vehicles.length}</strong> kendaraan</span></div><button class="text-link" type="button" data-edit-customer-address="${escapeHtml(customer.id || '')}">Ubah alamat</button><div class="customer-vehicles">${vehicles.map(vehicle => `<div class="customer-vehicle"><span class="vehicle-type">${vehicle.type === 'MOTOR' ? 'Motor' : 'Mobil'}</span><strong>${escapeHtml(vehicle.plate || '')}</strong><small>${escapeHtml(vehicle.model || '')}</small></div>`).join('') || '<span class="report-empty">Belum ada kendaraan terdaftar.</span>'}</div></article>`;
   }).join('')}</div>`;
 }
 function adminDescription(tab) {
@@ -2065,7 +2115,7 @@ function renderAdminCatalog() {
     return `<div class="catalog-row"><span class="catalog-name catalog-name-${String(item.item_type).toLowerCase()}"><img src="${copy.image || PHOTOS.car}" alt=""><strong>${escapeHtml(copy.name)}<small>${escapeHtml([category, vehicleType].filter(Boolean).join(' · '))}</small></strong></span><span>${item.item_type === 'PRODUCT' ? 'Produk fisik' : item.item_type === 'ADD_ON' ? 'Tambahan' : 'Layanan cuci'}<small>${escapeHtml(category)}</small></span><span class="catalog-price">${money(item.price)}</span><span>${inventory}</span><span><span class="catalog-status ${active ? 'is-active' : 'is-inactive'}">${active ? 'Aktif' : 'Nonaktif'}</span></span><button class="catalog-edit-button" type="button" data-edit-item="${escapeHtml(item.id)}">Ubah</button></div>`;
   };
   return `<div class="catalog-toolbar"><div><p class="eyebrow">KATALOG STUDIO</p><h2>Layanan dan produk</h2><p>Stok produk dihitung per unit; layanan memakai estimasi durasi.</p></div><button class="button button-dark" data-action="add-item">Tambah item</button></div><div class="catalog-filter-bar admin-catalog-filters" role="group" aria-label="Filter jenis katalog">${filter('all', 'Semua')}${filter('PRODUCT', 'Produk fisik')}${filter('SERVICE', 'Layanan cuci')}${filter('ADD_ON', 'Tambahan')}</div>${groups.map(group => {
-    const items = db.services_products.filter(item => item.item_type === group.key
+    const items = safeRows(db?.services_products).map(normalizeCatalogRecord).filter(item => item.item_type === group.key
       && !isPickupAddon(item)
       && (item.item_type !== 'PRODUCT' || PRODUCT_CATALOG_ID_SET.has(item.id)))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -2115,7 +2165,8 @@ function activateAdminTab(tab) {
   polishUiLabels(content);
   simplifyUiSymbols(content);
 }
-function showToast(message, type = 'success', dedupeKey = '') {
+function showToast(message, type = 'success', dedupeKey = '', explicitFormSubmit = false) {
+  if (type === 'error' && !explicitFormSubmit) return;
   const region = document.getElementById('toast-region');
   if (dedupeKey) {
     [...region.querySelectorAll('.toast')]
@@ -2128,6 +2179,9 @@ function showToast(message, type = 'success', dedupeKey = '') {
   element.textContent = message;
   region.append(element);
   setTimeout(() => element.remove(), 4500);
+}
+function showFormErrorToast(message, dedupeKey = '') {
+  showToast(message, 'error', dedupeKey, true);
 }
 function requestHeaders(prefer = 'return=representation', session = null) {
   const activeSession = session || (adminUser ? supabaseSession : null);
@@ -2349,15 +2403,22 @@ async function loadAdminData() {
       throw new Error('RPC get_demo_admin_snapshot tidak mengembalikan semua daftar dashboard.');
     }
     const loaded = {
-      customers: snapshot.customers,
-      vehicles: snapshot.vehicles,
-      services_products: snapshot.services_products,
-      transactions: snapshot.transactions
+      customers: safeRows(snapshot.customers).map(customer => ({
+        ...customer,
+        full_name: String(customer.full_name || 'Pelanggan'),
+        phone: String(customer.phone || ''),
+        email: String(customer.email || ''),
+        address: String(customer.address || '')
+      })),
+      vehicles: safeRows(snapshot.vehicles).map(vehicle => ({
+        ...vehicle,
+        plate: String(vehicle.plate || ''),
+        model: String(vehicle.model || '')
+      })),
+      services_products: safeRows(snapshot.services_products).map(normalizeCatalogRecord),
+      transactions: safeRows(snapshot.transactions)
     };
-    loaded.transactions = Array.isArray(loaded.transactions) ? loaded.transactions.map(normalizeTransactionRecord) : [];
-    loaded.customers = Array.isArray(loaded.customers) ? loaded.customers : [];
-    loaded.vehicles = Array.isArray(loaded.vehicles) ? loaded.vehicles : [];
-    loaded.services_products = Array.isArray(loaded.services_products) ? loaded.services_products : [];
+    loaded.transactions = loaded.transactions.map(normalizeTransactionRecord);
     const customersById = new Map(loaded.customers.map(customer => [customer.id, customer]));
     const vehiclesById = new Map(loaded.vehicles.map(vehicle => [vehicle.id, vehicle]));
     const itemsById = new Map(loaded.services_products.map(item => [item.id, item]));
@@ -2412,24 +2473,25 @@ async function bootstrapSupabase() {
     SERVICES.splice(0, SERVICES.length);
     ADDONS.splice(0, ADDONS.length);
   }
-  if (!adminUser && publicError) showToast(publicError.message || 'Database tidak dapat diakses. Jelaskan error yang terjadi untuk admin.', 'error');
   render();
 }
 function addCatalogItem() {
   if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
   const content = document.getElementById('dialog-content');
-  content.innerHTML = `<p class="eyebrow">KATALOG STUDIO</p><h2>Tambah item <em>baru.</em></h2><form id="catalog-form" class="dialog-form"><label>Nama item<input name="name" required></label><label>Jenis item<select name="item_type"><option value="SERVICE">LAYANAN</option><option value="PRODUCT">PRODUK</option><option value="ADD_ON">ADD-ON</option></select></label><label>Jenis kendaraan<select name="type"><option value="">Tidak terkait kendaraan</option><option value="CAR">Mobil</option><option value="MOTOR">Sepeda motor</option></select></label><label>Kategori<input name="category" placeholder="REGULAR, SELF_SERVICE, WASH & CARE"></label><label>Deskripsi<input name="description" required></label><div class="form-two"><label>Harga (Rp)<input name="price" type="number" min="0" required></label><label>Durasi (menit)<input name="duration" type="number" min="0" value="30"></label></div><div class="form-two"><label>Stok<input name="stock" type="number" min="0" value="0"></label><label>Stok minimum<input name="min_stock" type="number" min="0" value="5"></label></div><label>URL foto yang sesuai<input name="image" type="url" placeholder="https://..."></label><button class="button button-dark button-full" type="submit">Simpan ke katalog <span>↗</span></button></form>`;
+  content.innerHTML = `<p class="eyebrow">KATALOG STUDIO</p><h2>Tambah item <em>baru.</em></h2><form id="catalog-form" class="dialog-form"><label>Nama item<input name="name" required></label><label>Jenis item<select name="item_type"><option value="SERVICE">LAYANAN</option><option value="PRODUCT">PRODUK</option><option value="ADD_ON">ADD-ON</option></select></label><label>Jenis kendaraan<select name="type"><option value="">Tidak terkait kendaraan</option><option value="CAR">Mobil</option><option value="MOTOR">Sepeda motor</option></select></label><label>Kategori<input name="category" placeholder="REGULAR, SELF_SERVICE, WASH & CARE"></label><label>Deskripsi<input name="description" required></label><div class="form-two"><label>Harga (Rp)<input name="price" type="number" min="0" step="1" value="0" required></label><label>Durasi (menit)<input name="duration" type="number" min="0" step="1" value="30"></label></div><div class="form-two"><label>Stok<input name="stock" type="number" min="0" step="1" value="0"></label><label>Stok minimum<input name="min_stock" type="number" min="0" step="1" value="5"></label></div><label>URL foto yang sesuai<input name="image" type="url" placeholder="https://..."></label><button class="button button-dark button-full" type="submit">Simpan ke katalog <span>↗</span></button></form>`;
   document.getElementById('flow-dialog').showModal();
   simplifyUiSymbols(document.getElementById('flow-dialog'));
 }
 function editCatalogItem(item) {
   if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
+  if (!item || typeof item !== 'object') return;
+  item = normalizeCatalogRecord(item);
   if (isPickupAddon(item)) {
     showToast('Add-on antar-jemput tidak lagi tersedia.', 'error');
     return;
   }
   const content = document.getElementById('dialog-content');
-  content.innerHTML = `<p class="eyebrow">UBAH KATALOG</p><h2>Perbarui <em>item.</em></h2><form id="catalog-edit-form" class="dialog-form"><input type="hidden" name="record_id" value="${item.id}"><label>Nama item<input name="name" value="${escapeHtml(item.name)}" required></label><label>Deskripsi<input name="description" value="${escapeHtml(item.description || '')}" required></label><label>URL foto<input name="image" type="url" value="${escapeHtml(item.image || '')}"></label><div class="form-two"><label>Harga (Rp)<input name="price" type="number" value="${item.price}" required></label><label>Status<select name="active"><option value="true" ${item.active !== false ? 'selected' : ''}>Aktif</option><option value="false" ${item.active === false ? 'selected' : ''}>Nonaktif</option></select></label></div>${item.item_type === 'PRODUCT' ? `<div class="form-two"><label>Stok<input name="stock" type="number" value="${item.stock}" min="0"></label><label>Stok minimum<input name="min_stock" type="number" value="${item.min_stock}" min="0"></label></div>` : ''}<button class="button button-dark button-full" type="submit">Simpan perubahan <span>↗</span></button></form>`;
+  content.innerHTML = `<p class="eyebrow">UBAH KATALOG</p><h2>Perbarui <em>item.</em></h2><form id="catalog-edit-form" class="dialog-form"><input type="hidden" name="record_id" value="${escapeHtml(item.id || '')}"><label>Nama item<input name="name" value="${escapeHtml(item.name)}" required></label><label>Deskripsi<input name="description" value="${escapeHtml(item.description)}" required></label><label>URL foto<input name="image" type="url" value="${escapeHtml(item.image || '')}"></label><div class="form-two"><label>Harga (Rp)<input name="price" type="number" min="0" step="1" value="${item.price}" required></label><label>Status<select name="active"><option value="true" ${item.active !== false ? 'selected' : ''}>Aktif</option><option value="false" ${item.active === false ? 'selected' : ''}>Nonaktif</option></select></label></div>${item.item_type === 'PRODUCT' ? `<div class="form-two"><label>Stok<input name="stock" type="number" value="${item.stock}" min="0" step="1"></label><label>Stok minimum<input name="min_stock" type="number" value="${item.min_stock}" min="0" step="1"></label></div>` : ''}<button class="button button-dark button-full" type="submit">Simpan perubahan <span>↗</span></button></form>`;
   document.getElementById('flow-dialog').showModal();
   simplifyUiSymbols(document.getElementById('flow-dialog'));
 }
@@ -2621,7 +2683,7 @@ document.addEventListener('submit', async event => {
       activateAdminTab('transactions');
       showToast(`${saved.code} ${form.elements.transaction_id.value ? 'diperbarui' : 'ditambahkan'}.`);
     } catch (error) {
-      showToast(error.message || 'Transaksi belum dapat disimpan.', 'error');
+      showFormErrorToast(error.message || 'Transaksi belum dapat disimpan.');
       if (submit.isConnected) submit.disabled = false;
     } finally { delete form.dataset.submitting; }
   }
@@ -2634,7 +2696,7 @@ document.addEventListener('submit', async event => {
     submit.disabled = true;
     try { await submitService(form); }
     catch (error) {
-      showToast(serviceOrderErrorMessage(error), 'error', 'service-order');
+      showFormErrorToast(serviceOrderErrorMessage(error), 'service-order');
       if (submit.isConnected) submit.disabled = false;
     }
     finally { delete form.dataset.submitting; }
@@ -2644,7 +2706,7 @@ document.addEventListener('submit', async event => {
     const submit = event.target.querySelector('[type="submit"]');
     submit.disabled = true;
     try { await submitProducts(event.target); }
-    catch (error) { showToast(error.message, 'error'); if (submit.isConnected) submit.disabled = false; }
+    catch (error) { showFormErrorToast(error.message); if (submit.isConnected) submit.disabled = false; }
   }
   if (event.target.id === 'admin-login-form') {
     event.preventDefault();
@@ -2656,16 +2718,16 @@ document.addEventListener('submit', async event => {
       document.getElementById('flow-dialog').close();
       await openAdmin();
     } catch (error) {
-      showToast(error.message || 'Login Admin belum dapat diproses.', 'error');
+      showFormErrorToast(error.message || 'Login Admin belum dapat diproses.');
       submit.disabled = false;
     }
   }
   if (event.target.id === 'customer-address-form') {
     event.preventDefault();
-    if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
+    if (!isAdminAuthorized()) { showFormErrorToast('Akses Admin terverifikasi diperlukan.'); return; }
     const data = Object.fromEntries(new FormData(event.target));
     const customer = db.customers.find(item => item.id === data.customer_id);
-    if (!customer) { showToast('Data pelanggan tidak ditemukan.', 'error'); return; }
+    if (!customer) { showFormErrorToast('Data pelanggan tidak ditemukan.'); return; }
     try {
       await patchRow('customers', customer.id, { address: String(data.address || '').trim() });
       customer.address = String(data.address || '').trim();
@@ -2673,29 +2735,29 @@ document.addEventListener('submit', async event => {
       activateAdminTab('customers');
       showToast('Alamat pelanggan tersimpan.');
     } catch (error) {
-      showToast(error.message || 'Alamat belum dapat disimpan.', 'error');
+      showFormErrorToast(error.message || 'Alamat belum dapat disimpan.');
     }
   }
   if (event.target.id === 'catalog-form') {
     event.preventDefault();
-    if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
+    if (!isAdminAuthorized()) { showFormErrorToast('Akses Admin terverifikasi diperlukan.'); return; }
     const data = Object.fromEntries(new FormData(event.target));
-    const item = { id: crypto.randomUUID(), ...data, type: data.type || null, price: Number(data.price), duration: Number(data.duration), stock: Number(data.stock), min_stock: Number(data.min_stock), active: true, image: data.image || (data.item_type === 'PRODUCT' ? PHOTOS.detailing : PHOTOS.car) };
-    if (isPickupAddon(item)) { showToast('Add-on antar-jemput tidak lagi tersedia.', 'error'); return; }
+    const item = { id: crypto.randomUUID(), ...data, type: data.type || null, price: Math.max(0, finiteNumber(data.price)), duration: Math.max(0, finiteNumber(data.duration)), stock: Math.max(0, finiteNumber(data.stock)), min_stock: Math.max(0, finiteNumber(data.min_stock)), active: true, image: data.image || (data.item_type === 'PRODUCT' ? PHOTOS.detailing : PHOTOS.car) };
+    if (isPickupAddon(item)) { showFormErrorToast('Add-on antar-jemput tidak lagi tersedia.'); return; }
     try { await upsertRow('services_products', item); db.services_products.push(item); syncServiceCatalog(); document.getElementById('flow-dialog').close(); activateAdminTab('catalog'); showToast('Item ditambahkan ke katalog.'); }
-    catch (error) { showToast(error.message, 'error'); }
+    catch (error) { showFormErrorToast(error.message); }
   }
   if (event.target.id === 'catalog-edit-form') {
     event.preventDefault();
-    if (!isAdminAuthorized()) { showToast('Akses Admin terverifikasi diperlukan.', 'error'); return; }
+    if (!isAdminAuthorized()) { showFormErrorToast('Akses Admin terverifikasi diperlukan.'); return; }
     const data = Object.fromEntries(new FormData(event.target));
     const item = db.services_products.find(product => product.id === data.record_id);
-    if (!item || isPickupAddon(item)) { showToast('Add-on antar-jemput tidak lagi tersedia.', 'error'); return; }
-    const updated = { ...item, name: data.name, description: data.description, image: data.image || item.image, price: Number(data.price), active: data.active === 'true' };
-    if (isPickupAddon(updated)) { showToast('Add-on antar-jemput tidak lagi tersedia.', 'error'); return; }
-    if (data.stock !== undefined) { updated.stock = Number(data.stock); updated.min_stock = Number(data.min_stock); }
+    if (!item || isPickupAddon(item)) { showFormErrorToast('Item tidak ditemukan atau tidak lagi dapat diedit.'); return; }
+    const updated = { ...item, name: data.name, description: data.description, image: data.image || item.image, price: Math.max(0, finiteNumber(data.price)), active: data.active === 'true' };
+    if (isPickupAddon(updated)) { showFormErrorToast('Add-on antar-jemput tidak lagi tersedia.'); return; }
+    if (data.stock !== undefined) { updated.stock = Math.max(0, finiteNumber(data.stock)); updated.min_stock = Math.max(0, finiteNumber(data.min_stock)); }
     try { await patchRow('services_products', item.id, updated); Object.assign(item, updated); syncServiceCatalog(); document.getElementById('flow-dialog').close(); activateAdminTab('catalog'); showToast('Perubahan katalog tersimpan.'); }
-    catch (error) { showToast(error.message, 'error'); }
+    catch (error) { showFormErrorToast(error.message); }
   }
 });
 document.addEventListener('change', async event => {
@@ -2708,7 +2770,7 @@ document.addEventListener('change', async event => {
     }
     const changes = { queue_status: event.target.value, transaction_status: event.target.value === 'COMPLETED' ? 'COMPLETED' : 'ACTIVE' };
     try { await patchRow('transactions', tx.id, changes); Object.assign(tx, changes); activateAdminTab('queue'); showToast(`${tx.code} dipindahkan ke ${tx.queue_status.toLowerCase()}.`); }
-    catch (error) { event.target.value = tx.queue_status; showToast(error.message, 'error'); }
+    catch (error) { event.target.value = tx.queue_status; console.warn('[Queue status] Update failed:', error.message); }
   }
 });
 document.getElementById('admin-shortcut').addEventListener('click', () => openAdmin());

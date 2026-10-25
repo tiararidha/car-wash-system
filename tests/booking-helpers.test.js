@@ -17,6 +17,8 @@ const {
   filterQueueTransactionsForDate,
   resolveCustomerIdentity,
   validateServicePaymentMethod,
+  sanitizeQuantity,
+  paymentStatusForMethod,
   productShippingFee,
   calculateProductAmount,
   recognizedRevenueAmount,
@@ -72,6 +74,9 @@ const readmeSource = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'u
 const submitStart = appSource.indexOf('async function submitService(form)');
 const submitEnd = appSource.indexOf('\nfunction showConfirmation', submitStart);
 const submitSource = appSource.slice(submitStart, submitEnd);
+const adminSaveStart = appSource.indexOf('async function saveAdminTransaction(form)');
+const adminSaveEnd = appSource.indexOf('\nasync function deleteAdminTransaction', adminSaveStart);
+const adminSaveSource = appSource.slice(adminSaveStart, adminSaveEnd);
 const persistenceStart = appSource.indexOf('async function persistTransaction(');
 const persistenceEnd = appSource.indexOf('\nasync function submitService', persistenceStart);
 const persistenceSource = appSource.slice(persistenceStart, persistenceEnd);
@@ -105,6 +110,15 @@ assert.equal(hasAdminRole({ user_metadata: { rinse_role: 'admin' } }), false);
 assert.equal(isValidCustomerCapabilityToken(wrongOwnerCapabilityToken), true);
 assert.equal(isValidCustomerCapabilityToken('invalid-token'), false);
 assert.equal(isValidCustomerCapabilityToken(undefined), false);
+assert.equal(sanitizeQuantity('3'), 3);
+assert.equal(sanitizeQuantity('0'), 1);
+assert.equal(sanitizeQuantity('invalid'), 1);
+assert.equal(paymentStatusForMethod('QRIS', 'PENDING'), 'PAID');
+assert.equal(paymentStatusForMethod('TRANSFER', 'PENDING'), 'PAID');
+assert.equal(paymentStatusForMethod('E_WALLET', 'PENDING'), 'PAID');
+assert.equal(paymentStatusForMethod('CARD', 'PENDING'), 'PAID');
+assert.equal(paymentStatusForMethod('CASH', 'PENDING'), 'PENDING');
+assert.equal(paymentStatusForMethod('CARD', 'REFUNDED'), 'REFUNDED');
 assert.throws(() => requireCustomerCapabilityToken(undefined), /tidak tersedia/);
 assert.throws(() => requireCustomerCapabilityToken('invalid-token'), /tidak valid/);
 assert.deepEqual(sanitizeCart({ 'prd-a': { quantity: 2 }, 'prd-b': { quantity: 0 }, 'prd-c': { quantity: 'nope' } }), {
@@ -239,6 +253,12 @@ assert.match(appSource, /renderAdminTransactionList\(db\.transactions, 'Seluruh 
 assert.match(appSource, /const stages = \['WAITING', 'WASHING', 'COMPLETED'\]/);
 assert.match(appSource, /'self-service'\) tab = 'overview'/);
 assert.doesNotMatch(appSource.slice(appSource.indexOf('function renderAdminTransactionList'), appSource.indexOf('\nfunction renderAdminCustomers')), /data-action="delete|data-delete-transaction/);
+assert.match(appSource, /if \(type === 'error' && !explicitFormSubmit\) return;/);
+assert.match(appSource.slice(appSource.indexOf('function openDialog('), appSource.indexOf('\nfunction renderTransactionForm')), /renderAdminTransactionForm[\s\S]*setupAdminTransactionForm/);
+assert.match(adminSaveSource, /validateTransactionSchedule/);
+const changeHandlerStart = appSource.indexOf("document.addEventListener('change', async event => {");
+const changeHandlerEnd = appSource.indexOf("\ndocument.getElementById('admin-shortcut')", changeHandlerStart);
+assert.doesNotMatch(appSource.slice(changeHandlerStart, changeHandlerEnd), /showFormErrorToast|validateTransactionSchedule/);
 
 const rpcContracts = {
   lookup_customer_by_phone: { source: capabilitySource, args: [['p_phone', 'text']], returns: 'table', columns: /returns table\(\s*customer_id text,\s*full_name text,\s*phone text,\s*vehicle_id text,\s*vehicle_type text,\s*vehicle_plate text,\s*vehicle_model text,\s*customer_address text\s*\)/i },
@@ -621,7 +641,7 @@ assert.match(persistenceSource, /return tx/);
 assert.match(appSource, /result\.payment_status === 'PAID'/);
 assert.match(appSource, /result\.transaction_status === expected\.transaction_status/);
 assert.match(appSource, /if \(form\.dataset\.submitting === 'true'\) return/);
-assert.match(appSource, /showToast\(serviceOrderErrorMessage\(error\), 'error', 'service-order'\)/);
+assert.match(appSource, /showFormErrorToast\(serviceOrderErrorMessage\(error\), 'service-order'\)/);
 assert.match(appSource, /event\.preventDefault\(\);\s*const form = event\.target/);
 assert.match(appSource, /const activeSession = adminUser \? supabaseSession : null/);
 assert.match(appSource, /const requestSession = adminUser \? supabaseSession : null/);
