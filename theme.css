@@ -3187,6 +3187,17 @@ body.admin-mode .customer-search input {
 .closing-cta-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; }
 .closing-cta .button-white { background: #fff; color: var(--deep-petrol); }
 .closing-cta .light-link { color: #8fe4d7; }
+.reference-home-hero .hero-buttons .button-dark {
+  background: #0d9488 !important;
+  color: #fff !important;
+}
+.reference-home-hero .hero-buttons .button-dark:hover { background: #0b7a6f !important; }
+.reference-home-hero .hero-buttons .button-quiet {
+  border: 1px solid #0d9488;
+  background: transparent;
+  color: #0b6f68;
+}
+.reference-home-hero .hero-buttons .button-quiet:hover { background: rgba(13, 148, 136, .1); }
 
 .catalog-filter-bar, .history-filter-bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 24px; }
 .catalog-filter, .history-filter { display: inline-flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--ink); font: 600 12px/1.3 var(--body); transition: background-color .18s ease, color .18s ease, border-color .18s ease; }
@@ -3428,7 +3439,7 @@ h1, h2, h3, h4, .brand, .metric-card strong, .service-price, .hero-note strong,
 .product-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .bay-card { border: 1px solid var(--border); background: #fff; }
 .bay-card-top, .bay-card-bottom { padding-inline: 16px; }
-.bay-visual { margin: 0 16px; border-radius: 6px; }
+.bay-visual, .bay-card-media { margin: 0 16px; border-radius: 6px; }
 .package-card { border: 1px solid var(--border); background: #fff; }
 .self-service-guide, .self-service-facilities { border-color: var(--border); }
 .history-summary { gap: 16px; margin-top: -26px; position: relative; z-index: 2; }
@@ -3757,10 +3768,13 @@ button:not(.product-image) {
 }
 .bay-status-copy > .bay-time {
   display: block;
-  color: #64748b;
+  align-self: flex-start;
+  margin: 0;
+  color: #64748b !important;
   font: 400 11px/1.45 var(--mono);
   white-space: normal;
   overflow-wrap: anywhere;
+  text-align: left;
 }
 .bay-card-bottom > .text-link { align-self: flex-start; }
 

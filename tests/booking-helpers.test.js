@@ -231,8 +231,18 @@ assert.match(themeSource, /\.product-buy\s*\{[\s\S]*?display:\s*flex[\s\S]*?just
 assert.match(themeSource, /\.stock-note\s*\{[\s\S]*?background:\s*#ecfdf5[\s\S]*?color:\s*#065f46/);
 assert.match(appSource, /class="bay-status-copy"><strong>\$\{label\}<\/strong><span class="bay-time">/);
 assert.match(themeSource, /\.bay-status-copy\s*\{[\s\S]*?flex-direction:\s*column[\s\S]*?gap:\s*4px/);
+assert.match(themeSource, /\.bay-status-copy > \.bay-time\s*\{[\s\S]*?align-self:\s*flex-start[\s\S]*?color:\s*#64748b !important[\s\S]*?text-align:\s*left/);
 assert.match(themeSource, /\.closing-cta \.button-white\s*\{[\s\S]*?background:\s*#0d9488 !important/);
 assert.match(themeSource, /\.admin-sidebar \.admin-nav,[\s\S]*?justify-content:\s*flex-start !important[\s\S]*?text-align:\s*left !important/);
+assert.match(themeSource, /\.admin-sidebar \.admin-nav > b,[\s\S]*?margin-left:\s*auto/);
+assert.match(themeSource, /\.bay-visual, \.bay-card-media \{ margin: 0 16px; border-radius: 6px; \}/);
+assert.match(themeSource, /\.reference-home-hero \.hero-buttons \.button-dark\s*\{[\s\S]*?background:\s*#0d9488 !important/);
+assert.match(themeSource, /\.reference-home-hero \.hero-buttons \.button-quiet\s*\{[\s\S]*?border:\s*1px solid[\s\S]*?background:\s*transparent/);
+assert.equal((appSource.match(/class="bay-card-media bay-visual"/g) || []).length, 2);
+assert.match(appSource, /class="bay-number">\$\{String\(number\)\.padStart\(2, '0'\)\}/);
+assert.match(appSource, /class="bay-number">\$\{String\(bay\.number\)\.padStart\(2, '0'\)\}/);
+assert.match(appSource, /Pesan Layanan[\s\S]*Lihat Semua Layanan/);
+assert.match(appSource, /customer_name: String\(transaction\.customer_name \|\| customersById\.get\(transaction\.customer_id\)\?\.full_name \|\| transaction\.notes \|\| 'Pelanggan'\)/);
 assert.match(themeSource, /--navy-dark:\s*#091724/i);
 assert.match(themeSource, /--teal-accent:\s*#1db59b/i);
 assert.match(appSource, /group\.hidden = catalogFilter !== 'all'/);

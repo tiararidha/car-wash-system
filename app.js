@@ -762,7 +762,8 @@ function addDaysToJakartaDate(dateString, offsetDays) {
 function getVehicle(tx) { return safeRows(db?.vehicles).find(item => item.id === tx?.vehicle_id); }
 function getCustomer(tx) {
   const customer = safeRows(db?.customers).find(item => item.id === tx?.customer_id);
-  return tx?.customer_name ? { ...customer, full_name: tx.customer_name } : customer;
+  const displayName = tx?.customer_name || customer?.full_name || tx?.notes || 'Pelanggan';
+  return { ...customer, full_name: String(displayName) };
 }
 function normalizeTransactionRecord(tx = {}) {
   const normalized = tx && typeof tx === 'object' ? { ...tx } : {};
@@ -1089,7 +1090,7 @@ function renderBayStatus() {
         : state === 'OCCUPIED' ? 'DIGUNAKAN' : 'STATUS BELUM TERSEDIA';
     const detail = state === 'AVAILABLE' ? 'Bay kosong · siap digunakan'
       : timeRange || 'Jadwal tidak tersedia';
-    return `<article class="bay-card bay-${state.toLowerCase()}"><div class="bay-card-top"><span>B-${String(number).padStart(2, '0')}</span>${statusBadge(state)}</div><div class="bay-card-bottom"><div class="bay-status-copy"><strong>${label}</strong><span class="bay-time">${detail}</span></div></div></article>`;
+    return `<article class="bay-card bay-${state.toLowerCase()}"><div class="bay-card-top"><span>B-${String(number).padStart(2, '0')}</span>${statusBadge(state)}</div><div class="bay-card-media bay-visual"><img src="${PHOTOS.selfBay}" alt="Area cuci untuk bay B-${String(number).padStart(2, '0')}" loading="lazy"><span class="bay-number">${String(number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><div class="bay-status-copy"><strong>${label}</strong><span class="bay-time">${detail}</span></div></div></article>`;
   }).join('');
   const homeBayGrid = document.querySelector('.home-bay-section .bay-grid');
   if (homeBayGrid) homeBayGrid.innerHTML = cards;
@@ -1104,7 +1105,7 @@ function applyReferencePresentation(app) {
   const availableLabel = publicBays.length ? String(availableBays).padStart(2, '0') : '--';
   app.insertAdjacentHTML('afterbegin', `<section class="home-statusbar"><div><span class="live-dot"></span><strong>${publicWashCount} KENDARAAN TERAWAT HARI INI</strong><span class="status-divider">/</span><span>RINSE SOCIETY · SEMARANG</span></div><div><span>SELF-SERVICE LIVE</span><strong>${availableLabel} / ${totalBays} BAY TERSEDIA</strong></div></section>`);
   hero.classList.add('reference-home-hero');
-  hero.querySelector('.hero-content .hero-buttons').innerHTML = '<button class="button button-dark" data-action="service-order">Pesan layanan</button><button class="button button-quiet" data-nav="services">Jelajahi layanan</button>';
+  hero.querySelector('.hero-content .hero-buttons').innerHTML = '<button class="button button-dark" data-action="service-order">Pesan Layanan</button><button class="button button-quiet" data-nav="services">Lihat Semua Layanan</button>';
   hero.insertAdjacentHTML('beforeend', `<aside class="home-capacity-panel"><div class="capacity-panel-heading"><span><i class="live-dot"></i> TELEMETRI BAY LIVE</span><strong>SISTEM NORMAL</strong></div><div class="capacity-metrics"><article><div><span>PROFESSIONAL WASH</span><b>${String(regularServices().length).padStart(2, '0')}</b></div><small>Layanan studio</small><i>Studio Semarang</i></article><article><div><span>SELF-SERVICE</span><b>${String(totalBays).padStart(2, '0')}</b></div><small>Bay universal</small><i>${availableLabel} tersedia</i></article></div><div class="capacity-panel-foot"><span>Jadwal diperbarui dari status bay</span><button class="text-link" data-nav="self-service">Lihat status bay</button></div></aside>`);
 }
 function renderPublicDataState() {
@@ -1269,7 +1270,7 @@ function renderHome() {
   <section class="section quality-section"><div class="section-heading"><div><p class="eyebrow">STANDARDISASI PERAWATAN</p><h2>Metode dan kualitas<br><em>yang terasa bedanya.</em></h2></div><p class="section-aside">Perawatan dirancang untuk membersihkan kendaraan dengan teliti dan menjaga hasilnya tetap rapi.</p></div><div class="quality-grid"><article><span class="quality-index">01</span><h3>Air tersaring</h3><p>Bilas Reverse Osmosis membantu mengurangi residu mineral yang dapat meninggalkan noda air.</p></article><article><span class="quality-index">02</span><h3>Formula pH-netral</h3><p>Sampo khusus kendaraan untuk membersihkan dengan lembut dan menjaga lapisan wax.</p></article><article><span class="quality-index">03</span><h3>Teknik menyeluruh</h3><p>Busa, bilas bertekanan, dan pengeringan rapi sesuai layanan yang dipilih.</p></article><article><span class="quality-index">04</span><h3>Pilihan sesuai kendaraan</h3><p>Layanan tersedia untuk mobil dan sepeda motor, termasuk empat bay Self-Service.</p></article></div></section>
   <section class="section services-section" id="services"><div class="section-heading"><div><p class="eyebrow">PROFESSIONAL WASH</p><h2>Serahkan kendaraan.<br><em>Tim kami yang menangani.</em></h2></div><p class="section-aside">Tim Rinse Society menangani pencucian kendaraan dengan fokus pada kualitas hasil, durasi, dan penanganan yang rapi.</p><a class="text-link" href="#services" data-nav="services">Lihat pilihan</a></div><div class="service-grid">${regularServices().slice(0, 2).map(serviceCard).join('')}</div><div class="service-banner"><img src="${PHOTOS.selfBay}" alt="Beberapa bay Self-Service yang siap digunakan" loading="lazy"><div class="banner-content"><span class="eyebrow eyebrow-light">SELF-SERVICE</span><h3>Self-Service</h3><p>Pilih salah satu dari empat bay universal untuk mobil atau sepeda motor, lalu tentukan waktu dan durasi cuci.</p><button class="button button-white" data-nav="self-service">Pilih bay</button></div><span class="banner-index">BAY UNIVERSAL · 02</span></div></section>
   <section class="shop-teaser"><div class="section-heading"><div><p class="eyebrow">PERAWATAN KENDARAAN DI RUMAH</p><h2>Produk pilihan.<br><em>Rawat kilapnya.</em></h2></div><a class="text-link" href="#shop" data-nav="shop">Lihat semua produk</a></div><div class="product-grid">${db.services_products.filter(item => item.item_type === 'PRODUCT').slice(0, 2).map(productCard).join('')}</div></section>
-  <section class="closing-cta"><div><p class="eyebrow eyebrow-light">RINSE SOCIETY · SEMARANG</p><h2>Siap memberikan kilau terbaik<br>untuk kendaraan Anda?</h2><p>Pilih layanan dan waktu kunjungan yang sesuai.</p></div><div class="closing-cta-actions"><button class="button button-white" data-action="service-order">Pesan layanan</button><button class="text-link light-link" data-nav="services">Lihat semua layanan</button></div></section>`;
+  <section class="closing-cta"><div><p class="eyebrow eyebrow-light">RINSE SOCIETY · SEMARANG</p><h2>Siap memberikan kilau terbaik<br>untuk kendaraan Anda?</h2><p>Pilih layanan dan waktu kunjungan yang sesuai.</p></div><div class="closing-cta-actions"><button class="button button-white" data-action="service-order">Pesan Layanan</button><button class="text-link light-link" data-nav="services">Lihat Semua Layanan</button></div></section>`;
 }
 function productCard(sourceProduct, options = {}) {
   const product = catalogItem(sourceProduct);
@@ -1321,7 +1322,7 @@ function renderBays() {
     const visual = PHOTOS.selfBay;
     const label = isOccupied ? (bay.type === 'MOTOR' ? 'DIGUNAKAN · Sepeda motor' : 'DIGUNAKAN · Mobil') : isReserved ? 'DIPESAN' : normalizedState === 'AVAILABLE' ? 'TERSEDIA' : 'STATUS BELUM TERSEDIA';
     const timeRange = formatServiceTimeRange(bay.time, bay.duration);
-    return `<article class="bay-card bay-${normalizedState.toLowerCase()}"><div class="bay-card-top"><span>B-${String(bay.number).padStart(2, '0')}</span>${statusBadge(normalizedState)}</div><div class="bay-visual"><img src="${visual}" alt="Fasilitas Self-Service untuk bay B-${String(bay.number).padStart(2, '0')}" loading="lazy"><span class="bay-number">${String(bay.number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><div class="bay-status-copy"><strong>${label}</strong><span class="bay-time">${isOccupied || isReserved ? timeRange || 'Jadwal tidak tersedia' : 'Bay kosong · siap digunakan'}</span></div>${normalizedState === 'AVAILABLE' ? `<button class="text-link" data-action="self-service-book">Pesan Self-Service</button>` : ''}</div></article>`;
+    return `<article class="bay-card bay-${normalizedState.toLowerCase()}"><div class="bay-card-top"><span>B-${String(bay.number).padStart(2, '0')}</span>${statusBadge(normalizedState)}</div><div class="bay-card-media bay-visual"><img src="${visual}" alt="Fasilitas Self-Service untuk bay B-${String(bay.number).padStart(2, '0')}" loading="lazy"><span class="bay-number">${String(bay.number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><div class="bay-status-copy"><strong>${label}</strong><span class="bay-time">${isOccupied || isReserved ? timeRange || 'Jadwal tidak tersedia' : 'Bay kosong · siap digunakan'}</span></div>${normalizedState === 'AVAILABLE' ? `<button class="text-link" data-action="self-service-book">Pesan Self-Service</button>` : ''}</div></article>`;
   }).join('')}</div><div class="bay-note"><span class="bay-note-icon">i</span><p>Empat bay universal untuk mobil dan sepeda motor. Status ditentukan dari jadwal dan durasi sesi aktif.</p><button class="text-link" data-action="self-service-book">Mulai Self-Service</button></div></section><section class="section self-service-packages"><div class="section-heading compact-heading"><div><p class="eyebrow">PAKET SESI</p><h2>Pilihan paket Self-Service</h2><p>Paket mengikuti layanan dan harga yang tersedia di katalog studio.</p></div></div><div class="package-grid">${packages.map(item => `<article class="package-card"><span class="package-type">${item.type === 'MOTOR' ? 'MOTOR' : 'MOBIL'}</span><h3>${escapeHtml(catalogItem(item).name)}</h3><p>${Number(item.duration) || 0} menit di bay universal</p><strong>${money(item.price)}</strong><button class="button button-dark" type="button" data-self-service-type="${item.type}">Pilih paket</button></article>`).join('') || '<div class="empty-state">Paket Self-Service belum tersedia.</div>'}</div></section><section class="section self-service-guide"><div class="section-heading compact-heading"><div><p class="eyebrow">PANDUAN PENGGUNAAN</p><h2>Mulai sesi dalam tiga langkah</h2></div></div><ol class="guide-steps"><li><span>01</span><div><h3>Pilih kendaraan dan bay</h3><p>Tentukan jenis kendaraan, salah satu dari empat bay, serta waktu kunjungan.</p></div></li><li><span>02</span><div><h3>Pilih paket sesi</h3><p>Durasi dan harga mengikuti layanan Self-Service aktif yang tersedia di katalog.</p></div></li><li><span>03</span><div><h3>Konfirmasi pembayaran</h3><p>Booking tetap menunggu verifikasi pembayaran sebelum sesi dapat dimulai.</p></div></li></ol></section><section class="section self-service-facilities"><div><p class="eyebrow">INFORMASI STUDIO</p><h2>Empat bay, satu alur yang jelas.</h2></div><p>Status bay diperbarui dari jadwal sesi aktif. Pilih bay yang tersedia; booking belum mengaktifkan sesi sebelum pembayaran diverifikasi.</p></section>`;
 }
 function renderShop() {
@@ -2578,6 +2579,7 @@ async function loadAdminData() {
       || !Array.isArray(snapshot.services_products) || !Array.isArray(snapshot.transactions)) {
       throw new Error('RPC get_demo_admin_snapshot tidak mengembalikan semua daftar dashboard.');
     }
+    const customersById = new Map(safeRows(snapshot.customers).map(customer => [customer.id, customer]));
     const loaded = {
       customers: safeRows(snapshot.customers).map(customer => ({
         ...customer,
@@ -2592,10 +2594,12 @@ async function loadAdminData() {
         model: String(vehicle.model || '')
       })),
       services_products: safeRows(snapshot.services_products).map(normalizeCatalogRecord),
-      transactions: safeRows(snapshot.transactions)
+      transactions: safeRows(snapshot.transactions).map(transaction => ({
+        ...transaction,
+        customer_name: String(transaction.customer_name || customersById.get(transaction.customer_id)?.full_name || transaction.notes || 'Pelanggan')
+      }))
     };
     loaded.transactions = loaded.transactions.map(normalizeTransactionRecord);
-    const customersById = new Map(loaded.customers.map(customer => [customer.id, customer]));
     const vehiclesById = new Map(loaded.vehicles.map(vehicle => [vehicle.id, vehicle]));
     const itemsById = new Map(loaded.services_products.map(item => [item.id, item]));
     const inconsistentTransactions = loaded.transactions.filter(tx => {
