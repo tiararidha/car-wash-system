@@ -68,6 +68,7 @@ const demoDateCorrectionSource = fs.readFileSync(path.join(__dirname, '..', 'sup
 const wibScheduleMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261022000000_dynamic_transaction_time_and_product_fulfillment.sql'), 'utf8');
 const legacyPerfumeCleanupSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025000000_remove_legacy_perfume_product.sql'), 'utf8');
 const canonicalDurationCogsMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025010000_canonical_service_duration_and_product_cogs.sql'), 'utf8');
+const bookingSyncMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025020000_booking_state_synchronization.sql'), 'utf8');
 const demoSnapshotStart = demoProposalSource.search(/create(?:\s+or\s+replace)?\s+function public\.get_demo_admin_snapshot\(\)/i);
 const demoOrderStart = demoRpcSource.search(/create(?:\s+or\s+replace)?\s+function public\.create_demo_service_order\(p_order jsonb\)/i);
 const demoOrderEnd = demoRpcSource.search(/\nrevoke all on function public\.create_demo_service_order\(jsonb\)/i);
@@ -196,6 +197,26 @@ assert.match(canonicalDurationCogsMigrationSource, /add column if not exists cog
 assert.match(canonicalDurationCogsMigrationSource, /new\.cogs_amount := product_unit_cost \* new\.quantity/);
 assert.match(canonicalDurationCogsMigrationSource, /revoke select on public\.services_products from public, anon, authenticated[\s\S]*grant select \(id, item_type, name, category, type, description, price, duration, stock, min_stock, active, image\)[\s\S]*to anon[\s\S]*grant select on public\.services_products to authenticated/);
 assert.match(canonicalDurationCogsMigrationSource, /Role-gated catalog and HPP access[\s\S]*auth\.jwt\(\) -> 'app_metadata' ->> 'rinse_role'[\s\S]*= 'admin'/);
+assert.doesNotMatch(appSource, /const SEED =|Siti Nurhaliza|seed-tx-/);
+assert.match(bookingSyncMigrationSource, /local_start := timezone\('Asia\/Jakarta', clock_timestamp\(\)\)/);
+assert.doesNotMatch(bookingSyncMigrationSource, /interval '10 minutes'|08:10/);
+assert.match(bookingSyncMigrationSource, /requested_start := local_start at time zone 'Asia\/Jakarta'/);
+assert.doesNotMatch(bookingSyncMigrationSource, /existing_service\.category = 'SELF_SERVICE'/);
+assert.match(bookingSyncMigrationSource, /transaction_row\.transaction_status in \('PENDING', 'BOOKED', 'ACTIVE'\)/);
+assert.match(bookingSyncMigrationSource, /start_time timestamptz generated always/);
+assert.match(bookingSyncMigrationSource, /finished_at timestamptz generated always/);
+assert.match(bookingSyncMigrationSource, /'customer_name', case when admin_view\.enabled then customer_row\.full_name/);
+assert.match(bookingSyncMigrationSource, /alter publication supabase_realtime add table public\.transactions/);
+assert.match(bookingSyncMigrationSource, /realtime\.send\([\s\S]*'transaction_changed'[\s\S]*'public:transactions'[\s\S]*false/);
+assert.doesNotMatch(bookingSyncMigrationSource, /jsonb_build_object\('customer_name'|jsonb_build_object\('vehicle_plate'/);
+assert.match(appSource, /postgres_changes: \[\{ event: '\*', schema: 'public', table: 'transactions' \}\]/);
+assert.match(appSource, /message\.payload\?\.event === 'transaction_changed'/);
+assert.match(appSource, /async function refreshLiveData\(\)[\s\S]*loadAdminData\(\)[\s\S]*loadPublicData\(\)/);
+assert.match(appSource, /function renderBayStatus\(\)[\s\S]*homeBayGrid\.innerHTML = cards/);
+assert.match(appSource, /home-bay-section[\s\S]*\$\{renderBayStatus\(\)\}/);
+assert.match(submitSource, /created_at: new Date\(\)\.toISOString\(\)/);
+assert.match(submitSource, /render\(\);\s*renderBayStatus\(\);/);
+assert.match(persistenceSource, /created_at: tx\.created_at/);
 assert.match(appSource, /select=id,item_type,name,category,type,description,price,duration,stock,min_stock,active,image&item_type=eq\.PRODUCT/);
 assert.match(appSource, /item_type=eq\.PRODUCT&id=in\.\(\$\{PRODUCT_CATALOG_IDS\.join\(','\)\}\)&active=eq\.true/);
 assert.match(appSource, /item_type=eq\.SERVICE&active=eq\.true/);
@@ -566,12 +587,13 @@ const validWalkInResponse = {
   customer_id: 'customer-id', vehicle_id: 'vehicle-id', item_id: 'svc-car', item_type: 'SERVICE',
   transaction_type: 'WALK_IN', payment_method: 'QRIS', amount: 50000,
   booking_date: '2026-10-12', booking_time: '09:37:00', duration_minutes: 50,
-  payment_status: 'PAID', transaction_status: 'PENDING', bay_number: null
+  payment_status: 'PAID', transaction_status: 'PENDING', bay_number: 1
 };
 const validWalkInExpectation = {
   item_id: 'svc-car', transaction_type: 'WALK_IN', transaction_status: 'PENDING', payment_method: 'QRIS', amount: 50000, duration_minutes: 50
 };
 assert.equal(isValidServiceOrderResponse(validWalkInResponse, validWalkInExpectation), true);
+assert.equal(isValidServiceOrderResponse({ ...validWalkInResponse, bay_number: null }, validWalkInExpectation), false);
 assert.equal(isValidServiceOrderResponse({ ...validWalkInResponse, amount: 1 }, validWalkInExpectation), false);
 assert.equal(isValidServiceOrderResponse({ ...validWalkInResponse, transaction_status: 'BOOKED' }, validWalkInExpectation), false);
 assert.equal(isValidServiceOrderResponse({ ...validWalkInResponse, bay_number: 5 }, validWalkInExpectation), false);

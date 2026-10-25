@@ -70,10 +70,14 @@ function validateTransactionSchedule(dateString, timeString, durationMinutes = 0
 }
 function assertServiceScheduleAvailable(durationMinutes, now = new Date()) {
   assertStudioOpenAt(now);
-  const scheduledStart = new Date(Math.floor(now.getTime() / 60000) * 60000 + 10 * 60000);
+  const parts = getWibDateParts(now);
+  const startMinute = Number(parts.hour) * 60 + Number(parts.minute) + Number(parts.second) / 60;
+  if (startMinute + Number(durationMinutes) > 21 * 60) {
+    throw new Error('Transaksi layanan harus selesai paling lambat pukul 21.00 WIB.');
+  }
   validateTransactionSchedule(
-    getJakartaDateString(scheduledStart),
-    getJakartaTimeString(scheduledStart),
+    getJakartaDateString(now),
+    getJakartaTimeString(now),
     durationMinutes,
     now,
     true
@@ -207,9 +211,7 @@ function isValidServiceOrderResponse(result, expected) {
   const hasIdentity = ['id', 'code', 'customer_id', 'vehicle_id'].every(key =>
     typeof result[key] === 'string' && result[key].trim().length > 0
   );
-  const validBay = expected.transaction_type === 'BOOKING'
-    ? Number.isInteger(result.bay_number) && result.bay_number >= 1 && result.bay_number <= 4
-    : result.bay_number === null;
+  const validBay = Number.isInteger(result.bay_number) && result.bay_number >= 1 && result.bay_number <= 4;
   return hasIdentity
     && /^RS-\d{6}-[A-Z0-9]{8}$/.test(result.code)
     && result.item_id === expected.item_id
@@ -606,112 +608,6 @@ const ADDONS = [
   { id: 'addon-wax', name: 'Spray Wax', price: 25000, duration: 10, image: PHOTOS.addonWax },
   { id: 'addon-tire', name: 'Tire Dressing', price: 15000, duration: 8, image: PHOTOS.addonTire }
 ];
-const SEED = {
-  customers: [
-    { id: 'c-1', full_name: 'Fajar Pratama', phone: '081200000001', email: 'fajar.pratama@rinse.id', address: 'Jl. Pahlawan 12, Semarang' },
-    { id: 'c-2', full_name: 'Nanda Putri', phone: '081200000002', email: 'nanda.putri@rinse.id', address: 'Jl. Gajah Mada 45, Semarang' },
-    { id: 'c-3', full_name: 'Rizky Hidayat', phone: '081200000003', email: 'rizky.hidayat@rinse.id', address: 'Jl. Imam Bonjol 67, Semarang' },
-    { id: 'c-4', full_name: 'Siti Rahma', phone: '081200000004', email: 'siti.rahma@rinse.id', address: 'Jl. Sudirman 88, Semarang' },
-    { id: 'c-5', full_name: 'Dimas Adi', phone: '081200000005', email: 'dimas.adi@rinse.id', address: 'Jl. Diponegoro 19, Semarang' },
-    { id: 'c-6', full_name: 'Arif Wijaya', phone: '081200000006', email: 'arif.wijaya@rinse.id', address: 'Jl. Sriwijaya 23, Semarang' },
-    { id: 'c-7', full_name: 'Melya Sari', phone: '081200000007', email: 'melya.sari@rinse.id', address: 'Jl. Merdeka 31, Semarang' },
-    { id: 'c-8', full_name: 'Bayu Saputra', phone: '081200000008', email: 'bayu.saputra@rinse.id', address: 'Jl. Taman Siswa 15, Semarang' },
-    { id: 'c-9', full_name: 'Aulia Rahman', phone: '081200000009', email: 'aulia.rahman@rinse.id', address: 'Jl. Kenanga 9, Semarang' },
-    { id: 'c-10', full_name: 'Kezia Lestari', phone: '081200000010', email: 'kezia.lestari@rinse.id', address: 'Jl. Beringin 54, Semarang' },
-    { id: 'c-11', full_name: 'Farhan Nugroho', phone: '081200000011', email: 'farhan.nugroho@rinse.id', address: 'Jl. Cendrawasih 17, Semarang' },
-    { id: 'c-12', full_name: 'Indah Permata', phone: '081200000012', email: 'indah.permata@rinse.id', address: 'Jl. Setiabudi 76, Semarang' }
-  ],
-  vehicles: [
-    { id: 'v-1', customer_id: 'c-1', type: 'CAR', plate: 'AB 2345 CD', model: 'Honda HR-V' },
-    { id: 'v-2', customer_id: 'c-2', type: 'MOTOR', plate: 'B 7701 QL', model: 'Vespa Sprint' },
-    { id: 'v-3', customer_id: 'c-3', type: 'CAR', plate: 'AB 6712 KL', model: 'Toyota Yaris' },
-    { id: 'v-4', customer_id: 'c-4', type: 'CAR', plate: 'AB 9154 HP', model: 'Toyota Avanza' },
-    { id: 'v-5', customer_id: 'c-4', type: 'MOTOR', plate: 'B 4611 XA', model: 'Honda Vario' },
-    { id: 'v-6', customer_id: 'c-5', type: 'CAR', plate: 'AB 3098 RT', model: 'Daihatsu Sigra' },
-    { id: 'v-7', customer_id: 'c-6', type: 'MOTOR', plate: 'B 1902 SZ', model: 'Yamaha NMAX' },
-    { id: 'v-8', customer_id: 'c-7', type: 'CAR', plate: 'AB 7440 OR', model: 'Mitsubishi Xpander' },
-    { id: 'v-9', customer_id: 'c-8', type: 'CAR', plate: 'AB 5026 TM', model: 'Suzuki Ertiga' },
-    { id: 'v-10', customer_id: 'c-8', type: 'MOTOR', plate: 'B 8024 NG', model: 'Kawasaki KLX' },
-    { id: 'v-11', customer_id: 'c-9', type: 'CAR', plate: 'AB 1198 YN', model: 'Honda Jazz' },
-    { id: 'v-12', customer_id: 'c-10', type: 'MOTOR', plate: 'B 2347 CU', model: 'Vespa GTS' },
-    { id: 'v-13', customer_id: 'c-11', type: 'CAR', plate: 'AB 5410 MP', model: 'Toyota Fortuner' },
-    { id: 'v-14', customer_id: 'c-12', type: 'MOTOR', plate: 'B 8703 LM', model: 'Yamaha Mio' }
-  ],
-  services_products: [
-    ...SERVICES.map(item => ({ ...item, item_type: 'SERVICE', active: true })),
-    ...ADDONS.map(item => ({ ...item, item_type: 'ADD_ON', category: 'ADD_ON', active: true })),
-    { id: 'prd-cloth', item_type: 'PRODUCT', name: 'Lap Microfiber Bodi & Kaca', category: 'PERLENGKAPAN', price: 45000, stock: 13, min_stock: 5, active: true, image: PHOTOS.microfiber, description: 'Kain lap halus berdaya serap tinggi, aman untuk bodi dan kaca tanpa meninggalkan goresan.' },
-    { id: 'prd-interior', item_type: 'PRODUCT', name: 'Pembersih Interior & Jok', category: 'PERAWATAN INTERIOR', price: 50000, stock: 11, min_stock: 4, active: true, image: PHOTOS.interior, description: 'Cairan pembersih untuk mengangkat debu, noda makanan, dan kotoran pada jok serta dasbor.' },
-    { id: 'prd-glass', item_type: 'PRODUCT', name: 'Pembersih Kaca Mobil', category: 'PERAWATAN KACA', price: 40000, stock: 10, min_stock: 4, active: true, image: PHOTOS.glass, description: 'Membersihkan bercak air dan kotoran pada kaca kendaraan agar pandangan kembali bening.' },
-    { id: 'prd-shampoo', item_type: 'PRODUCT', name: 'Sampo Mobil pH Netral', category: 'CUCI & PERAWATAN', price: 45000, stock: 22, min_stock: 6, active: true, image: PHOTOS.shampoo, description: 'Sampo cuci bodi busa melimpah, aman digunakan sehari-hari tanpa merusak cat.' },
-    { id: 'prd-tire', item_type: 'PRODUCT', name: 'Semir Pengkilap Ban', category: 'PERLINDUNGAN', price: 60000, stock: 9, min_stock: 4, active: true, image: PHOTOS.tireShine, description: 'Semir ban untuk membuat warna hitam terlihat pekat, mengkilap, dan bersih tahan lama.' },
-    { id: 'prd-wax', item_type: 'PRODUCT', name: 'Pengkilap Bodi (Wax Spray)', category: 'PERLINDUNGAN', price: 115000, stock: 8, min_stock: 4, active: true, image: PHOTOS.wax, description: 'Semprotan pengkilap cat instan yang memberi efek daun talas agar air dan debu tidak mudah menempel.' }
-  ],
-  transactions: [
-    { id: 't-1', code: 'RS-260929-1042', customer_id: 'c-1', vehicle_id: 'v-1', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-29', booking_time: '09:20', duration_minutes: 50, created_at: '2026-09-29T09:20:00' },
-    { id: 't-2', code: 'RS-260930-1088', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-self-moto', item_type: 'SERVICE', item_name: 'Self-Service Motorcycle', quantity: 1, amount: 10000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'ACTIVE', queue_status: 'WASHING', booking_date: '2026-09-30', booking_time: '10:05', duration_minutes: 25, bay_number: 2, created_at: '2026-09-30T10:05:00' },
-    { id: 't-3', code: 'RS-261001-0107', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car', quantity: 1, amount: 30000, payment_method: 'E_WALLET', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-01', booking_time: '14:30', duration_minutes: 30, bay_number: 1, created_at: '2026-09-30T10:15:00' },
-    { id: 't-4', code: 'RS-260929-0781', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Professional Motorcycle Wash', quantity: 1, amount: 20000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-29', booking_time: '16:40', duration_minutes: 35, created_at: '2026-09-29T16:40:00' },
-    { id: 't-5', code: 'RS-260928-0551', customer_id: 'c-1', vehicle_id: null, item_id: 'prd-shampoo', item_type: 'PRODUCT', item_name: 'Sampo Mobil pH Netral', quantity: 2, amount: 90000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'SHOP', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-28', booking_time: '11:10', duration_minutes: 0, created_at: '2026-09-28T11:10:00' },
-    { id: 't-6', code: 'RS-260927-0332', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-27', booking_time: '15:25', duration_minutes: 50, created_at: '2026-09-27T15:25:00' },
-    { id: 't-7', code: 'RS-261002-0216', customer_id: 'c-2', vehicle_id: 'v-2', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Professional Motorcycle Wash', quantity: 1, amount: 20000, payment_method: 'CARD', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-02', booking_time: '10:30', duration_minutes: 35, created_at: '2026-09-30T10:30:00' },
-    { id: 't-8', code: 'RS-260930-1134', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'CASH', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', queue_status: 'WAITING', booking_date: '2026-09-30', booking_time: '10:30', duration_minutes: 50, created_at: '2026-09-30T10:27:00' },
-    { id: 't-9', code: 'RS-260926-0972', customer_id: 'c-1', vehicle_id: null, item_id: 'prd-cloth', item_type: 'PRODUCT', item_name: 'Lap Microfiber Bodi & Kaca', quantity: 1, amount: 45000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'SHOP', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-26', booking_time: '12:05', duration_minutes: 0, created_at: '2026-09-26T12:05:00' },
-    { id: 't-10', code: 'RS-260925-0821', customer_id: 'c-3', vehicle_id: 'v-3', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car', quantity: 1, amount: 30000, payment_method: 'E_WALLET', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-09-25', booking_time: '17:15', duration_minutes: 30, bay_number: 4, created_at: '2026-09-25T17:15:00' },
-    { id: 't-11', code: 'RS-261004-1171', customer_id: 'c-4', vehicle_id: 'v-4', item_id: 'svc-car', addon_id: 'addon-pickup', pickup_distance_km: 2.4, item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 60000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-04', booking_time: '08:40', duration_minutes: 50 },
-    { id: 't-12', code: 'RS-261005-1388', customer_id: 'c-5', vehicle_id: 'v-6', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car', quantity: 1, amount: 30000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-10-05', booking_time: '10:15', duration_minutes: 30, bay_number: 3 },
-    { id: 't-13', code: 'RS-261006-1457', customer_id: 'c-6', vehicle_id: 'v-7', item_id: 'svc-moto', item_type: 'SERVICE', item_name: 'Professional Motorcycle Wash', quantity: 1, amount: 20000, payment_method: 'E_WALLET', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-06', booking_time: '11:20', duration_minutes: 35 },
-    { id: 't-14', code: 'RS-261005-1514', customer_id: 'c-7', vehicle_id: 'v-8', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'CARD', payment_status: 'PAID', transaction_type: 'WALK_IN', transaction_status: 'ACTIVE', queue_status: 'WASHING', booking_date: '2026-10-05', booking_time: '13:05', duration_minutes: 50 },
-    { id: 't-15', code: 'RS-261006-1606', customer_id: 'c-8', vehicle_id: 'v-10', item_id: 'svc-self-moto', item_type: 'SERVICE', item_name: 'Self-Service Motorcycle', quantity: 1, amount: 10000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-06', booking_time: '15:10', duration_minutes: 25, bay_number: 2 },
-    { id: 't-16', code: 'RS-261007-1832', customer_id: 'c-9', vehicle_id: 'v-11', item_id: 'svc-self-car', item_type: 'SERVICE', item_name: 'Self-Service Car', quantity: 1, amount: 30000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-10-07', booking_time: '16:35', duration_minutes: 30, bay_number: 4 },
-    { id: 't-17', code: 'RS-261003-1960', customer_id: 'c-10', vehicle_id: 'v-12', item_id: 'svc-moto', addon_id: 'addon-pickup-moto', pickup_distance_km: 2.0, item_type: 'SERVICE', item_name: 'Professional Motorcycle Wash', quantity: 1, amount: 25000, payment_method: 'QRIS', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-03', booking_time: '09:45', duration_minutes: 35 },
-    { id: 't-18', code: 'RS-261008-2019', customer_id: 'c-11', vehicle_id: 'v-13', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'E_WALLET', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'BOOKED', queue_status: 'WAITING', booking_date: '2026-10-08', booking_time: '12:25', duration_minutes: 50 },
-    { id: 't-19', code: 'RS-261004-2286', customer_id: 'c-12', vehicle_id: 'v-14', item_id: 'svc-self-moto', item_type: 'SERVICE', item_name: 'Self-Service Motorcycle', quantity: 1, amount: 10000, payment_method: 'CARD', payment_status: 'PAID', transaction_type: 'BOOKING', transaction_status: 'COMPLETED', queue_status: 'COMPLETED', booking_date: '2026-10-04', booking_time: '14:50', duration_minutes: 25, bay_number: 1 },
-    { id: 't-20', code: 'RS-261009-2417', customer_id: 'c-1', vehicle_id: 'v-1', item_id: 'svc-car', item_type: 'SERVICE', item_name: 'Professional Car Wash', quantity: 1, amount: 50000, payment_method: 'CASH', payment_status: 'REFUNDED', transaction_type: 'BOOKING', transaction_status: 'CANCELLED', queue_status: 'COMPLETED', booking_date: '2026-10-09', booking_time: '17:10', duration_minutes: 50 }
-  ]
-};
-const rawSeedNow = Date.now();
-const rawSeedDate = getJakartaDateString(new Date(rawSeedNow));
-const rawSeedParts = getJakartaDateParts(new Date(rawSeedNow));
-const rawSeedMinute = Number(rawSeedParts.hour) * 60 + Number(rawSeedParts.minute);
-const seedMinute = Math.min(Math.max(rawSeedMinute, 8 * 60 + 8), 20 * 60 + 43);
-const seedToday = rawSeedDate;
-const seedNow = new Date(`${seedToday}T${String(Math.floor(seedMinute / 60)).padStart(2, '0')}:${String(seedMinute % 60).padStart(2, '0')}:00+07:00`).getTime();
-const seedYesterday = addDaysToJakartaDate(seedToday, -1);
-const activeSeed = SEED.transactions.find(tx => tx.id === 't-2');
-const activeStarted = new Date(seedNow - 8 * 60000);
-activeSeed.booking_date = seedToday;
-activeSeed.booking_time = getJakartaTimeString(activeStarted);
-activeSeed.created_at = activeStarted.toISOString();
-SEED.transactions.find(tx => tx.id === 't-1').booking_date = seedYesterday;
-SEED.transactions.find(tx => tx.id === 't-3').booking_date = seedYesterday;
-SEED.transactions.find(tx => tx.id === 't-3').bay_number = 1;
-SEED.transactions.find(tx => tx.id === 't-4').booking_date = seedYesterday;
-for (const [id, offset] of [['t-5', -2], ['t-6', -3], ['t-7', -2], ['t-8', 0], ['t-9', -2], ['t-10', -2]]) {
-  const transaction = SEED.transactions.find(tx => tx.id === id);
-  transaction.booking_date = addDaysToJakartaDate(seedToday, offset);
-  transaction.created_at = new Date(seedNow + offset * 86400000).toISOString();
-}
-for (const [id, offset] of [['t-11', -1], ['t-12', 0], ['t-13', -1], ['t-14', 0], ['t-15', -1], ['t-16', 0], ['t-17', -2], ['t-18', -1], ['t-19', -1], ['t-20', 0]]) {
-  const transaction = SEED.transactions.find(tx => tx.id === id);
-  transaction.booking_date = addDaysToJakartaDate(seedToday, offset);
-}
-SEED.transactions.forEach((transaction, index) => {
-  const [year, month, day] = transaction.booking_date.slice(2).split('-');
-  transaction.code = `RS-${year}${month}${day}-${String(1042 + index * 37).padStart(4, '0')}`;
-  if (transaction.id !== 't-2') {
-    transaction.created_at = new Date(`${transaction.booking_date}T${transaction.booking_time}:00+07:00`).toISOString();
-  }
-});
-SEED.transactions.filter(transaction => transaction.item_type === 'SERVICE').forEach(transaction => {
-  const service = SEED.services_products.find(item => item.id === transaction.item_id);
-  const addon = SEED.services_products.find(item => item.id === transaction.addon_id);
-  if (!service) return;
-  const serviceAmount = service.price;
-  transaction.amount = serviceAmount + Number(addon?.price || 0);
-  transaction.item_name = `${service.name}${addon ? ` + ${addon.name}` : ''}`;
-});
-
 const SUPABASE_URL = 'https://cvnzbfbzgmjlepbsjinl.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_vzeEcRxxXJaMfE7JyKWOeg_KLx8XqnH';
 const SUPABASE_REQUEST_TIMEOUT_MS = 15000;
@@ -773,6 +669,12 @@ let adminDataError = '';
 let publicWashCount = 0;
 let publicBays = [];
 let publicRefreshInProgress = false;
+let realtimeRefreshTimer = null;
+let realtimeReconnectTimer = null;
+let realtimeSocket = null;
+let realtimeAuthToken = '';
+let realtimeHeartbeatTimer = null;
+let realtimeRef = 0;
 let activeAdminTab = 'overview';
 let serviceFilter = 'all';
 let productFilter = 'all';
@@ -858,7 +760,10 @@ function addDaysToJakartaDate(dateString, offsetDays) {
   return getJakartaDateString(date);
 }
 function getVehicle(tx) { return safeRows(db?.vehicles).find(item => item.id === tx?.vehicle_id); }
-function getCustomer(tx) { return safeRows(db?.customers).find(item => item.id === tx?.customer_id); }
+function getCustomer(tx) {
+  const customer = safeRows(db?.customers).find(item => item.id === tx?.customer_id);
+  return tx?.customer_name ? { ...customer, full_name: tx.customer_name } : customer;
+}
 function normalizeTransactionRecord(tx = {}) {
   const normalized = tx && typeof tx === 'object' ? { ...tx } : {};
   normalized.amount = finiteNumber(normalized.amount);
@@ -955,7 +860,8 @@ function isBayTransactionCurrent(tx, now = Date.now()) {
   const start = parseJakartaDateTime(tx.booking_date, tx.booking_time).getTime();
   const end = start + Math.max(Number(tx.duration_minutes) || 0, 0) * 60000;
   if (tx.transaction_status === 'ACTIVE') return start <= now && end > now;
-  return tx.transaction_status === 'BOOKED' && tx.booking_date === getJakartaDateString(new Date(now)) && end > now;
+  return ['BOOKED', 'PENDING'].includes(tx.transaction_status)
+    && tx.booking_date === getJakartaDateString(new Date(now)) && end > now;
 }
 function bayMinutesLeft(tx) {
   const start = parseJakartaDateTime(tx.booking_date, tx.booking_time).getTime();
@@ -982,6 +888,7 @@ async function openAdmin() {
   setPage('admin');
   try {
     await loadAdminData();
+    subscribeToTransactionChanges();
     render();
   } catch (error) {
     adminDataState = 'error';
@@ -1170,6 +1077,24 @@ function render() {
   document.querySelectorAll('[data-nav]').forEach(link => link.classList.toggle('active', link.dataset.nav === page));
   simplifyUiSymbols();
 }
+function renderBayStatus() {
+  const cards = Array.from({ length: 4 }, (_, index) => {
+    const number = index + 1;
+    const row = publicBays.find(item => Number(item.bay_number) === number);
+    const state = ['AVAILABLE', 'RESERVED', 'OCCUPIED'].includes(row?.bay_status) ? row.bay_status : 'UNKNOWN';
+    const duration = Math.max(0, finiteNumber(row?.duration_minutes));
+    const timeRange = formatServiceTimeRange(row?.booking_time, duration);
+    const label = state === 'AVAILABLE' ? 'TERSEDIA'
+      : state === 'RESERVED' ? 'DIPESAN'
+        : state === 'OCCUPIED' ? 'DIGUNAKAN' : 'STATUS BELUM TERSEDIA';
+    const detail = state === 'AVAILABLE' ? 'Bay kosong · siap digunakan'
+      : timeRange || 'Jadwal tidak tersedia';
+    return `<article class="bay-card bay-${state.toLowerCase()}"><div class="bay-card-top"><span>B-${String(number).padStart(2, '0')}</span>${statusBadge(state)}</div><div class="bay-card-bottom"><div class="bay-status-copy"><strong>${label}</strong><span class="bay-time">${detail}</span></div></div></article>`;
+  }).join('');
+  const homeBayGrid = document.querySelector('.home-bay-section .bay-grid');
+  if (homeBayGrid) homeBayGrid.innerHTML = cards;
+  return cards;
+}
 function applyReferencePresentation(app) {
   const hero = app.querySelector('.hero');
   if (page !== 'home' || !hero) return;
@@ -1340,6 +1265,7 @@ function renderHome() {
   const notice = '';
   return `${notice}<section class="hero"><img class="hero-image" src="${PHOTOS.hero}" alt="Mobil berbusa saat dicuci di studio"><div class="hero-shade"></div><div class="hero-topline"><span>WASH STUDIO · SEMARANG</span><span><i class="live-dot"></i> BUKA HARI INI · 08.00 — 21.00</span></div><div class="hero-content"><p class="eyebrow eyebrow-light">CUCI LEBIH BAIK. BERKENDARA LEBIH NYAMAN.</p><h1>Mobil Anda layak<br>mendapat <em>perawatan lebih.</em></h1><p class="hero-description">Serahkan kendaraan kepada tim Rinse Society untuk hasil yang konsisten, rapi, dan terpercaya.</p><div class="hero-buttons"><a class="text-link light-link" href="#services" data-nav="services">Lihat pilihan</a></div></div><div class="hero-note"><strong>${String(washes).padStart(2, '0')}</strong><span>kendaraan dirawat<br>hari ini</span></div><div class="hero-index">01 <span></span> 04</div></section>
   <section class="intro-strip"><p>BERSIH MENYELURUH. <span>PERJALANAN LEBIH NYAMAN.</span></p><p>PERAWATAN TELITI, TANPA REPOT.</p></section>
+  <section class="section home-bay-section"><div class="section-heading compact-heading"><div><p class="eyebrow">AREA CUCI · LIVE</p><h2>Status bay terkini</h2></div><button class="text-link" type="button" data-nav="self-service">Buka Self-Service</button></div><div class="bay-grid">${renderBayStatus()}</div></section>
   <section class="section quality-section"><div class="section-heading"><div><p class="eyebrow">STANDARDISASI PERAWATAN</p><h2>Metode dan kualitas<br><em>yang terasa bedanya.</em></h2></div><p class="section-aside">Perawatan dirancang untuk membersihkan kendaraan dengan teliti dan menjaga hasilnya tetap rapi.</p></div><div class="quality-grid"><article><span class="quality-index">01</span><h3>Air tersaring</h3><p>Bilas Reverse Osmosis membantu mengurangi residu mineral yang dapat meninggalkan noda air.</p></article><article><span class="quality-index">02</span><h3>Formula pH-netral</h3><p>Sampo khusus kendaraan untuk membersihkan dengan lembut dan menjaga lapisan wax.</p></article><article><span class="quality-index">03</span><h3>Teknik menyeluruh</h3><p>Busa, bilas bertekanan, dan pengeringan rapi sesuai layanan yang dipilih.</p></article><article><span class="quality-index">04</span><h3>Pilihan sesuai kendaraan</h3><p>Layanan tersedia untuk mobil dan sepeda motor, termasuk empat bay Self-Service.</p></article></div></section>
   <section class="section services-section" id="services"><div class="section-heading"><div><p class="eyebrow">PROFESSIONAL WASH</p><h2>Serahkan kendaraan.<br><em>Tim kami yang menangani.</em></h2></div><p class="section-aside">Tim Rinse Society menangani pencucian kendaraan dengan fokus pada kualitas hasil, durasi, dan penanganan yang rapi.</p><a class="text-link" href="#services" data-nav="services">Lihat pilihan</a></div><div class="service-grid">${regularServices().slice(0, 2).map(serviceCard).join('')}</div><div class="service-banner"><img src="${PHOTOS.selfBay}" alt="Beberapa bay Self-Service yang siap digunakan" loading="lazy"><div class="banner-content"><span class="eyebrow eyebrow-light">SELF-SERVICE</span><h3>Self-Service</h3><p>Pilih salah satu dari empat bay universal untuk mobil atau sepeda motor, lalu tentukan waktu dan durasi cuci.</p><button class="button button-white" data-nav="self-service">Pilih bay</button></div><span class="banner-index">BAY UNIVERSAL · 02</span></div></section>
   <section class="shop-teaser"><div class="section-heading"><div><p class="eyebrow">PERAWATAN KENDARAAN DI RUMAH</p><h2>Produk pilihan.<br><em>Rawat kilapnya.</em></h2></div><a class="text-link" href="#shop" data-nav="shop">Lihat semua produk</a></div><div class="product-grid">${db.services_products.filter(item => item.item_type === 'PRODUCT').slice(0, 2).map(productCard).join('')}</div></section>
@@ -1451,6 +1377,83 @@ function updateQueueSidebarCount(root = document) {
   const count = countActiveQueueTransactions(getOperationalQueueTransactions(db.transactions));
   const badge = root.querySelector('.admin-nav[data-admin-tab="queue"] b');
   if (badge) badge.textContent = String(count);
+}
+
+async function refreshLiveData() {
+  if (!databaseConnected || publicRefreshInProgress || document.visibilityState !== 'visible') return;
+  publicRefreshInProgress = true;
+  const currentPage = page;
+  const currentTab = activeAdminTab;
+  try {
+    if (currentPage === 'admin' && hasAdminRole(adminUser)) {
+      await loadAdminData();
+      if (page === 'admin') {
+        render();
+        if (currentTab !== 'overview') activateAdminTab(currentTab);
+      }
+    } else {
+      await loadPublicData();
+      if (page === currentPage) render();
+    }
+  } catch (_) {
+  } finally {
+    publicRefreshInProgress = false;
+  }
+}
+
+function subscribeToTransactionChanges() {
+  if (typeof WebSocket === 'undefined' || !isSupabaseConfigured()) return;
+  const accessToken = hasAdminRole(adminUser) && supabaseSession?.access_token
+    ? supabaseSession.access_token
+    : SUPABASE_PUBLISHABLE_KEY;
+  if (realtimeSocket && realtimeAuthToken === accessToken
+    && [WebSocket.CONNECTING, WebSocket.OPEN].includes(realtimeSocket.readyState)) return;
+  if (realtimeSocket) realtimeSocket.close();
+  const endpoint = new URL(`${SUPABASE_URL.replace(/^http/, 'ws').replace(/\/$/, '')}/realtime/v1/websocket`);
+  endpoint.searchParams.set('apikey', SUPABASE_PUBLISHABLE_KEY);
+  endpoint.searchParams.set('vsn', '1.0.0');
+  const socket = new WebSocket(endpoint);
+  realtimeSocket = socket;
+  realtimeAuthToken = accessToken;
+  realtimeRef = 0;
+  socket.addEventListener('open', () => {
+    socket.send(JSON.stringify({
+      topic: 'realtime:public:transactions',
+      event: 'phx_join',
+      payload: {
+        access_token: accessToken,
+        config: {
+          broadcast: { ack: false, self: false },
+          presence: { key: '' },
+          postgres_changes: [{ event: '*', schema: 'public', table: 'transactions' }]
+        }
+      },
+      ref: String(++realtimeRef)
+    }));
+    window.clearInterval(realtimeHeartbeatTimer);
+    realtimeHeartbeatTimer = window.setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(++realtimeRef) }));
+      }
+    }, 25000);
+  });
+  socket.addEventListener('message', event => {
+    let message;
+    try { message = JSON.parse(event.data); } catch (_) { return; }
+    if (message.event === 'postgres_changes'
+      || (message.event === 'broadcast' && message.payload?.event === 'transaction_changed')) {
+      window.clearTimeout(realtimeRefreshTimer);
+      realtimeRefreshTimer = window.setTimeout(() => refreshLiveData(), 150);
+    }
+  });
+  socket.addEventListener('close', () => {
+    window.clearInterval(realtimeHeartbeatTimer);
+    if (realtimeSocket !== socket) return;
+    realtimeSocket = null;
+    window.clearTimeout(realtimeReconnectTimer);
+    realtimeReconnectTimer = window.setTimeout(subscribeToTransactionChanges, 5000);
+  });
+  socket.addEventListener('error', () => socket.close());
 }
 
 function openDialog(kind, serviceId) {
@@ -1673,7 +1676,8 @@ async function persistTransaction(tx, ownerToken = null, requestId = null) {
       vehicle_model: tx.vehicle_model,
       vehicle_plate: tx.vehicle_plate,
       item_id: tx.item_id,
-      payment_method: tx.payment_method
+      payment_method: tx.payment_method,
+      created_at: tx.created_at
     };
     const result = await rpcRequest('create_demo_service_order', {
       p_order: orderPayload
@@ -1712,13 +1716,14 @@ async function submitService(form) {
   const normalizedPhone = toSupabasePhone(phone);
   if (!isValidIndonesianPlate(plate)) throw new Error('Masukkan nomor polisi Indonesia yang valid, contoh H 1234 NP.');
   const paymentMethod = validateServicePaymentMethod(String(data.get('payment') || ''), isSelfService ? 'BOOKING' : 'WALK_IN');
-  const tx = { customer_name: customerName, customer_phone: normalizedPhone, vehicle_model: String(data.get('model') || '').trim(), vehicle_plate: plate, item_id: service.id, item_type: 'SERVICE', item_name: service.name, amount: service.price, payment_method: paymentMethod, payment_status: 'PAID', refund_status: 'NONE' };
+  const tx = { customer_name: customerName, customer_phone: normalizedPhone, vehicle_model: String(data.get('model') || '').trim(), vehicle_plate: plate, item_id: service.id, item_type: 'SERVICE', item_name: service.name, amount: service.price, payment_method: paymentMethod, payment_status: 'PAID', refund_status: 'NONE', created_at: new Date().toISOString() };
   const requestId = String(data.get('request_id') || '');
   if (!isValidRequestId(requestId)) {
     throw new Error('Kunci permintaan tidak valid. Tutup lalu buka kembali form order.');
   }
   form.dataset.orderRequestAttempted = 'true';
   await persistTransaction(tx, null, requestId);
+  const currentAdminTab = activeAdminTab;
   try {
     if (page === 'admin') await loadAdminData();
     else await loadPublicData();
@@ -1726,6 +1731,8 @@ async function submitService(form) {
   catch (_) { showToast('Transaksi tersimpan, tetapi data terbaru belum dapat dimuat.', 'error'); }
   showConfirmation({ ...tx, payment_status: tx.payment_status, transaction_status: tx.transaction_status });
   render();
+  renderBayStatus();
+  if (page === 'admin' && currentAdminTab !== 'overview') activateAdminTab(currentAdminTab);
 }
 function showConfirmation(tx) {
   const isSelfServiceSession = tx.transaction_type === 'BOOKING';
@@ -2543,6 +2550,7 @@ async function logoutAdmin() {
   rememberAuthSession(null);
   adminUser = null;
   db = { ...emptyDatabase(), services_products: db.services_products };
+  subscribeToTransactionChanges();
   page = 'home';
   render();
 }
@@ -2983,24 +2991,9 @@ document.getElementById('admin-shortcut').addEventListener('click', () => openAd
 document.getElementById('mobile-menu').addEventListener('click', () => document.querySelector('.main-nav').classList.toggle('is-open'));
 bootstrapSupabase();
 render();
+subscribeToTransactionChanges();
 window.setInterval(async () => {
   if (!databaseConnected || publicRefreshInProgress || document.visibilityState !== 'visible') return;
-  publicRefreshInProgress = true;
-  try {
-    if (page === 'self-service') {
-      await loadPublicData();
-      if (page === 'self-service') render();
-    } else if (page === 'admin') {
-      const currentTab = activeAdminTab;
-      await loadAdminData();
-      if (page === 'admin') {
-        render();
-        if (currentTab !== 'overview') activateAdminTab(currentTab);
-      }
-    }
-  } catch (_) {
-  } finally {
-    publicRefreshInProgress = false;
-  }
+  await refreshLiveData();
 }, 30000);
 }
