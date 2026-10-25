@@ -12,6 +12,7 @@ const {
   verifiedPhoneMatchesInput,
   mergePersistedTransaction,
   removeTransactionFromState,
+  normalizeAdminSnapshot,
   isValidIndonesianPlate,
   isValidRequestId,
   isValidServiceOrderResponse,
@@ -69,6 +70,7 @@ const wibScheduleMigrationSource = fs.readFileSync(path.join(__dirname, '..', 's
 const legacyPerfumeCleanupSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025000000_remove_legacy_perfume_product.sql'), 'utf8');
 const canonicalDurationCogsMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025010000_canonical_service_duration_and_product_cogs.sql'), 'utf8');
 const bookingSyncMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025020000_booking_state_synchronization.sql'), 'utf8');
+const adminSnapshotResilienceSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025030000_admin_snapshot_resilience.sql'), 'utf8');
 const demoSnapshotStart = demoProposalSource.search(/create(?:\s+or\s+replace)?\s+function public\.get_demo_admin_snapshot\(\)/i);
 const demoOrderStart = demoRpcSource.search(/create(?:\s+or\s+replace)?\s+function public\.create_demo_service_order\(p_order jsonb\)/i);
 const demoOrderEnd = demoRpcSource.search(/\nrevoke all on function public\.create_demo_service_order\(jsonb\)/i);
@@ -214,6 +216,31 @@ assert.match(appSource, /message\.payload\?\.event === 'transaction_changed'/);
 assert.match(appSource, /async function refreshLiveData\(\)[\s\S]*loadAdminData\(\)[\s\S]*loadPublicData\(\)/);
 assert.match(appSource, /function renderBayStatus\(\)[\s\S]*homeBayGrid\.innerHTML = cards/);
 assert.match(appSource, /home-bay-section[\s\S]*\$\{renderBayStatus\(\)\}/);
+assert.match(appSource, /supabaseRequest\(\s*'transactions', 'GET', null, '\?select=\*&order=created_at\.desc'/);
+assert.match(appSource, /supabaseRequest\('transactions', 'GET', null, '\?select=\*'/);
+assert.match(appSource, /Belum ada transaksi tercatat\. Buat pesanan pertama melalui Beranda\./);
+assert.match(appSource, /customer_name: String\(transaction\.customer_name \|\| customerRelation\?\.full_name \|\| customerRelation\?\.name[\s\S]*transaction\.notes \|\| 'Pelanggan'\)/);
+assert.match(appSource, /vehicle_plate: String\(transaction\.vehicle_plate \|\| vehicleRelation\?\.plate_number \|\| vehicleRelation\?\.plate[\s\S]*transaction\.vehicle_id \|\| '-'\)/);
+assert.match(adminSnapshotResilienceSource, /customer_row\.full_name/);
+assert.doesNotMatch(adminSnapshotResilienceSource, /customer_row\.name/);
+assert.match(adminSnapshotResilienceSource, /to_jsonb\(transaction_row\) ->> 'notes'/);
+const normalizedAdminFixture = normalizeAdminSnapshot({
+  customers: [{ id: 'customer-a', full_name: null }],
+  vehicles: [{ id: 'vehicle-a', plate: 'H 1234 AB', type: 'CAR' }],
+  services_products: [],
+  transactions: [
+    { id: 'tx-a', customer_id: 'customer-a', customer_name: null, notes: 'Rendi', vehicle_id: 'vehicle-a', vehicle_plate: null, item_id: 'svc-car', item_type: 'SERVICE', transaction_type: 'WALK_IN', item_name: null, amount: null, created_at: '2026-10-25T08:00:00Z' },
+    { id: 'tx-b', customer_id: null, vehicle_id: null, item_id: 'legacy-product', item_type: 'PRODUCT', transaction_type: 'SHOP', amount: null }
+  ]
+});
+assert.equal(normalizedAdminFixture.transactions[0].customer_name, 'Rendi');
+assert.equal(normalizedAdminFixture.transactions[0].vehicle_plate, 'H 1234 AB');
+assert.equal(normalizedAdminFixture.transactions[0].amount, 0);
+assert.equal(normalizedAdminFixture.transactions[0].duration_minutes, 50);
+assert.equal(normalizedAdminFixture.transactions[1].customer_name, 'Pelanggan');
+assert.equal(normalizedAdminFixture.transactions[1].vehicle_plate, '-');
+assert.equal(normalizedAdminFixture.services_products.length, 2);
+assert.deepEqual(normalizeAdminSnapshot({}), { customers: [], vehicles: [], services_products: [], transactions: [] });
 assert.match(submitSource, /created_at: new Date\(\)\.toISOString\(\)/);
 assert.match(submitSource, /render\(\);\s*renderBayStatus\(\);/);
 assert.match(persistenceSource, /created_at: tx\.created_at/);
@@ -242,7 +269,7 @@ assert.equal((appSource.match(/class="bay-card-media bay-visual"/g) || []).lengt
 assert.match(appSource, /class="bay-number">\$\{String\(number\)\.padStart\(2, '0'\)\}/);
 assert.match(appSource, /class="bay-number">\$\{String\(bay\.number\)\.padStart\(2, '0'\)\}/);
 assert.match(appSource, /Pesan Layanan[\s\S]*Lihat Semua Layanan/);
-assert.match(appSource, /customer_name: String\(transaction\.customer_name \|\| customersById\.get\(transaction\.customer_id\)\?\.full_name \|\| transaction\.notes \|\| 'Pelanggan'\)/);
+assert.match(appSource, /function normalizeAdminSnapshot\(snapshot = \{\}\)[\s\S]*customer_name: String\(transaction\.customer_name[\s\S]*transaction\.notes \|\| 'Pelanggan'\)/);
 assert.match(themeSource, /--navy-dark:\s*#091724/i);
 assert.match(themeSource, /--teal-accent:\s*#1db59b/i);
 assert.match(appSource, /group\.hidden = catalogFilter !== 'all'/);

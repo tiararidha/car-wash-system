@@ -123,6 +123,91 @@ function getServiceDuration(serviceName, fallback = 0) {
   };
   return durations[key] || Math.max(0, finiteNumber(fallback));
 }
+function normalizeAdminSnapshot(snapshot = {}) {
+  const customers = safeRows(snapshot?.customers).map(customer => ({
+    ...customer,
+    full_name: String(customer.full_name || customer.name || ''),
+    phone: String(customer.phone || ''),
+    email: String(customer.email || ''),
+    address: String(customer.address || '')
+  }));
+  const vehicles = safeRows(snapshot?.vehicles).map(vehicle => ({
+    ...vehicle,
+    plate: String(vehicle.plate || vehicle.plate_number || vehicle.vehicle_plate || vehicle.id || '-'),
+    model: String(vehicle.model || ''),
+    type: vehicle.type || vehicle.vehicle_type || null
+  }));
+  const customersById = new Map(customers.map(customer => [customer.id, customer]));
+  const vehiclesById = new Map(vehicles.map(vehicle => [vehicle.id, vehicle]));
+  const transactions = safeRows(snapshot?.transactions).map(transaction => {
+    const customerRelationValue = transaction.customers;
+    const vehicleRelationValue = transaction.vehicles;
+    const customerRelation = Array.isArray(customerRelationValue) ? customerRelationValue[0] : customerRelationValue;
+    const vehicleRelation = Array.isArray(vehicleRelationValue) ? vehicleRelationValue[0] : vehicleRelationValue;
+    const customer = customersById.get(transaction.customer_id);
+    const vehicle = vehiclesById.get(transaction.vehicle_id);
+    const transactionDate = transaction.created_at ? new Date(transaction.created_at) : null;
+    const dateParts = transactionDate && !Number.isNaN(transactionDate.getTime())
+      ? getWibDateParts(transactionDate) : null;
+    const itemType = transaction.item_type === 'PRODUCT' || transaction.transaction_type === 'SHOP'
+      ? 'PRODUCT' : 'SERVICE';
+    const itemName = String(transaction.item_name || transaction.item_id || (itemType === 'PRODUCT' ? 'Produk' : 'Layanan cuci'));
+    const serviceDuration = itemType === 'SERVICE'
+      ? getServiceDuration(itemName, transaction.duration_minutes) : Math.max(0, finiteNumber(transaction.duration_minutes));
+    const paymentStatus = String(transaction.payment_status || 'PENDING').toUpperCase();
+    const transactionStatus = String(transaction.transaction_status || 'PENDING').toUpperCase();
+    const refundStatus = String(transaction.refund_status || 'NONE').toUpperCase();
+    return {
+      ...transaction,
+      item_type: itemType,
+      item_name: itemName,
+      amount: finiteNumber(transaction.amount),
+      quantity: sanitizeQuantity(transaction.quantity),
+      duration_minutes: serviceDuration,
+      payment_status: ['PENDING', 'PAID', 'FAILED', 'REFUNDED'].includes(paymentStatus) ? paymentStatus : 'PENDING',
+      transaction_status: ['PENDING', 'BOOKED', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'EXPIRED'].includes(transactionStatus) ? transactionStatus : 'PENDING',
+      refund_status: ['NONE', 'PENDING', 'COMPLETED'].includes(refundStatus) ? refundStatus : 'NONE',
+      customer_name: String(transaction.customer_name || customerRelation?.full_name || customerRelation?.name
+        || customer?.full_name || transaction.notes || 'Pelanggan'),
+      vehicle_plate: String(transaction.vehicle_plate || vehicleRelation?.plate_number || vehicleRelation?.plate
+        || vehicle?.plate || transaction.vehicle_id || '-'),
+      booking_date: transaction.booking_date || dateParts && `${dateParts.year}-${dateParts.month}-${dateParts.day}` || '',
+      booking_time: transaction.booking_time || dateParts && `${dateParts.hour}:${dateParts.minute}` || '',
+      shipping_fee: Math.max(0, finiteNumber(transaction.shipping_fee))
+    };
+  });
+  const servicesProducts = safeRows(snapshot?.services_products).map(item => ({
+    ...item,
+    name: String(item.name || item.id || 'Item'),
+    description: String(item.description || ''),
+    price: Math.max(0, finiteNumber(item.price)),
+    duration: item.item_type === 'SERVICE'
+      ? getServiceDuration(item.name || item.id, Math.max(1, finiteNumber(item.duration, 1)))
+      : Math.max(0, finiteNumber(item.duration)),
+    stock: Math.max(0, finiteNumber(item.stock)),
+    min_stock: Math.max(0, finiteNumber(item.min_stock))
+  }));
+  const itemIds = new Set(servicesProducts.map(item => item.id));
+  for (const transaction of transactions) {
+    if (!transaction.item_id || itemIds.has(transaction.item_id)) continue;
+    const type = transaction.vehicle_id ? vehiclesById.get(transaction.vehicle_id)?.type || null : null;
+    servicesProducts.push({
+      id: transaction.item_id,
+      item_type: transaction.item_type,
+      name: transaction.item_name,
+      description: '',
+      category: '',
+      type,
+      price: transaction.amount,
+      duration: transaction.duration_minutes,
+      stock: 0,
+      min_stock: 0,
+      active: false
+    });
+    itemIds.add(transaction.item_id);
+  }
+  return { customers, vehicles, services_products: servicesProducts, transactions };
+}
 function formatServiceTimeRange(startTime, durationMinutes) {
   const match = /^(\d{2}):(\d{2})/.exec(String(startTime || ''));
   if (!match) return '';
@@ -467,6 +552,7 @@ if (typeof window === 'undefined') {
     hasCustomerPhoneChanged,
     mergePersistedTransaction,
     removeTransactionFromState,
+    normalizeAdminSnapshot,
     validateServicePaymentMethod,
     productShippingFee,
     calculateProductAmount,
@@ -759,10 +845,24 @@ function addDaysToJakartaDate(dateString, offsetDays) {
   date.setDate(date.getDate() + Number(offsetDays || 0));
   return getJakartaDateString(date);
 }
-function getVehicle(tx) { return safeRows(db?.vehicles).find(item => item.id === tx?.vehicle_id); }
+function getVehicle(tx) {
+  const vehicle = safeRows(db?.vehicles).find(item => item.id === tx?.vehicle_id);
+  if (vehicle) return vehicle;
+  const relation = tx?.vehicles && typeof tx.vehicles === 'object' ? tx.vehicles : null;
+  const plate = tx?.vehicle_plate || relation?.plate_number || relation?.plate;
+  if (!tx?.vehicle_id && !plate) return null;
+  return {
+    id: tx.vehicle_id || null,
+    customer_id: tx.customer_id || null,
+    type: relation?.type || tx?.vehicle_type || null,
+    plate: String(plate || tx.vehicle_id || '-'),
+    model: String(relation?.model || tx?.vehicle_model || '')
+  };
+}
 function getCustomer(tx) {
   const customer = safeRows(db?.customers).find(item => item.id === tx?.customer_id);
-  const displayName = tx?.customer_name || customer?.full_name || tx?.notes || 'Pelanggan';
+  const relation = tx?.customers && typeof tx.customers === 'object' ? tx.customers : null;
+  const displayName = tx?.customer_name || relation?.full_name || relation?.name || customer?.full_name || tx?.notes || 'Pelanggan';
   return { ...customer, full_name: String(displayName) };
 }
 function normalizeTransactionRecord(tx = {}) {
@@ -1925,7 +2025,7 @@ function renderAdminTransactionList(records, title, eyebrow) {
   }).join('')
     .replaceAll('>Batal</button>', '>Hapus</button>')
     .replaceAll('aria-label="Batalkan transaksi ', 'aria-label="Hapus transaksi ');
-  return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Data operasional studio dengan status pembayaran dan jadwal yang konsisten.</p></div><div class="transaction-actions"><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div><button class="button button-dark" type="button" data-action="admin-transaction-create">+ Transaksi</button></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span><span>KELOLA</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi.</div>'}</div>`;
+  return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Data operasional studio dengan status pembayaran dan jadwal yang konsisten.</p></div><div class="transaction-actions"><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div><button class="button button-dark" type="button" data-action="admin-transaction-create">+ Transaksi</button></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span><span>KELOLA</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi tercatat. Buat pesanan pertama melalui Beranda.</div>'}</div>`;
 }
 function renderAdminTransactionForm(content, transactionId = null) {
   const transaction = transactionId ? safeRows(db.transactions).find(tx => tx.id === transactionId) : null;
@@ -2572,50 +2672,51 @@ async function loadPublicData() {
   databaseConnected = true;
   dataLoadState = 'ready';
 }
-async function loadAdminData() {
+async function loadAdminSnapshotFromTables() {
+  let transactions;
   try {
-    const snapshot = await rpcRequest('get_demo_admin_snapshot');
+    transactions = safeRows(await supabaseRequest(
+      'transactions', 'GET', null, '?select=*&order=created_at.desc'
+    ));
+  } catch (orderedError) {
+    try {
+      transactions = safeRows(await supabaseRequest('transactions', 'GET', null, '?select=*'));
+    } catch (_) {
+      throw orderedError;
+    }
+  }
+
+  const customerIds = [...new Set(transactions.map(transaction => transaction.customer_id).filter(Boolean))];
+  const vehicleIds = [...new Set(transactions.map(transaction => transaction.vehicle_id).filter(Boolean))];
+  const idFilter = ids => `?select=*&id=in.(${ids.map(id => encodeURIComponent(String(id))).join(',')})`;
+  const loadOptionalRows = async (table, query) => {
+    try { return safeRows(await supabaseRequest(table, 'GET', null, query)); }
+    catch (error) {
+      console.warn(`[Admin fallback] ${table} could not be loaded:`, error.message);
+      return [];
+    }
+  };
+  const [customers, vehicles, services_products] = await Promise.all([
+    customerIds.length ? loadOptionalRows('customers', idFilter(customerIds)) : Promise.resolve([]),
+    vehicleIds.length ? loadOptionalRows('vehicles', idFilter(vehicleIds)) : Promise.resolve([]),
+    loadOptionalRows('services_products', '?select=*&order=name.asc')
+  ]);
+  return { customers, vehicles, services_products, transactions };
+}
+async function loadAdminData() {
+  let snapshot;
+  try {
+    snapshot = await rpcRequest('get_demo_admin_snapshot');
     if (!snapshot || !Array.isArray(snapshot.customers) || !Array.isArray(snapshot.vehicles)
       || !Array.isArray(snapshot.services_products) || !Array.isArray(snapshot.transactions)) {
       throw new Error('RPC get_demo_admin_snapshot tidak mengembalikan semua daftar dashboard.');
     }
-    const customersById = new Map(safeRows(snapshot.customers).map(customer => [customer.id, customer]));
-    const loaded = {
-      customers: safeRows(snapshot.customers).map(customer => ({
-        ...customer,
-        full_name: String(customer.full_name || 'Pelanggan'),
-        phone: String(customer.phone || ''),
-        email: String(customer.email || ''),
-        address: String(customer.address || '')
-      })),
-      vehicles: safeRows(snapshot.vehicles).map(vehicle => ({
-        ...vehicle,
-        plate: String(vehicle.plate || ''),
-        model: String(vehicle.model || '')
-      })),
-      services_products: safeRows(snapshot.services_products).map(normalizeCatalogRecord),
-      transactions: safeRows(snapshot.transactions).map(transaction => ({
-        ...transaction,
-        customer_name: String(transaction.customer_name || customersById.get(transaction.customer_id)?.full_name || transaction.notes || 'Pelanggan')
-      }))
-    };
-    loaded.transactions = loaded.transactions.map(normalizeTransactionRecord);
-    const vehiclesById = new Map(loaded.vehicles.map(vehicle => [vehicle.id, vehicle]));
-    const itemsById = new Map(loaded.services_products.map(item => [item.id, item]));
-    const inconsistentTransactions = loaded.transactions.filter(tx => {
-      const item = itemsById.get(tx.item_id);
-      const vehicle = tx.vehicle_id ? vehiclesById.get(tx.vehicle_id) : null;
-      return !customersById.has(tx.customer_id)
-        || !item
-        || item.item_type !== tx.item_type
-        || (tx.item_type === 'SERVICE' && !vehicle)
-        || (vehicle && vehicle.customer_id !== tx.customer_id)
-        || (vehicle && tx.item_type === 'SERVICE' && vehicle.type !== item.type);
-    });
-    if (inconsistentTransactions.length) {
-      throw new Error(`${inconsistentTransactions.length} transaksi memiliki relasi pelanggan, kendaraan, atau item yang tidak sesuai.`);
-    }
-    db = loaded;
+  } catch (rpcError) {
+    console.warn('[Admin snapshot] RPC failed; loading tables directly:', rpcError.message);
+    snapshot = await loadAdminSnapshotFromTables();
+  }
+  try {
+    db = normalizeAdminSnapshot(snapshot);
     syncServiceCatalog();
     databaseConnected = true;
     adminDataReady = true;
