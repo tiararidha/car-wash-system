@@ -25,6 +25,8 @@ const {
   isValidCustomerCapabilityToken,
   requireCustomerCapabilityToken,
   sanitizeCart,
+  PRODUCT_CATALOG_IDS,
+  migrateProductStorage,
   validatePublicDataResponse,
   safeSupabaseErrorCode,
   safeSupabaseErrorDetails,
@@ -105,6 +107,23 @@ assert.deepEqual(sanitizeCart({ 'prd-a': { quantity: 2 }, 'prd-b': { quantity: 0
   'prd-a': { quantity: 2 }
 });
 assert.deepEqual(sanitizeCart([]), {});
+assert.deepEqual(PRODUCT_CATALOG_IDS, ['prd-cloth', 'prd-interior', 'prd-glass', 'prd-shampoo', 'prd-tire', 'prd-wax']);
+const legacyProductStorage = new Map([
+  ['rinse-society-cart', JSON.stringify({ 'prd-shampoo': { quantity: 1 }, 'prd-perfume': { quantity: 2 } })],
+  ['rinse-product-request-ids', JSON.stringify({ 'prd-shampoo': 'valid-id', 'prd-perfume': 'legacy-id' })],
+  ['rinse-product-checkout', JSON.stringify({ fee_item_id: 'prd-perfume', fulfillment_method: 'COURIER' })]
+]);
+const localStorageFixture = {
+  getItem: key => legacyProductStorage.get(key) ?? null,
+  setItem: (key, value) => legacyProductStorage.set(key, value),
+  removeItem: key => legacyProductStorage.delete(key)
+};
+migrateProductStorage(localStorageFixture);
+assert.deepEqual(JSON.parse(legacyProductStorage.get('rinse-society-cart')), { 'prd-shampoo': { quantity: 1 } });
+assert.deepEqual(JSON.parse(legacyProductStorage.get('rinse-product-request-ids')), { 'prd-shampoo': 'valid-id' });
+assert.equal(JSON.parse(legacyProductStorage.get('rinse-product-checkout')).fee_item_id, '');
+assert.equal(legacyProductStorage.get('rinse-product-catalog-version'), '20261025');
+assert.match(wibScheduleMigrationSource, /delete from public\.transactions where item_id = 'prd-perfume';\s*delete from public\.services_products where id = 'prd-perfume' and item_type = 'PRODUCT';/);
 assert.match(appSource, /function readStoredCart\(\)\s*\{\s*try\s*\{ return sanitizeCart\(JSON\.parse\(localStorage\.getItem\(CART_KEY\)/);
 const publicCatalogFixture = [{ id: 'svc-car', item_type: 'SERVICE', price: 50000, active: true }];
 const publicBaysFixture = [1, 2, 3, 4].map(bay_number => ({

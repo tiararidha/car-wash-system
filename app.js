@@ -310,6 +310,41 @@ function hasAdminRole(user) {
   return user?.app_metadata?.rinse_role === 'admin';
 }
 
+const PRODUCT_CATALOG_IDS = Object.freeze([
+  'prd-cloth', 'prd-interior', 'prd-glass', 'prd-shampoo', 'prd-tire', 'prd-wax'
+]);
+const PRODUCT_CATALOG_ID_SET = new Set(PRODUCT_CATALOG_IDS);
+function migrateProductStorage(storage) {
+  const readJson = key => {
+    try { return JSON.parse(storage.getItem(key) || '{}'); } catch (_) { return {}; }
+  };
+  try {
+    const cartKey = 'rinse-society-cart';
+    const requestIdsKey = 'rinse-product-request-ids';
+    const checkoutKey = 'rinse-product-checkout';
+    const versionKey = 'rinse-product-catalog-version';
+    const cart = sanitizeCart(readJson(cartKey));
+    const validCart = Object.fromEntries(Object.entries(cart).filter(([id]) => PRODUCT_CATALOG_ID_SET.has(id)));
+    if (JSON.stringify(cart) !== JSON.stringify(validCart)) {
+      storage.setItem(cartKey, JSON.stringify(validCart));
+    }
+    const requestIds = readJson(requestIdsKey);
+    const validRequestIds = requestIds && typeof requestIds === 'object' && !Array.isArray(requestIds)
+      ? Object.fromEntries(Object.entries(requestIds).filter(([id]) => PRODUCT_CATALOG_ID_SET.has(id)))
+      : {};
+    if (JSON.stringify(requestIds) !== JSON.stringify(validRequestIds)) {
+      if (Object.keys(validRequestIds).length) storage.setItem(requestIdsKey, JSON.stringify(validRequestIds));
+      else storage.removeItem(requestIdsKey);
+    }
+    const checkout = readJson(checkoutKey);
+    if (checkout?.fee_item_id && !PRODUCT_CATALOG_ID_SET.has(checkout.fee_item_id)) {
+      checkout.fee_item_id = '';
+      storage.setItem(checkoutKey, JSON.stringify(checkout));
+    }
+    if (storage.getItem(versionKey) !== '20261025') storage.setItem(versionKey, '20261025');
+  } catch (_) {}
+}
+
 if (typeof window === 'undefined') {
   const appExports = {
     normalizePhone,
@@ -336,6 +371,8 @@ if (typeof window === 'undefined') {
     isValidCustomerCapabilityToken,
     requireCustomerCapabilityToken,
     sanitizeCart,
+    PRODUCT_CATALOG_IDS,
+    migrateProductStorage,
     validatePublicDataResponse,
     safeSupabaseErrorCode,
     safeSupabaseErrorDetails,
@@ -566,6 +603,7 @@ const CUSTOMER_CAPABILITIES_KEY = 'rinse-customer-capabilities';
 const EMPTY_DB = { customers: [], vehicles: [], services_products: [], transactions: [] };
 let db = structuredClone(EMPTY_DB);
 let page = 'home';
+migrateProductStorage(localStorage);
 function readStoredCart() {
   try { return sanitizeCart(JSON.parse(localStorage.getItem(CART_KEY) || '{}')); }
   catch (_) { return {}; }
@@ -1180,7 +1218,8 @@ function renderBays() {
 function renderShop() {
   const items = Object.values(cart).reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = Object.entries(cart).reduce((sum, [id, row]) => sum + (db.services_products.find(product => product.id === id)?.price || 0) * row.quantity, 0);
-  const products = db.services_products.filter(item => item.item_type === 'PRODUCT' && item.active !== false);
+  const products = db.services_products.filter(item => item.item_type === 'PRODUCT'
+    && item.active !== false && PRODUCT_CATALOG_ID_SET.has(item.id));
   const groups = { shampoo: products.filter(item => productFilterGroup(item) === 'shampoo').length, detailer: products.filter(item => productFilterGroup(item) === 'detailer').length, accessories: products.filter(item => productFilterGroup(item) === 'accessories').length };
   const filterButton = (value, label, amount) => `<button class="catalog-filter${productFilter === value ? ' is-active' : ''}" type="button" data-product-filter="${value}" aria-pressed="${productFilter === value}">${label}<span>${amount}</span></button>`;
   return `<section class="page-hero page-hero-green"><div><p class="eyebrow eyebrow-light">PRODUK PILIHAN</p><h1>Produk Pilihan</h1><p>Produk perawatan kendaraan pilihan untuk menjaga hasil cuci lebih lama.</p></div><button class="cart-summary" data-action="cart"><span class="cart-icon">▱</span><span><strong>${items} produk</strong><small>${money(subtotal)} di keranjang</small></span></button></section><section class="section shop-section"><div class="section-heading compact-heading"><div><p class="eyebrow">KATALOG PERAWATAN</p><h2>Rawat kendaraan <em>di rumah.</em></h2></div><span class="shop-count">${products.length} produk pilihan</span></div><div class="catalog-filter-bar" role="group" aria-label="Filter kategori produk">${filterButton('all', 'Semua produk', products.length)}${filterButton('shampoo', 'Sampo & pembersih', groups.shampoo)}${filterButton('detailer', 'Detailer & proteksi', groups.detailer)}${filterButton('accessories', 'Aksesori', groups.accessories)}</div><div class="product-grid">${products.map(item => productCard(item, { categoryFilter: productFilterGroup(item) })).join('')}</div><div class="cart-drawer-inline"><div><span class="eyebrow">KERANJANG ANDA</span><strong>${items} produk · ${money(subtotal)}</strong></div><button class="button button-dark" data-action="cart">Lihat keranjang</button></div></section>`;
