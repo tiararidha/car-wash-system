@@ -154,7 +154,8 @@ function normalizeAdminSnapshot(snapshot = {}) {
     const itemName = String(transaction.item_name || transaction.item_id || (itemType === 'PRODUCT' ? 'Produk' : 'Layanan cuci'));
     const serviceDuration = itemType === 'SERVICE'
       ? getServiceDuration(itemName, transaction.duration_minutes) : Math.max(0, finiteNumber(transaction.duration_minutes));
-    const paymentStatus = String(transaction.payment_status || 'PENDING').toUpperCase();
+    const paymentStatus = isPaidTransaction(transaction) ? 'PAID'
+      : String(transaction.payment_status || transaction.status || 'PENDING').toUpperCase();
     const transactionStatus = String(transaction.transaction_status || 'PENDING').toUpperCase();
     const refundStatus = String(transaction.refund_status || 'NONE').toUpperCase();
     return {
@@ -257,10 +258,19 @@ function shippingRevenueAmount(transaction = {}) {
 function collectedAmount(transaction = {}) {
   return recognizedRevenueAmount(transaction) + shippingRevenueAmount(transaction);
   }
+function isPaidTransaction(transaction = {}) {
+  return [transaction.payment_status, transaction.status]
+    .some(status => String(status || '').toUpperCase() === 'PAID');
+}
+function isRevenueTransaction(transaction = {}) {
+  const transactionStatus = String(transaction.transaction_status || '').toUpperCase();
+  const refundStatus = String(transaction.refund_status || 'NONE').toUpperCase();
+  return isPaidTransaction(transaction)
+    && !['CANCELLED', 'EXPIRED'].includes(transactionStatus)
+    && !['PENDING', 'COMPLETED'].includes(refundStatus);
+}
 function calculateFinancialSummary(transactions = [], catalog = []) {
-  const paid = transactions.filter(tx => String(tx.payment_status || '').toUpperCase() === 'PAID'
-    && !['CANCELLED', 'EXPIRED'].includes(String(tx.transaction_status || '').toUpperCase())
-    && !['PENDING', 'COMPLETED'].includes(String(tx.refund_status || 'NONE').toUpperCase()));
+  const paid = safeRows(transactions).filter(isRevenueTransaction);
   const services = paid.filter(tx => tx.item_type === 'SERVICE');
   const retail = paid.filter(tx => tx.item_type === 'PRODUCT');
   const serviceRevenue = services.reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0);
@@ -277,19 +287,71 @@ function calculateFinancialSummary(transactions = [], catalog = []) {
   });
   const cogs = retailCosts.reduce((sum, item) => sum + item.amount, 0);
   const grossRevenue = serviceRevenue + productRevenue;
-  const totalRevenue = grossRevenue + shippingRevenue;
+  const cashCollected = grossRevenue + shippingRevenue;
   return {
     paid,
     serviceRevenue,
     productRevenue,
     shippingRevenue,
     grossRevenue,
-    totalRevenue,
+    totalRevenue: grossRevenue,
+    cashCollected,
     cogs,
     grossProfit: grossRevenue - cogs,
     productCount: retail.length,
     costRecordedCount: retailCosts.filter(item => item.recorded).length
   };
+}
+function calculateFinancialMetrics(transactions = []) {
+  const summary = calculateFinancialSummary(transactions);
+  return {
+    totalRevenue: summary.grossRevenue,
+    grossProfit: summary.grossProfit,
+    paidTransactionCount: summary.paid.length,
+    serviceRevenue: summary.serviceRevenue,
+    productRevenue: summary.productRevenue,
+    shippingRevenue: summary.shippingRevenue
+  };
+}
+function checkServiceLifecycles(transactions = [], now = Date.now()) {
+  const nowMs = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  if (!Number.isFinite(nowMs)) return safeRows(transactions);
+  return safeRows(transactions).map(transaction => {
+    if (transaction.item_type !== 'SERVICE') return transaction;
+    const currentStatus = String(transaction.transaction_status || 'PENDING').toUpperCase();
+    if (['CANCELLED', 'EXPIRED', 'COMPLETED'].includes(currentStatus)) return transaction;
+    const startsAt = transaction.start_time
+      ? new Date(transaction.start_time).getTime()
+      : transaction.booking_date && transaction.booking_time
+        ? parseJakartaDateTime(transaction.booking_date, transaction.booking_time).getTime()
+        : NaN;
+    if (!Number.isFinite(startsAt)) return transaction;
+    const duration = Math.max(0, getServiceDuration(transaction.item_name || transaction.item_id, transaction.duration_minutes));
+    const finishesAt = transaction.finished_at
+      ? new Date(transaction.finished_at).getTime()
+      : startsAt + duration * 60000;
+    if (!Number.isFinite(finishesAt)) return transaction;
+    let transactionStatus = currentStatus;
+    let queueStatus = String(transaction.queue_status || 'WAITING').toUpperCase();
+    if (isPaidTransaction(transaction)) {
+      if (finishesAt <= nowMs) {
+        transactionStatus = 'COMPLETED';
+        queueStatus = 'COMPLETED';
+      } else if (startsAt <= nowMs) {
+        transactionStatus = 'ACTIVE';
+        if (queueStatus === 'WAITING') queueStatus = 'WASHING';
+      } else if (transaction.transaction_type === 'BOOKING' && currentStatus === 'PENDING') {
+        transactionStatus = 'BOOKED';
+      }
+    } else if (transaction.transaction_type === 'BOOKING' && startsAt <= nowMs) {
+      transactionStatus = 'EXPIRED';
+      queueStatus = 'COMPLETED';
+    }
+    if (transactionStatus === currentStatus && queueStatus === String(transaction.queue_status || 'WAITING').toUpperCase()) {
+      return transaction;
+    }
+    return { ...transaction, transaction_status: transactionStatus, queue_status: queueStatus };
+  });
 }
 function isValidServiceOrderResponse(result, expected) {
   if (!result || typeof result !== 'object' || !expected) return false;
@@ -475,20 +537,16 @@ function serviceOrderErrorMessage(error) {
 }
 function countActiveQueueTransactions(records = []) {
   return records.filter(tx => tx?.item_type === 'SERVICE'
-    && String(tx.payment_status || '').toUpperCase() === 'PAID'
-    && !['CANCELLED', 'EXPIRED'].includes(String(tx.transaction_status || '').toUpperCase())
-    && !['PENDING', 'COMPLETED'].includes(String(tx.refund_status || 'NONE').toUpperCase())
+    && isRevenueTransaction(tx)
     && (tx.transaction_type !== 'BOOKING' || ['ACTIVE', 'COMPLETED'].includes(String(tx.transaction_status || '').toUpperCase()))
     && ['WAITING', 'WASHING', 'FINISHING'].includes(String(tx.queue_status || 'WAITING').toUpperCase())).length;
 }
 function filterQueueTransactionsForDate(records = [], queueDate) {
   return records.filter(tx => tx?.item_type === 'SERVICE'
     && tx.booking_date === queueDate
-    && String(tx.payment_status || '').toUpperCase() === 'PAID'
-    && !['CANCELLED', 'EXPIRED'].includes(String(tx.transaction_status || '').toUpperCase())
-    && !['PENDING', 'COMPLETED'].includes(String(tx.refund_status || 'NONE').toUpperCase())
+    && isRevenueTransaction(tx)
     && (tx.transaction_type !== 'BOOKING' || ['ACTIVE', 'COMPLETED'].includes(String(tx.transaction_status || '').toUpperCase()))
-    && ['WAITING', 'WASHING', 'FINISHING', 'COMPLETED'].includes(String(tx.queue_status || 'WAITING').toUpperCase()));
+    && ['WAITING', 'WASHING', 'FINISHING'].includes(String(tx.queue_status || 'WAITING').toUpperCase()));
 }
 
 function hasAdminRole(user) {
@@ -552,6 +610,10 @@ if (typeof window === 'undefined') {
     hasCustomerPhoneChanged,
     mergePersistedTransaction,
     removeTransactionFromState,
+    isPaidTransaction,
+    isRevenueTransaction,
+    calculateFinancialMetrics,
+    checkServiceLifecycles,
     normalizeAdminSnapshot,
     validateServicePaymentMethod,
     productShippingFee,
@@ -873,7 +935,8 @@ function normalizeTransactionRecord(tx = {}) {
     ? getServiceDuration(normalized.item_name || normalized.item_id, normalized.duration_minutes)
     : Math.max(0, finiteNumber(normalized.duration_minutes));
   normalized.shipping_fee = Math.max(0, finiteNumber(normalized.shipping_fee));
-  const paymentStatus = String(normalized.payment_status || 'PENDING').toUpperCase();
+  const paymentStatus = isPaidTransaction(normalized) ? 'PAID'
+    : String(normalized.payment_status || normalized.status || 'PENDING').toUpperCase();
   const transactionStatus = String(normalized.transaction_status || 'PENDING').toUpperCase();
   const refundStatus = String(normalized.refund_status || 'NONE').toUpperCase();
   normalized.payment_status = ['PENDING', 'PAID', 'FAILED', 'REFUNDED'].includes(paymentStatus) ? paymentStatus : 'PENDING';
@@ -904,41 +967,10 @@ function normalizeCatalogRecord(item = {}) {
 }
 function normalizeOperationalTransaction(tx = {}) {
   const normalized = normalizeTransactionRecord(tx);
-  if (normalized.item_type === 'SERVICE' && normalized.transaction_type === 'BOOKING'
-    && ['PENDING', 'BOOKED', 'ACTIVE', 'COMPLETED'].includes(normalized.transaction_status)
-    && normalized.booking_date && normalized.booking_time) {
-    const startsAt = parseJakartaDateTime(normalized.booking_date, normalized.booking_time).getTime();
-    const endsAt = startsAt + Math.max(Number(normalized.duration_minutes) || 0, 0) * 60000;
-    if (normalized.payment_status !== 'PAID' && startsAt <= Date.now()) {
-      normalized.transaction_status = 'EXPIRED';
-      normalized.queue_status = 'COMPLETED';
-      return normalized;
-    }
-    if (endsAt <= Date.now()) {
-      normalized.transaction_status = normalized.transaction_status === 'COMPLETED'
-        || (normalized.transaction_status === 'ACTIVE' && ['WASHING', 'FINISHING', 'COMPLETED'].includes(normalized.queue_status))
-        ? 'COMPLETED' : 'EXPIRED';
-      normalized.queue_status = 'COMPLETED';
-    } else if (normalized.payment_status === 'PAID' && normalized.transaction_status === 'BOOKED' && startsAt <= Date.now()) {
-      normalized.transaction_status = 'ACTIVE';
-      normalized.queue_status = normalized.queue_status || 'WAITING';
-    } else if (normalized.payment_status !== 'PAID' && ['BOOKED', 'ACTIVE', 'COMPLETED'].includes(normalized.transaction_status)) {
-      normalized.transaction_status = 'PENDING';
-      normalized.queue_status = 'WAITING';
-    }
-  }
-  return normalized;
+  return checkServiceLifecycles([normalized])[0] || normalized;
 }
 function getOperationalTransactions(records = []) {
   return safeRows(records).map(tx => normalizeOperationalTransaction(tx));
-}
-function isRevenueTransaction(tx) {
-  const paymentStatus = String(tx?.payment_status || 'PENDING').toUpperCase();
-  const transactionStatus = String(tx?.transaction_status || 'PENDING').toUpperCase();
-  const refundStatus = String(tx?.refund_status || 'NONE').toUpperCase();
-  return paymentStatus === 'PAID'
-    && !['CANCELLED', 'EXPIRED'].includes(transactionStatus)
-    && !['PENDING', 'COMPLETED'].includes(refundStatus);
 }
 function getOperationalQueueTransactions(records = [], queueDate = getJakartaDateString()) {
   return filterQueueTransactionsForDate(getOperationalTransactions(records), queueDate);
@@ -1238,7 +1270,7 @@ function dailyPaidRevenue(transactions, dayCount = 7) {
     return {
       key,
       label: date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
-      amount: transactions.filter(tx => isRevenueTransaction(tx) && tx.booking_date === key).reduce((sum, tx) => sum + collectedAmount(tx), 0)
+      amount: transactions.filter(tx => isRevenueTransaction(tx) && tx.booking_date === key).reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0)
     };
   });
 }
@@ -1309,6 +1341,7 @@ function renderAdminMetrics() {
   const today = getJakartaDateString();
   const todays = transactions.filter(tx => tx.booking_date === today);
   const paidToday = todays.filter(isRevenueTransaction);
+  const todayMetrics = calculateFinancialMetrics(paidToday);
   const lowStock = db.services_products.filter(item => item.item_type === 'PRODUCT' && item.stock <= item.min_stock).length;
   const washed = new Set(todays.filter(tx => tx.item_type === 'SERVICE' && isRevenueTransaction(tx) && tx.transaction_status === 'COMPLETED').map(tx => tx.vehicle_id).filter(Boolean)).size;
   const selfService = todays.filter(tx => tx.item_type === 'SERVICE' && isRevenueTransaction(tx) && db.services_products.find(item => item.id === tx.item_id)?.category === 'SELF_SERVICE').length;
@@ -1316,17 +1349,18 @@ function renderAdminMetrics() {
   const weeklyRows = dailyPaidRevenue(transactions);
   const weeklyDates = new Set(weeklyRows.map(row => row.key));
   const weeklyPaid = paid.filter(tx => weeklyDates.has(tx.booking_date));
-  const serviceRevenue = weeklyPaid.filter(tx => tx.item_type === 'SERVICE').reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0);
-  const productRevenue = weeklyPaid.filter(tx => tx.item_type === 'PRODUCT').reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0);
-  const shippingRevenue = weeklyPaid.reduce((sum, tx) => sum + shippingRevenueAmount(tx), 0);
+  const weeklyMetrics = calculateFinancialMetrics(weeklyPaid);
+  const serviceRevenue = weeklyMetrics.serviceRevenue;
+  const productRevenue = weeklyMetrics.productRevenue;
+  const shippingRevenue = weeklyMetrics.shippingRevenue;
   const metrics = [
-    ['Pendapatan Hari Ini', money(paidToday.reduce((sum, tx) => sum + collectedAmount(tx), 0)), `${paidToday.length} transaksi lunas`, 'primary'],
-    ['Transaksi', transactions.length.toString().padStart(2, '0'), 'Layanan, sesi, dan produk tersimpan', 'primary'],
+    ['Pendapatan Kotor Hari Ini', money(todayMetrics.totalRevenue), `${paidToday.length} transaksi lunas`, 'primary'],
+    ['Transaksi Lunas', String(paid.length).padStart(2, '0'), `${transactions.length} transaksi tercatat`, 'primary'],
     ['Kendaraan Dilayani', String(washed).padStart(2, '0'), 'Transaksi selesai hari ini', 'primary'],
     ['Order Hari Ini', String(todays.length).padStart(2, '0'), 'Layanan, sesi, dan produk', 'primary']
   ];
   document.querySelector('.metric-grid').innerHTML = metrics.map(([label, value, note, primary]) => `<article class="metric-card ${primary ? 'metric-primary' : ''}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join('');
-  const secondaryMetrics = `<div class="metric-secondary-grid"><div><span>Sesi Self-Service Hari Ini</span><strong>${String(selfService).padStart(2, '0')}</strong><small>Sesi lunas hari ini</small></div><div><span>Pendapatan Jasa · Tujuh Hari</span><strong>${money(serviceRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Pendapatan Produk · Tujuh Hari</span><strong>${money(productRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Pelanggan</span><strong>${String(db.customers.length).padStart(2, '0')}</strong><small>Data pelanggan terdaftar</small></div></div>`;
+  const secondaryMetrics = `<div class="metric-secondary-grid"><div><span>Sesi Self-Service Hari Ini</span><strong>${String(selfService).padStart(2, '0')}</strong><small>Sesi lunas hari ini</small></div><div><span>Pendapatan Jasa · Tujuh Hari</span><strong>${money(serviceRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Pendapatan Produk · Tujuh Hari</span><strong>${money(productRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Laba Kotor · Tujuh Hari</span><strong>${money(weeklyMetrics.grossProfit)}</strong><small>Pendapatan kotor dikurangi HPP retail</small></div><div><span>Pelanggan</span><strong>${String(db.customers.length).padStart(2, '0')}</strong><small>Data pelanggan terdaftar</small></div></div>`;
   let secondaryGrid = document.querySelector('.metric-secondary-grid');
   if (!secondaryGrid) {
     document.querySelector('.metric-grid').insertAdjacentHTML('afterend', secondaryMetrics);
@@ -1334,7 +1368,7 @@ function renderAdminMetrics() {
     secondaryGrid.outerHTML = secondaryMetrics;
   }
 
-  const totalRevenue = serviceRevenue + productRevenue + shippingRevenue;
+  const totalRevenue = weeklyMetrics.totalRevenue;
   const revenuePanel = document.querySelector('.revenue-panel');
   if (revenuePanel) revenuePanel.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">TREN PENDAPATAN</p><h2>Pendapatan Periode</h2></div><strong class="dashboard-revenue-total">${money(totalRevenue)}</strong></div><p class="dashboard-chart-context">Transaksi lunas · tujuh hari terakhir</p>${renderRevenueLineChart(weeklyRows)}<div class="dashboard-revenue-split"><div><span>Jasa · tujuh hari</span><strong>${money(serviceRevenue)}</strong></div><div><span>Produk · tujuh hari</span><strong>${money(productRevenue)}</strong></div><div><span>Ongkir · tujuh hari</span><strong>${money(shippingRevenue)}</strong></div></div>`;
 
@@ -1444,10 +1478,10 @@ function renderAdminLegacy() {
   const today = getJakartaDateString();
   const todayRows = db.transactions.filter(tx => tx.booking_date === today);
   const paid = db.transactions.filter(isRevenueTransaction);
-  const todayRevenue = todayRows.filter(tx => tx.payment_status === 'PAID').reduce((sum, tx) => sum + collectedAmount(tx), 0);
+  const todayRevenue = todayRows.filter(isRevenueTransaction).reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0);
   const serviceRevenue = paid.filter(tx => tx.item_type === 'SERVICE').reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0);
   const productRevenue = paid.filter(tx => tx.item_type === 'PRODUCT').reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0);
-  const total = serviceRevenue + productRevenue + paid.reduce((sum, tx) => sum + shippingRevenueAmount(tx), 0);
+  const total = serviceRevenue + productRevenue;
   const lowStock = db.services_products.filter(item => item.item_type === 'PRODUCT' && item.stock <= item.min_stock);
   const vehiclesWashed = todayRows.filter(tx => tx.item_type !== 'PRODUCT' && tx.transaction_status === 'COMPLETED').length;
   const bookingsToday = todayRows.filter(tx => tx.transaction_type === 'BOOKING').length;
@@ -1464,7 +1498,7 @@ function queueCard(tx) {
   return `<article class="queue-card"><div class="queue-card-top"><strong>${escapeHtml(tx.code)}</strong>${statusBadge(tx.payment_status)}</div><h3>${escapeHtml(vehicle?.plate || 'Penjualan produk')}</h3><p>${escapeHtml(tx.item_name || 'Layanan cuci')} · ${escapeHtml(customer?.full_name || 'Walk-in')}</p><div class="queue-card-foot"><span>${escapeHtml(formatTransactionTime(tx) || 'Walk-in')}</span><select aria-label="Ubah status ${escapeHtml(tx.code)}" data-queue-id="${tx.id}">${['WAITING', 'WASHING', 'FINISHING', 'COMPLETED'].map(status => `<option value="${status}" ${tx.queue_status === status ? 'selected' : ''}>${statusLabel(status)}</option>`).join('')}</select></div></article>`;
 }
 function renderQueueColumns(large) {
-  const stages = ['WAITING', 'WASHING', 'COMPLETED'];
+  const stages = ['WAITING', 'WASHING'];
   const washTransactions = getOperationalQueueTransactions(db.transactions);
   const stageTransactions = stage => washTransactions.filter(tx => stage === 'WASHING'
     ? ['WASHING', 'FINISHING'].includes(tx.queue_status || 'WAITING')
@@ -1478,6 +1512,62 @@ function updateQueueSidebarCount(root = document) {
   const count = countActiveQueueTransactions(getOperationalQueueTransactions(db.transactions));
   const badge = root.querySelector('.admin-nav[data-admin-tab="queue"] b');
   if (badge) badge.textContent = String(count);
+}
+
+const lifecycleUpdatesInFlight = new Set();
+function refreshCurrentTransactionView() {
+  if (page === 'admin' && adminDataReady) {
+    const currentTab = activeAdminTab;
+    render();
+    if (currentTab !== 'overview') activateAdminTab(currentTab);
+  } else if (page === 'home' || page === 'self-service') {
+    render();
+  }
+}
+function dispatchTransactionStateChange() {
+  document.dispatchEvent(new Event('rinse:transactions-changed'));
+}
+document.addEventListener('rinse:transactions-changed', refreshCurrentTransactionView);
+
+function refreshPublicBayLifecycles(now = Date.now()) {
+  let changed = false;
+  const today = getJakartaDateString(new Date(now));
+  publicBays = publicBays.map(bay => {
+    if (!['RESERVED', 'OCCUPIED'].includes(bay.bay_status) || !bay.booking_time) return bay;
+    const start = parseJakartaDateTime(today, bay.booking_time).getTime();
+    const serviceName = bay.vehicle_type === 'MOTOR' ? 'Self-Service Motorcycle' : 'Self-Service Car';
+    const duration = getServiceDuration(serviceName, bay.duration_minutes);
+    const finish = start + duration * 60000;
+    const status = now >= finish ? 'AVAILABLE' : now >= start ? 'OCCUPIED' : 'RESERVED';
+    if (status === bay.bay_status) return bay;
+    changed = true;
+    return status === 'AVAILABLE'
+      ? { ...bay, bay_status: status, vehicle_type: null, duration_minutes: 0, minutes_remaining: 0, booking_time: null }
+      : { ...bay, bay_status: status, minutes_remaining: Math.max(0, Math.ceil((finish - now) / 60000)) };
+  });
+  return changed;
+}
+function runServiceLifecycleCheck(now = Date.now()) {
+  const currentRows = safeRows(db?.transactions);
+  const updatedRows = checkServiceLifecycles(currentRows, now);
+  const updates = updatedRows.filter((transaction, index) => transaction !== currentRows[index]);
+  if (updates.length) {
+    db.transactions = updatedRows;
+    dispatchTransactionStateChange();
+    if (isAdminAuthorized()) {
+      updates.forEach(transaction => {
+        if (!transaction.id || lifecycleUpdatesInFlight.has(transaction.id)) return;
+        lifecycleUpdatesInFlight.add(transaction.id);
+        patchRow('transactions', transaction.id, {
+          transaction_status: transaction.transaction_status,
+          queue_status: transaction.queue_status
+        }).catch(error => {
+          console.warn('[Service lifecycle] Status update failed:', error.message);
+        }).finally(() => lifecycleUpdatesInFlight.delete(transaction.id));
+      });
+    }
+  }
+  if (refreshPublicBayLifecycles(now)) dispatchTransactionStateChange();
 }
 
 async function refreshLiveData() {
@@ -1798,6 +1888,7 @@ async function persistTransaction(tx, ownerToken = null, requestId = null) {
     mergePersistedTransaction(tx, result);
   }
   db.transactions.unshift(tx);
+  dispatchTransactionStateChange();
   return tx;
 }
 async function submitService(form) {
@@ -1928,7 +2019,7 @@ async function submitProducts(form) {
   render();
 }
 function renderReportsLegacy() {
-  const paid = db.transactions.filter(isRevenueTransaction);
+  const paid = db.transactions.filter(isRevenueTransaction).map(tx => ({ ...tx, amount: recognizedRevenueAmount(tx) }));
   const serviceRows = paid.filter(tx => tx.item_type === 'SERVICE');
   const productRows = paid.filter(tx => tx.item_type === 'PRODUCT');
   const serviceRevenue = serviceRows.reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0);
@@ -2238,6 +2329,7 @@ async function saveAdminTransaction(form) {
   if (transaction) {
     await patchRow('transactions', transaction.id, changes);
     Object.assign(transaction, changes);
+    dispatchTransactionStateChange();
     return transaction;
   }
   const customerResult = await findOrCreateCustomer(data.customer_name, data.customer_phone);
@@ -2270,6 +2362,7 @@ async function saveAdminTransaction(form) {
   };
   await insertRow('transactions', created);
   db.transactions.unshift(created);
+  dispatchTransactionStateChange();
   return created;
 }
 async function deleteAdminTransaction(transactionId) {
@@ -2277,6 +2370,7 @@ async function deleteAdminTransaction(transactionId) {
   if (!db.transactions.some(tx => tx.id === transactionId)) throw new Error('Transaksi tidak ditemukan.');
   if (isSupabaseConfigured()) await deleteRow('transactions', transactionId);
   db.transactions = removeTransactionFromState(db.transactions, transactionId);
+  dispatchTransactionStateChange();
 }
 function renderAdminCustomers() {
   const customers = safeRows(db?.customers);
@@ -2321,19 +2415,20 @@ function renderAdminBayStatus() {
   return `<section class="admin-panel admin-bay-status-panel"><div class="panel-heading"><div><p class="eyebrow">SELF-SERVICE · KETERSEDIAAN</p><h2>Status empat bay</h2></div><span class="updated-label"><i class="live-dot"></i> Diperbarui langsung</span></div><div class="admin-bay-indicators">${bays}</div></section>`;
 }
 function renderReportDetailsLegacy() {
-  const paid = db.transactions.filter(tx => tx.payment_status === 'PAID');
+  const paid = db.transactions.filter(isRevenueTransaction);
   const periods = field => [...new Set(paid.map(tx => tx.booking_date.slice(0, field === 'day' ? 10 : 7)))].sort();
-  const chart = (label, heading, keys, selector) => `<section class="admin-panel payment-report"><div class="panel-heading"><div><p class="eyebrow">${label}</p><h2>${heading}</h2></div></div>${keys.map(key => { const amount = paid.filter(selector(key)).reduce((sum, tx) => sum + tx.amount, 0); const max = Math.max(1, ...keys.map(period => paid.filter(selector(period)).reduce((sum, tx) => sum + tx.amount, 0))); return `<div class="revenue-bar-row"><span>${key}</span><div><i style="width:${amount / max * 100}%"></i></div><strong>${money(amount)}</strong></div>`; }).join('')}</section>`;
+  const chart = (label, heading, keys, selector) => `<section class="admin-panel payment-report"><div class="panel-heading"><div><p class="eyebrow">${label}</p><h2>${heading}</h2></div></div>${keys.map(key => { const amount = paid.filter(selector(key)).reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0); const max = Math.max(1, ...keys.map(period => paid.filter(selector(period)).reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0))); return `<div class="revenue-bar-row"><span>${key}</span><div><i style="width:${amount / max * 100}%"></i></div><strong>${money(amount)}</strong></div>`; }).join('')}</section>`;
   const days = periods('day').slice(-7);
   const months = periods('month').slice(-6);
   const vehicles = ['CAR', 'MOTOR'];
-  const vehicleSection = `<section class="admin-panel payment-report"><div class="panel-heading"><div><p class="eyebrow">REVENUE BY VEHICLE</p><h2>Car vs motorcycle</h2></div></div>${vehicles.map(type => { const amount = paid.filter(tx => getVehicle(tx)?.type === type).reduce((sum, tx) => sum + tx.amount, 0); return `<div class="revenue-bar-row"><span>${type === 'CAR' ? 'Cars' : 'Motorcycles'}</span><div><i style="width:${amount / Math.max(1, ...vehicles.map(value => paid.filter(tx => getVehicle(tx)?.type === value).reduce((sum, tx) => sum + tx.amount, 0))) * 100}%"></i></div><strong>${money(amount)}</strong></div>`; }).join('')}</section>`;
+  const vehicleSection = `<section class="admin-panel payment-report"><div class="panel-heading"><div><p class="eyebrow">REVENUE BY VEHICLE</p><h2>Car vs motorcycle</h2></div></div>${vehicles.map(type => { const amount = paid.filter(tx => getVehicle(tx)?.type === type).reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0); return `<div class="revenue-bar-row"><span>${type === 'CAR' ? 'Cars' : 'Motorcycles'}</span><div><i style="width:${amount / Math.max(1, ...vehicles.map(value => paid.filter(tx => getVehicle(tx)?.type === value).reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0))) * 100}%"></i></div><strong>${money(amount)}</strong></div>`; }).join('')}</section>`;
   const productSection = `<section class="admin-panel payment-report"><div class="panel-heading"><div><p class="eyebrow">PRODUCT SALES</p><h2>Studio goods, sold</h2></div></div>${db.services_products.filter(item => item.item_type === 'PRODUCT').map(product => { const units = paid.filter(tx => tx.item_id === product.id).reduce((sum, tx) => sum + (tx.quantity || 1), 0); return `<div class="revenue-bar-row"><span>${escapeHtml(product.name)}</span><div><i class="bar-green" style="width:${units / Math.max(1, ...db.services_products.filter(item => item.item_type === 'PRODUCT').map(item => paid.filter(tx => tx.item_id === item.id).reduce((sum, tx) => sum + (tx.quantity || 1), 0))) * 100}%"></i></div><strong>${units} sold</strong></div>`; }).join('')}</section>`;
   return `${chart('DAILY REVENUE', 'The last seven trading days', days, key => tx => tx.booking_date === key)}${chart('MONTHLY REVENUE', 'Month by month', months, key => tx => tx.booking_date.startsWith(key))}${vehicleSection}${productSection}`;
 }
 function renderReportDetails() {
   const transactions = reportPeriodTransactions();
-  const paid = transactions.filter(isRevenueTransaction);
+  const financialSummary = calculateFinancialSummary(transactions, db.services_products);
+  const paid = financialSummary.paid;
   const daily = dailyPaidRevenue(transactions);
   const periodKeys = new Set(daily.map(row => row.key));
   const periodPaid = paid.filter(tx => periodKeys.has(tx.booking_date));
@@ -2341,9 +2436,9 @@ function renderReportDetails() {
     const maximum = Math.max(1, ...rows.map(row => row.amount));
     return `<div class="report-bars">${rows.map(row => `<div class="report-bar-row"><span>${escapeHtml(row.label)}</span><div class="report-bar-track"><i style="width:${row.amount / maximum * 100}%"></i></div><strong>${formatValue(row[valueKey], row)}</strong></div>`).join('') || '<p class="report-empty">Belum ada transaksi.</p>'}</div>`;
   };
-  const serviceRevenue = paid.filter(tx => tx.item_type === 'SERVICE').reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0);
-  const productRevenue = paid.filter(tx => tx.item_type === 'PRODUCT').reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0);
-  const totalRevenue = serviceRevenue + productRevenue;
+  const serviceRevenue = financialSummary.serviceRevenue;
+  const productRevenue = financialSummary.productRevenue;
+  const totalRevenue = financialSummary.grossRevenue;
   const revenueSplit = [
     { label: 'Jasa', amount: serviceRevenue },
     { label: 'Produk', amount: productRevenue }
@@ -2354,7 +2449,7 @@ function renderReportDetails() {
   });
   const byVehicle = ['CAR', 'MOTOR'].map(type => {
     const rows = paid.filter(tx => reportVehicle(tx)?.type === type);
-    return { label: type === 'CAR' ? 'Mobil' : 'Sepeda motor', amount: rows.reduce((sum, tx) => sum + Number(tx.amount), 0), count: rows.length };
+    return { label: type === 'CAR' ? 'Mobil' : 'Sepeda motor', amount: rows.reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0), count: rows.length };
   });
   const serviceItems = db.services_products.filter(item => item.item_type === 'SERVICE').map(service => {
     const rows = paid.filter(tx => tx.item_id === service.id);
@@ -2362,7 +2457,7 @@ function renderReportDetails() {
   }).sort((a, b) => b.count - a.count || b.amount - a.amount);
   const vehicleItems = ['CAR', 'MOTOR'].map(type => {
     const rows = paid.filter(tx => reportVehicle(tx)?.type === type);
-    return { label: type === 'CAR' ? 'Mobil' : 'Sepeda motor', amount: rows.reduce((sum, tx) => sum + Number(tx.amount), 0), count: rows.length };
+    return { label: type === 'CAR' ? 'Mobil' : 'Sepeda motor', amount: rows.reduce((sum, tx) => sum + recognizedRevenueAmount(tx), 0), count: rows.length };
   });
   const productItems = db.services_products.filter(item => item.item_type === 'PRODUCT').map(product => {
     const rows = paid.filter(tx => tx.item_id === product.id);
@@ -2869,7 +2964,7 @@ document.addEventListener('click', async event => {
         throw new Error('Status pengembalian dana belum tersimpan.');
       }
       Object.assign(tx, updated);
-      activateAdminTab('transactions');
+      dispatchTransactionStateChange();
       showToast('Pengembalian dana dicatat selesai. Pastikan dana sudah dikembalikan melalui penyedia pembayaran.');
     } catch (error) {
       refundButton.disabled = false;
@@ -2888,7 +2983,7 @@ document.addEventListener('click', async event => {
         throw new Error('Status pembayaran belum tersimpan.');
       }
       await loadAdminData();
-      activateAdminTab('transactions');
+      dispatchTransactionStateChange();
       showToast(`${tx.code} dikonfirmasi lunas.`);
     } catch (error) {
       paymentButton.disabled = false;
@@ -3088,7 +3183,7 @@ document.addEventListener('change', async event => {
       return;
     }
     const changes = { queue_status: event.target.value, transaction_status: event.target.value === 'COMPLETED' ? 'COMPLETED' : 'ACTIVE' };
-    try { await patchRow('transactions', tx.id, changes); Object.assign(tx, changes); activateAdminTab('queue'); showToast(`${tx.code} dipindahkan ke ${tx.queue_status.toLowerCase()}.`); }
+    try { await patchRow('transactions', tx.id, changes); Object.assign(tx, changes); dispatchTransactionStateChange(); showToast(`${tx.code} dipindahkan ke ${tx.queue_status.toLowerCase()}.`); }
     catch (error) { event.target.value = tx.queue_status; console.warn('[Queue status] Update failed:', error.message); }
   }
 });
@@ -3097,6 +3192,9 @@ document.getElementById('mobile-menu').addEventListener('click', () => document.
 bootstrapSupabase();
 render();
 subscribeToTransactionChanges();
+window.setInterval(() => {
+  if (databaseConnected && document.visibilityState === 'visible') runServiceLifecycleCheck();
+}, 1000);
 window.setInterval(async () => {
   if (!databaseConnected || publicRefreshInProgress || document.visibilityState !== 'visible') return;
   await refreshLiveData();

@@ -1,92 +1,128 @@
-# Rinse Society Wash Studio
+# Rinse Society | Car Wash Management System
 
-Aplikasi operasional wash studio untuk katalog layanan, sesi bay Self-Service, produk, antrean, transaksi, dan dashboard admin.
+Rinse Society adalah aplikasi manajemen wash studio berbasis web untuk pemesanan Self-Service dan Professional Wash, pemantauan empat bay universal, POS kasir untuk transaksi walk-in dan produk, antrean operasional, serta dashboard Admin dengan ringkasan dan laporan keuangan.
 
-## Live Website
-
-[Buka Rinse Society Wash Studio](https://tiararidha.github.io/car-wash-system/)
+Live site: [Rinse Society Wash Studio](https://tiararidha.github.io/car-wash-system/)
 
 ## Fitur
 
-- Katalog Professional Wash, Self-Service, dan produk dari Supabase.
-- Form order Professional Wash dan Self-Service tanpa pilihan jadwal atau bay manual; waktu layanan dan alokasi bay Self-Service ditentukan otomatis dari ketersediaan.
-- Order layanan dan checkout produk menyimpan data di Supabase; pembayaran order baru disimulasikan berhasil dan dicatat `PAID` oleh RPC database.
-- Tanggal transaksi mengikuti tanggal WIB saat ini; input transaksi manual tidak boleh melewati waktu saat ini. Jam operasional studio tetap 08.00–21.00 WIB.
-- Checkout produk mendukung Ambil di Studio (Pick-up, ongkir Rp0) atau Pengiriman Online / Kurir lokal maksimal 10 km (ongkir flat Rp10.000). Alamat kurir wajib diisi; metode, alamat, dan ongkir tersimpan pada transaksi dan tampil pada konfirmasi serta daftar Admin.
-- Papan Antrean Harian (Today's Queue) hanya menampilkan operasional kendaraan bertanggal hari ini, dengan counter Antrean Aktif dan Selesai yang dihitung dari data harian. Tab Transaksi menampilkan transaksi operasional dan pembelian produk yang masih aktif; transaksi yang dibatalkan disimpan tetapi disembunyikan dari daftar aktif.
-- Seluruh 28 transaksi historis/demo di database tercatat `PAID`; dashboard Admin hanya dapat dibuka setelah verifikasi Supabase Auth dengan claim `app_metadata.rinse_role = 'admin'`.
-- Tab Self-Service khusus di Admin telah dihapus. Tab Ringkasan Studio menampilkan satu panel ringkas status empat bay sebagai indikator monitoring ketersediaan real-time, tanpa aksi pemesanan.
-- Badge sidebar Antrean tersinkronisasi real-time dan hanya menghitung antrean aktif berstatus MENUNGGU atau DICUCI; jumlah otomatis berkurang saat kendaraan berstatus SELESAI.
-- Tab Transaksi menyediakan CRUD khusus Admin: tambah transaksi layanan atau produk secara manual selama jam operasional, serta kolom **Kelola** dengan tombol **Edit** dan **Hapus** pada setiap baris. Tanggal/jam default mengikuti waktu WIB; validasi menolak waktu mendatang, jam di luar operasional, dan sesi layanan yang melewati pukul 21.00. Edit dapat mengubah item, nominal, tanggal, metode pemenuhan produk, status pembayaran, dan antrean; Hapus meminta konfirmasi lalu menghapus baris dari database dan daftar lokal.
-- Tab Laporan menyediakan filter Bulan Ini/Tahun Ini dan dokumen laba rugi siap cetak/PDF: pendapatan jasa, retail, ongkir terpisah, HPP snapshot, laba kotor, rincian transaksi, dan tanda tangan. Produk tanpa HPP snapshot ditandai belum lengkap; isi HPP per unit di katalog untuk mencatat biaya transaksi baru.
-- Metrik publik jumlah layanan dan ketersediaan bay.
+### Client dan Beranda
 
-Form order customer tidak meminta login, OTP email, atau SMS. Order layanan mengirim hanya nama, nomor HP, model/plat kendaraan, layanan, dan metode pembayaran ke RPC atomik; database menghitung total, jadwal/bay, ID, dan status. Checkout produk tetap memakai RPC capability. Login Admin menggunakan Modal Login Admin khusus dan Supabase Auth; akses dashboard mensyaratkan claim tepercaya `app_metadata.rinse_role = 'admin'`. Dashboard tidak lagi memakai mode read-only atau banner melayang.
+- Hero interaktif dengan CTA untuk memesan layanan atau membuka katalog.
+- Kartu Universal Live Bay B-01 sampai B-04 memakai foto studio, overlay nomor, badge status, dan waktu layanan.
+- Status bay dimuat dari Supabase dan diperbarui melalui Realtime; Self-Service menggunakan jadwal dan durasi layanan untuk menentukan status.
+- Form booking Professional Wash dan Self-Service memvalidasi nama, nomor telepon, plat, layanan, serta metode pembayaran. Waktu dan alokasi bay dihitung otomatis.
+- Katalog layanan dan produk menggunakan harga, durasi, stok, dan gambar dari Supabase. Checkout produk mendukung pick-up atau kurir lokal dengan ongkir sesuai kebijakan studio.
 
-## Teknologi
+### Dashboard Admin
 
-- HTML5, CSS, JavaScript tanpa framework frontend.
-- Node.js built-in HTTP server; Supabase CLI tersedia sebagai dev dependency lokal untuk administrasi project.
-- Supabase Auth, PostgREST, dan PostgreSQL.
-- Node.js test runner.
+- **Ringkasan** menampilkan pendapatan kotor hari ini dan tujuh hari terakhir, jumlah transaksi lunas, aktivitas, antrean aktif, dan laba kotor.
+- **Transaksi** menyediakan daftar serta pengelolaan transaksi. Perubahan pembayaran, refund, dan data transaksi dihitung kembali dari `db.transactions`.
+- **Antrean** menampilkan layanan aktif berstatus menunggu, dicuci, atau tahap akhir. Transaksi selesai tidak dihitung sebagai antrean aktif.
+- **Status Bay** mengikuti transaksi layanan, durasi, dan jadwal yang sama dengan tampilan client.
+- **Pelanggan & Kendaraan** menampilkan data secara defensif saat properti atau relasi bernilai null.
+- **Produk & Layanan** menggunakan katalog dan stok Supabase yang sama dengan form pemesanan.
+- **Laporan** menyediakan periode bulanan/tahunan, rincian jasa, retail, ongkir, HPP, laba kotor, dan dokumen siap cetak/PDF.
+- Tombol **Cetak Laporan Keuangan**, navigasi tab, kembali ke Beranda, pengaturan, dan logout tersedia dari area Admin.
 
-## Struktur penting
+## Rekonsiliasi Keuangan
 
-- `index.html`: shell aplikasi.
-- `app.js`: UI, validasi, request Supabase, dan server lokal.
-- `styles.css`, `polish.css`, `theme.css`: styling.
-- `sql/schema.sql` dan migrasi: schema, RLS, RPC, seed, dan operasional.
-- `sql/*proposal.sql`: file review lokal; proposal belum berarti perubahan sudah diterapkan.
-- `sql/REFERENCE/`: snapshot HTML referensi, bukan halaman aplikasi.
-- `tests/booking-helpers.test.js`: tes helper dan kontrak statis.
-- `assets/`: media aplikasi.
+`db.transactions` adalah sumber data transaksi untuk semua tab Admin. Fungsi agregasi bersama hanya memasukkan transaksi lunas yang tidak dibatalkan, kedaluwarsa, atau direfund ke pendapatan:
+
+```text
+Pendapatan kotor = jasa cuci lunas + retail lunas
+Kas terkumpul = pendapatan kotor + ongkir
+Laba kotor = pendapatan kotor - HPP retail tercatat
+```
+
+Ongkir disajikan terpisah dari pendapatan kotor. Nominal dikonversi aman sebelum dijumlahkan. KPI transaksi lunas dan jumlah baris lunas memakai predicate status yang sama.
+
+Setelah mutasi transaksi lokal, dispatcher event memperbarui tab yang sedang terbuka. Supabase Realtime menyebarkan perubahan antar-sesi; polling berkala menjadi fallback. Pemeriksaan lifecycle layanan berjalan otomatis berdasarkan `start_time`/`finished_at` atau booking time dan durasi katalog.
+
+## Arsitektur
+
+- **Frontend:** HTML5, Vanilla JavaScript ES6+, dan CSS3 kustom. Styling dipisah ke `styles.css`, `polish.css`, dan `theme.css`.
+- **Backend:** Supabase Auth, PostgREST, PostgreSQL, RLS, trigger integritas, RPC terproteksi, dan channel WebSocket Realtime.
+- **Admin snapshot:** Aplikasi mencoba RPC `get_demo_admin_snapshot` terlebih dahulu. Jika RPC gagal, loader mengambil `transactions` langsung melalui REST; relasi pelanggan, kendaraan, dan katalog dimuat secara opsional. Database kosong adalah state valid.
+- **Runtime lokal:** Server HTTP Node.js kecil didefinisikan di `app.js`; port default `3000`, dapat diubah dengan `PORT`.
+- **Pengujian:** Node.js built-in test runner dan pemeriksaan sintaks bawaan.
+
+## Data dan Durasi Layanan
+
+Tabel utama:
+
+- `transactions`: transaksi, status pembayaran/antrean, jadwal, bay, fulfillment, dan HPP snapshot.
+- `customers`: nama, nomor telepon, dan alamat pelanggan.
+- `vehicles`: pemilik, jenis kendaraan, plat, dan model.
+- `services_products`: katalog layanan, add-on, dan produk beserta harga, durasi, serta stok.
+
+Durasi standar katalog:
+
+| Layanan | Durasi |
+| --- | ---: |
+| Self-Service Moto | 20 menit |
+| Self-Service Car | 30 menit |
+| Pro Wash Moto | 35 menit |
+| Pro Wash Car | 50 menit |
+
+Jadwal operasional studio adalah 08.00–21.00 WIB. Harga layanan dan durasi transaksi diambil dari katalog Supabase.
 
 ## Menjalankan Lokal
 
-Gunakan Node.js 18 atau lebih baru:
+Prasyarat: Node.js 18 atau lebih baru dan akses ke project Supabase.
 
 ```powershell
+git clone https://github.com/tiararidha/car-wash-system.git
+cd car-wash-system
 npm install
 node app.js
 ```
 
-Buka `http://localhost:3000`. Tes lokal: `npm test` atau `node --test`. Cek sintaks: `npm run check` atau `node --check app.js`.
+Buka `http://localhost:3000`. Untuk port lain, jalankan dengan environment variable `PORT`, misalnya `$env:PORT=3001; node app.js`.
 
-## Konfigurasi Supabase
+### Konfigurasi Supabase
 
-Atur `SUPABASE_URL` dan `SUPABASE_PUBLISHABLE_KEY` pada konstanta di `app.js`. Publishable key memang digunakan oleh browser; jangan pernah memasukkan `service_role` atau secret key.
+Nilai konfigurasi yang diperlukan adalah:
 
-Project Supabase menyimpan order customer melalui RPC; CRUD transaksi manual Admin menggunakan akses terautentikasi untuk menulis dan menghapus baris transaksi beserta relasi pelanggan/kendaraan. Tanggal transaksi baru mengikuti tanggal WIB saat ini, sementara seed operasional dihitung relatif terhadap tanggal ketika migration dijalankan. Papan Antrean Harian hanya mencakup layanan bertanggal hari ini. Tab Transaksi menampilkan transaksi aktif, termasuk layanan, produk, dan tanggal historis; baris `CANCELLED`/`EXPIRED` historis tidak tampil dalam daftar aktif atau perhitungan laporan. Order customer baru juga dicatat `PAID` oleh RPC pembayaran.
+```text
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_ANON_KEY=<publishable-or-anon-key>
+```
 
-Migration versioned `20261012000000_secure_demo_service_orders.sql` menambahkan idempotency key pada registry private dan menulis order layanan melalui wrapper `SECURITY DEFINER` yang tetap menjalankan trigger integritas. Migration `20261012000001_restrict_legacy_anon_rpcs.sql` mencabut akses `anon` ke lookup PII, cancellation, direct product/service sale, dan insert langsung customer/vehicle, sambil menjaga katalog publik serta grant `authenticated`/`service_role`. Migration `20261012000002_demo_product_checkout.sql` menambahkan checkout produk guest yang mengunci stok, menghitung harga dari katalog, menyimpan transaksi lewat trigger, dan meregistrasikan order secara idempotent. Migration `20261012000003_fix_demo_product_fingerprint.sql` memperbaiki operator precedence yang sempat menghasilkan SQLSTATE `42883`. Migration `20261012000004_simulate_demo_payments.sql` mencatat status `PAID` dalam transaksi database yang sama dan memindahkan booking Self-Service ke `BOOKED`. Migration `20261022000000_dynamic_transaction_time_and_product_fulfillment.sql` menerapkan tanggal WIB dinamis, guard waktu transaksi terkini, katalog produk terbaru, dan metode pemenuhan produk. Terapkan migration terbaru pada project Supabase untuk mengaktifkan perubahan database.
+Catatan: frontend statis saat ini membaca konstanta `SUPABASE_URL` dan `SUPABASE_PUBLISHABLE_KEY` di `app.js`; ia belum memuat `.env` atau membaca environment Node secara langsung. Menetapkan variabel shell saja tidak mengubah konfigurasi browser. Gunakan URL project dan publishable/anon key yang sesuai pada konstanta tersebut atau sediakan mekanisme konfigurasi client saat deployment. Jangan pernah memasukkan `service_role` atau secret key ke frontend.
 
-Untuk menerapkan migration versioned yang belum ada di project Supabase, login dan hubungkan project terlebih dahulu, lalu jalankan:
+Login Admin memerlukan akun Supabase Auth dengan claim tepercaya `app_metadata.rinse_role = 'admin'`. RPC order guest mensimulasikan pembayaran dan menyimpan status `PAID`; integrasi payment gateway eksternal tidak termasuk.
+
+### Migrasi Supabase
+
+Terapkan migrasi versioned yang belum terpasang melalui Supabase CLI:
 
 ```powershell
 npx supabase login
 npx supabase link --project-ref "PROJECT_REF"
+npx supabase migration list
 npx supabase db push
 ```
 
-Periksa daftar migration yang akan diterapkan sebelum menyetujui `db push`. File di `supabase/migrations/` adalah migration versioned; jangan jalankan ulang baseline `sql/schema.sql` atau file `*-proposal.sql` pada database yang sudah berisi data.
+Tinjau migration list dan perubahan yang akan diterapkan sebelum `db push`. Migrasi terbaru berada di `supabase/migrations/` dan mencakup durasi/HPP, sinkronisasi waktu serta bay, ketahanan snapshot Admin, dan broadcast perubahan transaksi. Jangan menjalankan ulang `sql/schema.sql` atau file `*-proposal.sql` sebagai migrasi pada database yang sudah berisi data. Folder `sql/REFERENCE/` berisi snapshot HTML referensi, bukan halaman aplikasi.
 
-Migration `20261025010000_canonical_service_duration_and_product_cogs.sql` menyelaraskan durasi empat layanan di katalog dan transaksi, menambahkan input HPP produk, serta membuat snapshot HPP pada transaksi produk baru. Transaksi produk historis tidak otomatis diberi biaya karena harga pokok historis tidak tersedia; laporan menandainya belum lengkap sampai biaya tercatat.
+## Pengujian
 
-Dashboard Admin menggunakan alur login melalui Modal Login Admin khusus. Supabase Auth memverifikasi sesi dan aplikasi hanya memberikan akses dashboard kepada akun dengan claim `app_metadata.rinse_role = 'admin'`; dashboard tidak lagi menampilkan akses read-only atau banner melayang. Modal login memverifikasi akun yang sudah memiliki claim dan tidak menetapkan role. Panel status empat bay berada di tab Ringkasan Studio sebagai indikator monitoring ketersediaan real-time; tab Self-Service khusus Admin dan tombol pemesanan bay di Admin telah dihapus. Badge Antrean menghitung status MENUNGGU dan DICUCI, lalu berkurang saat status kendaraan menjadi SELESAI. Admin dapat membuat transaksi layanan/produk, mengubah item, nominal, tanggal, metode dan status pembayaran/antrean, atau menghapus transaksi dari tab Transaksi. Tab Laporan dapat mencetak atau menyimpan PDF laporan untuk seluruh periode.
+```powershell
+node --check app.js
+node --test
+```
 
-Navigasi, form kunjungan terjadwal, dan tampilan Admin Booking telah dihapus. Transaksi historis tetap dipertahankan; Self-Service tetap menyimpan sesi dan reservasi bay melalui status transaksi internal.
+`npm run check` dan `npm test` menjalankan perintah yang sama melalui script `package.json`. Suite menguji helper, rekonsiliasi pendapatan, delta transaksi lunas, lifecycle, kontrak migrasi, serta fallback data null/kosong.
 
-Lookup/history capability (`lookup_customer_profile_by_capability`, `lookup_customer_history_with_capability`, dan `create_service_booking_with_capability`) tetap tidak ada pada database tertaut; alur guest demo memakai RPC order khusus dan tidak lagi bergantung pada lookup capability tersebut. Guest checkout produk sudah diuji live hingga order ID tampil dan bertahan setelah refresh. CRUD transaksi Admin dan cetak laporan sudah tersedia di frontend, tetapi perlu diverifikasi pada project Supabase dengan sesi Admin ber-role benar serta grant/policy tabel transaksi yang sesuai. Pembayaran/refund, history capability, dan autentikasi Admin tetap belum diverifikasi live.
+## Struktur Proyek
 
-Urutan file baseline/proposal tetap hanya untuk staging terisolasi dari baseline yang ditinjau: `schema.sql` -> `rls-authenticated-access.sql` -> `self-service-bay-live-migration.sql` -> `business-flow-hardening.sql` -> `catalog-revision.sql` -> (opsional fixture staging: `t-20-seed-reconciliation.sql`, lalu `booking-seed-payment-reconciliation.sql`) -> `admin-role-authorization-proposal.sql` -> `multi-addon-booking-integrity-proposal.sql` -> `customer-capability-booking-migration.sql`. Jangan jalankan ulang baseline atau seluruh proposal terhadap database berisi data. `sql/demo-public-order-dashboard-proposal.sql` adalah artefak historis yang fail-closed; jangan dieksekusi. `pickup-rpc-hardening-proposal.sql` superseded dan tidak boleh dijalankan.
+- `index.html`: shell aplikasi.
+- `app.js`: UI, state transaksi, validasi, integrasi Supabase, dan server lokal.
+- `styles.css`, `polish.css`, `theme.css`: gaya dasar dan tema aplikasi.
+- `supabase/migrations/`: migrasi database versioned.
+- `sql/`: schema/proposal dan referensi migrasi; proposal bukan migrasi yang otomatis diterapkan.
+- `tests/booking-helpers.test.js`: tes helper dan kontrak statis.
+- `assets/`: foto dan media aplikasi.
 
-`node --test` menguji helper JavaScript dan kontrak source statis, termasuk pembatasan tanggal papan antrean harian; `node --check app.js` memeriksa sintaks. Verifikasi live mencakup order Professional Wash, Self-Service dan produk dengan status `PAID`, booking Self-Service `BOOKED`, retry idempotent tanpa pengurangan stok kedua, reuse customer/vehicle, input invalid, akses anon ditolak ke RPC legacy, laporan berbasis transaksi lunas, serta pemuatan dashboard setelah refresh. Test layanan inactive memakai ID yang tidak ada karena katalog tidak memiliki layanan service inactive. Refund dan history capability belum diverifikasi.
-
-## Pembayaran dan Batasan
-
-- Pembayaran customer untuk order baru disimulasikan sukses di RPC database yang sama dengan penyimpanan order; status tercatat `PAID` tanpa gateway atau callback eksternal. Sebanyak 28 transaksi historis/demo juga telah diperbarui dan tercatat `PAID` (Lunas). Booking Self-Service menjadi `BOOKED`. Ini simulasi pembayaran, bukan simulasi persistensi.
-- Refund dicatat admin setelah pengembalian dana dilakukan di luar aplikasi.
-- Capability adalah bearer credential: browser yang menyimpan token dapat mengakses profil terkait. Nomor telepon yang diketik bukan bukti identitas; penautan profil lama harus dilakukan melalui proses Admin tepercaya di luar aplikasi.
-- Antar-Jemput dinonaktifkan di aplikasi; data dan RPC historis di database belum dihapus.
-
-Foto `assets/self-service-bay.jpg`: G. Edward Johnson, [Glo Car Wash, Pahrump, NV](https://commons.wikimedia.org/wiki/File:Car_Wash_Pahrump_NV_2026-04-03_15-05-36.jpg), dilisensikan di bawah [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Versi lokal diubah ukuran untuk penggunaan web.
+Foto `assets/self-service-bay.jpg` bersumber dari G. Edward Johnson, [Glo Car Wash, Pahrump, NV](https://commons.wikimedia.org/wiki/File:Car_Wash_Pahrump_NV_2026-04-03_15-05-36.jpg), berlisensi [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Versi lokal diubah ukurannya untuk penggunaan web.

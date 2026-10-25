@@ -5,6 +5,9 @@ const {
   hasAdminRole,
   getServiceDuration,
   calculateFinancialSummary,
+  calculateFinancialMetrics,
+  isRevenueTransaction,
+  checkServiceLifecycles,
   formatServiceTimeRange,
   formatTransactionTime,
   hasCustomerPhoneChanged,
@@ -139,9 +142,44 @@ assert.equal(financialSummary.serviceRevenue, 100);
 assert.equal(financialSummary.productRevenue, 140);
 assert.equal(financialSummary.shippingRevenue, 10);
 assert.equal(financialSummary.grossRevenue, 240);
+assert.equal(financialSummary.totalRevenue, 240);
+assert.equal(financialSummary.cashCollected, 250);
 assert.equal(financialSummary.cogs, 40);
 assert.equal(financialSummary.grossProfit, 200);
 assert.equal(financialSummary.costRecordedCount, 1);
+const reconciledRows = [
+  { item_type: 'SERVICE', payment_status: 'PAID', transaction_status: 'COMPLETED', amount: '50000' },
+  { item_type: 'PRODUCT', status: 'PAID', transaction_status: 'COMPLETED', amount: '75000', shipping_fee: '10000' },
+  { item_type: 'SERVICE', payment_status: 'PENDING', amount: '900000' },
+  { item_type: 'PRODUCT', payment_status: 'PAID', transaction_status: 'CANCELLED', amount: '200000' }
+];
+const reconciledMetrics = calculateFinancialMetrics(reconciledRows);
+assert.equal(reconciledMetrics.totalRevenue, 115000);
+assert.equal(reconciledMetrics.paidTransactionCount, reconciledRows.filter(isRevenueTransaction).length);
+assert.equal(isRevenueTransaction({ payment_status: 'PENDING', status: 'PAID', amount: '50' }), true);
+assert.equal(calculateFinancialMetrics([{ item_type: 'SERVICE', payment_status: 'PENDING', status: 'PAID', amount: '50000' }]).totalRevenue, 50000);
+const metricsBeforeBooking = calculateFinancialMetrics(reconciledRows);
+const reactiveRows = [...reconciledRows, { item_type: 'SERVICE', payment_status: 'PAID', amount: '50000' }];
+const metricsAfterBooking = calculateFinancialMetrics(reactiveRows);
+assert.equal(metricsAfterBooking.totalRevenue - metricsBeforeBooking.totalRevenue, 50000);
+assert.equal(metricsAfterBooking.paidTransactionCount, metricsBeforeBooking.paidTransactionCount + 1);
+const lifecycleStart = Date.now();
+const lifecycleFixture = [{
+  id: 'lifecycle-a', item_type: 'SERVICE', transaction_type: 'BOOKING',
+  payment_status: 'PAID', transaction_status: 'BOOKED', queue_status: 'WAITING',
+  start_time: new Date(lifecycleStart - 20 * 60000).toISOString(),
+  finished_at: new Date(lifecycleStart).toISOString(), duration_minutes: 20
+}];
+const lifecycleResult = checkServiceLifecycles(lifecycleFixture, lifecycleStart + 1);
+assert.equal(lifecycleResult[0].transaction_status, 'COMPLETED');
+assert.equal(lifecycleResult[0].queue_status, 'COMPLETED');
+const activeLifecycle = checkServiceLifecycles([{
+  item_type: 'SERVICE', transaction_type: 'WALK_IN', payment_status: 'PAID',
+  transaction_status: 'PENDING', queue_status: 'WAITING', start_time: new Date(lifecycleStart - 60000).toISOString(),
+  finished_at: new Date(lifecycleStart + 20 * 60000).toISOString(), duration_minutes: 20
+}], lifecycleStart);
+assert.equal(activeLifecycle[0].transaction_status, 'ACTIVE');
+assert.equal(activeLifecycle[0].queue_status, 'WASHING');
 assert.equal(sanitizeQuantity('3'), 3);
 assert.equal(sanitizeQuantity('0'), 1);
 assert.equal(sanitizeQuantity('invalid'), 1);
@@ -214,6 +252,13 @@ assert.doesNotMatch(bookingSyncMigrationSource, /jsonb_build_object\('customer_n
 assert.match(appSource, /postgres_changes: \[\{ event: '\*', schema: 'public', table: 'transactions' \}\]/);
 assert.match(appSource, /message\.payload\?\.event === 'transaction_changed'/);
 assert.match(appSource, /async function refreshLiveData\(\)[\s\S]*loadAdminData\(\)[\s\S]*loadPublicData\(\)/);
+assert.match(appSource, /document\.addEventListener\('rinse:transactions-changed', refreshCurrentTransactionView\)/);
+assert.match(appSource, /function dispatchTransactionStateChange\(\)[\s\S]*dispatchEvent\(new Event\('rinse:transactions-changed'\)\)/);
+assert.match(appSource, /function renderAdminMetrics\(\)[\s\S]*\['Transaksi Lunas',[\s\S]*String\(paid\.length\)/);
+assert.match(appSource, /Laba Kotor · Tujuh Hari[\s\S]*weeklyMetrics\.grossProfit/);
+assert.match(appSource, /function renderAdminTransactionList\([\s\S]*const paidCount = transactions\.filter\(isRevenueTransaction\)\.length/);
+assert.match(appSource, /const stages = \['WAITING', 'WASHING'\]/);
+assert.match(appSource, /window\.setInterval\(\(\) => \{\s*if \(databaseConnected && document\.visibilityState === 'visible'\) runServiceLifecycleCheck\(\)/);
 assert.match(appSource, /function renderBayStatus\(\)[\s\S]*homeBayGrid\.innerHTML = cards/);
 assert.match(appSource, /home-bay-section[\s\S]*\$\{renderBayStatus\(\)\}/);
 assert.match(appSource, /supabaseRequest\(\s*'transactions', 'GET', null, '\?select=\*&order=created_at\.desc'/);
@@ -352,11 +397,11 @@ const queueFixture = [
   { item_type: 'PRODUCT', transaction_type: 'SHOP', transaction_status: 'COMPLETED', payment_status: 'PAID', queue_status: 'COMPLETED', booking_date: queueToday }
 ];
 const dailyQueue = filterQueueTransactionsForDate(queueFixture, queueToday);
-assert.equal(dailyQueue.length, 3);
+assert.equal(dailyQueue.length, 1);
 assert.equal(countActiveQueueTransactions(dailyQueue), 1);
-assert.equal(dailyQueue.filter(tx => tx.queue_status === 'COMPLETED').length, 2);
+assert.equal(dailyQueue.filter(tx => tx.queue_status === 'COMPLETED').length, 0);
 assert.match(appSource, /renderAdminTransactionList\(db\.transactions, 'Seluruh transaksi studio\.'/);
-assert.match(appSource, /const stages = \['WAITING', 'WASHING', 'COMPLETED'\]/);
+assert.match(appSource, /const stages = \['WAITING', 'WASHING'\]/);
 assert.match(appSource, /'self-service'\) tab = 'overview'/);
 assert.doesNotMatch(appSource.slice(appSource.indexOf('function renderAdminTransactionList'), appSource.indexOf('\nfunction renderAdminCustomers')), /data-action="delete|data-delete-transaction/);
 assert.match(appSource, /if \(type === 'error' && !explicitFormSubmit\) return;/);
@@ -809,7 +854,7 @@ assert.doesNotMatch(appSource, /admin-readonly-notice/);
 assert.match(indexSource, /id="admin-shortcut" aria-label="Login Admin">Login Admin/);
 assert.match(appSource, />Tandai Lunas<\/button>/);
 assert.match(appSource, /tx\.payment_status === 'PENDING' && tx\.transaction_status === 'PENDING'[\s\S]*tx\.payment_method === 'CASH'/);
-assert.match(appSource, /rpcRequest\('confirm_transaction_payment'[\s\S]*await loadAdminData\(\);\s*activateAdminTab\('transactions'\)/);
+assert.match(appSource, /rpcRequest\('confirm_transaction_payment'[\s\S]*await loadAdminData\(\);\s*dispatchTransactionStateChange\(\)/);
 assert.match(appSource, /await signInAdmin\([\s\S]*await openAdmin\(\)/);
 assert.doesNotMatch(appSource, /renderAdminDemo|demoAdminOrders|data-demo-order-status/);
 assert.match(persistenceSource, /mergePersistedTransaction\(tx, result\)/);
