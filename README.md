@@ -14,10 +14,12 @@ Live site: [Rinse Society Wash Studio](https://tiararidha.github.io/car-wash-sys
 - Form booking Professional Wash dan Self-Service memvalidasi nama, nomor telepon, plat, layanan, serta metode pembayaran. Waktu dan alokasi bay dihitung otomatis.
 - Katalog layanan dan produk menggunakan harga, durasi, stok, dan gambar dari Supabase. Checkout produk mendukung pick-up atau kurir lokal dengan ongkir sesuai kebijakan studio.
 
+
 ### Dashboard Admin
 
 - **Ringkasan** menampilkan pendapatan kotor hari ini dan tujuh hari terakhir, jumlah transaksi lunas, aktivitas, antrean aktif, dan laba kotor.
 - **Transaksi** menyediakan daftar serta pengelolaan transaksi. Perubahan pembayaran, refund, dan data transaksi dihitung kembali dari `db.transactions`.
+- **Struk Digital Resmi (Thermal Receipt PDF):** Mendukung cetak dan unduh struk transaksi format 80mm via window.print / Save as PDF untuk setiap transaksi berstatus PAID (layanan cuci maupun produk retail).
 - **Antrean** menampilkan layanan aktif berstatus menunggu, dicuci, atau tahap akhir. Transaksi selesai tidak dihitung sebagai antrean aktif.
 - **Status Bay** mengikuti transaksi layanan, durasi, dan jadwal yang sama dengan tampilan client.
 - **Pelanggan & Kendaraan** menampilkan data secara defensif saat properti atau relasi bernilai null.
