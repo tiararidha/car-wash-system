@@ -2112,11 +2112,69 @@ function renderAdminTransactionList(records, title, eyebrow) {
       : ['addon-pickup', 'addon-pickup-moto'].includes(tx.addon_id) && customer?.address
         ? `<small>Alamat Antar-Jemput: ${escapeHtml(customer.address)}</small><small>Jarak pulang-pergi: ${escapeHtml(tx.pickup_distance_km)} km</small>`
         : '';
-    return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(transactionTime)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small>${pickupAddress}</span><span class="transaction-item">${escapeHtml(tx.item_name || (tx.item_type === 'PRODUCT' ? 'Pembelian produk' : 'Layanan cuci'))}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${refundStatus}${paymentAction}${refundAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${transactionStatusLabel(tx)}</span><span class="transaction-amount">${money(tx.amount)}</span><span class="transaction-row-actions"><button type="button" aria-label="Edit transaksi ${escapeHtml(tx.code)}" data-edit-transaction="${escapeHtml(tx.id)}">Edit</button><button type="button" aria-label="Batalkan transaksi ${escapeHtml(tx.code)}" data-admin-remove="${escapeHtml(tx.id)}">Batal</button></span></div>`;
+    const receiptAction = isPaidTransaction(tx) ? `<button type="button" aria-label="Cetak struk ${escapeHtml(tx.code)}" data-print-receipt="${escapeHtml(tx.id)}">Cetak Struk</button>` : '';
+    return `<div class="catalog-row"><span class="transaction-code"><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(transactionTypeLabel(tx.transaction_type))}</small></span><span class="transaction-date"><strong>${escapeHtml(tx.booking_date)}</strong><small>${escapeHtml(transactionTime)}</small></span><span class="transaction-customer"><strong>${escapeHtml(customer?.full_name || 'Pelanggan')}</strong><small>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Pembelian produk')}</small>${pickupAddress}</span><span class="transaction-item">${escapeHtml(tx.item_name || (tx.item_type === 'PRODUCT' ? 'Pembelian produk' : 'Layanan cuci'))}</span><span class="transaction-payment"><span class="payment-method">${statusLabel(tx.payment_method)}</span><span class="payment-status payment-status-${String(tx.payment_status).toLowerCase()}">${statusLabel(tx.payment_status)}</span>${refundStatus}${paymentAction}${refundAction}</span><span class="transaction-state transaction-state-${String(tx.transaction_status).toLowerCase()}">${transactionStatusLabel(tx)}</span><span class="transaction-amount">${money(tx.amount)}</span><span class="transaction-row-actions">${receiptAction}<button type="button" aria-label="Edit transaksi ${escapeHtml(tx.code)}" data-edit-transaction="${escapeHtml(tx.id)}">Edit</button><button type="button" aria-label="Batalkan transaksi ${escapeHtml(tx.code)}" data-admin-remove="${escapeHtml(tx.id)}">Batal</button></span></div>`;
   }).join('')
     .replaceAll('>Batal</button>', '>Hapus</button>')
     .replaceAll('aria-label="Batalkan transaksi ', 'aria-label="Hapus transaksi ');
   return `<div class="catalog-toolbar transaction-toolbar"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2><p>Data operasional studio dengan status pembayaran dan jadwal yang konsisten.</p></div><div class="transaction-actions"><div class="transaction-summary"><strong>${transactions.length} transaksi</strong><span>${paidCount} lunas · ${pendingCount} belum dibayar</span></div><button class="button button-dark" type="button" data-action="admin-transaction-create">+ Transaksi</button></div></div><div class="catalog-table transaction-table"><div class="catalog-row catalog-head"><span>REFERENSI</span><span>TANGGAL / WAKTU</span><span>PELANGGAN / KENDARAAN</span><span>LAYANAN / ITEM</span><span>PEMBAYARAN</span><span>STATUS</span><span>JUMLAH</span><span>KELOLA</span></div>${transactions.length ? rows : '<div class="queue-empty">Belum ada transaksi tercatat. Buat pesanan pertama melalui Beranda.</div>'}</div>`;
+}
+function receiptTransactions(transaction) {
+  if (transaction.item_type !== 'PRODUCT' || !transaction.fulfillment_order_id) return [transaction];
+  return safeRows(db.transactions)
+    .filter(item => item.item_type === 'PRODUCT'
+      && item.fulfillment_order_id === transaction.fulfillment_order_id
+      && isPaidTransaction(item))
+    .map(normalizeOperationalTransaction);
+}
+function printTransactionReceipt(transaction) {
+  if (!isPaidTransaction(transaction)) {
+    showToast('Struk hanya tersedia untuk transaksi yang sudah lunas.', 'error');
+    return;
+  }
+  const rows = receiptTransactions(transaction);
+  const customer = getCustomer(transaction);
+  const vehicle = getVehicle(transaction);
+  const createdAt = new Date(transaction.created_at || Date.now());
+  const dateLabel = new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short'
+  }).format(createdAt);
+  const itemRows = rows.map(item => {
+    const name = escapeHtml(item.item_name || (item.item_type === 'PRODUCT' ? 'Produk' : 'Layanan cuci'));
+    if (item.item_type === 'SERVICE') {
+      return `<div class="receipt-item"><span><strong>${name}</strong><small>Durasi ${item.duration_minutes} menit</small></span><strong>${money(item.amount)}</strong></div>`;
+    }
+    const quantity = sanitizeQuantity(item.quantity);
+    const unitPrice = Math.max(0, finiteNumber(item.amount - item.shipping_fee, item.amount)) / quantity;
+    return `<div class="receipt-item"><span><strong>${name}</strong><small>${quantity} × ${money(unitPrice)}</small></span><strong>${money(unitPrice * quantity)}</strong></div>`;
+  }).join('');
+  const subtotal = rows.reduce((sum, item) => sum + Math.max(0, finiteNumber(item.amount) - finiteNumber(item.shipping_fee)), 0);
+  const shippingFee = rows.reduce((sum, item) => sum + Math.max(0, finiteNumber(item.shipping_fee)), 0);
+  const total = rows.reduce((sum, item) => sum + finiteNumber(item.amount), 0);
+  const invoice = rows.map(item => item.code || item.id).filter(Boolean).join(' / ') || transaction.id;
+  const bayNumber = transaction.item_type === 'SERVICE' && transaction.bay_number
+    ? `Bay B-${String(transaction.bay_number).padStart(2, '0')}` : '-';
+  const receiptHtml = `<main class="receipt"><header class="receipt-header"><h1>RINSE SOCIETY</h1><p>Studio Car &amp; Motorcycle Wash</p></header><section class="receipt-meta"><div><span>Tanggal / Jam</span><strong>${escapeHtml(dateLabel)} WIB</strong></div><div><span>No. Invoice</span><strong>${escapeHtml(invoice)}</strong></div></section><section class="receipt-customer"><h2>Data Pelanggan</h2><div><span>Nama</span><strong>${escapeHtml(customer.full_name || 'Pelanggan')}</strong></div><div><span>No. WhatsApp</span><strong>${escapeHtml(transaction.customer_phone || customer.phone || '-')}</strong></div><div><span>Pelat Nomor</span><strong>${escapeHtml(vehicle?.plate || transaction.vehicle_plate || '-')}</strong></div><div><span>Bilik Cuci</span><strong>${escapeHtml(bayNumber)}</strong></div></section><section class="receipt-details"><h2>Rincian Belanja</h2>${itemRows}${shippingFee ? `<div class="receipt-item"><span><strong>Ongkos kirim</strong></span><strong>${money(shippingFee)}</strong></div>` : ''}</section><section class="receipt-totals"><div><span>Subtotal</span><strong>${money(subtotal)}</strong></div><div><span>Total Bayar</span><strong>${money(total)}</strong></div><div><span>Metode Pembayaran</span><strong>${escapeHtml(statusLabel(transaction.payment_method))}</strong></div></section><div class="receipt-paid">LUNAS / PAID</div><footer class="receipt-footer">Terima kasih atas kunjungan Anda di Rinse Society</footer></main>`;
+  const popup = window.open('', '_blank', 'popup,width=420,height=760');
+  if (!popup) {
+    showToast('Pop-up diblokir browser. Izinkan pop-up untuk mencetak struk.', 'error');
+    return;
+  }
+  const stylesheetUrl = new URL('receipt.css', document.baseURI).href;
+  popup.addEventListener('afterprint', () => popup.close(), { once: true });
+  popup.document.open();
+  popup.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Struk ${escapeHtml(invoice)}</title><link rel="stylesheet" href="${escapeHtml(stylesheetUrl)}"></head><body>${receiptHtml}</body></html>`);
+  popup.document.close();
+  const stylesheet = popup.document.querySelector('link[rel="stylesheet"]');
+  const startPrint = () => {
+    popup.focus();
+    popup.print();
+  };
+  if (stylesheet.sheet) startPrint();
+  else {
+    stylesheet.addEventListener('load', startPrint, { once: true });
+    stylesheet.addEventListener('error', startPrint, { once: true });
+  }
 }
 function renderAdminTransactionForm(content, transactionId = null) {
   const transaction = transactionId ? safeRows(db.transactions).find(tx => tx.id === transactionId) : null;
@@ -2951,6 +3009,17 @@ document.addEventListener('click', async event => {
   if (packageButton) {
     const selectedPackage = db.services_products.find(item => isSelfServiceItem(item) && item.type === packageButton.dataset.selfServiceType);
     openDialog('self-service', selectedPackage?.id);
+    return;
+  }
+  const receiptButton = event.target.closest('[data-print-receipt]');
+  if (receiptButton) {
+    if (!isAdminAuthorized()) { showToast('Struk hanya dapat dicetak dari akun Admin.', 'error'); return; }
+    const transaction = db.transactions.find(item => item.id === receiptButton.dataset.printReceipt);
+    if (!transaction || !isPaidTransaction(transaction)) {
+      showToast('Struk hanya tersedia untuk transaksi yang sudah lunas.', 'error');
+      return;
+    }
+    printTransactionReceipt(normalizeOperationalTransaction(transaction));
     return;
   }
   const refundButton = event.target.closest('[data-refund-complete]');
