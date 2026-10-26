@@ -28,6 +28,7 @@ const {
   sanitizeQuantity,
   paymentStatusForMethod,
   productShippingFee,
+  adminProductShippingFee,
   calculateProductAmount,
   recognizedRevenueAmount,
   shippingRevenueAmount,
@@ -74,6 +75,7 @@ const legacyPerfumeCleanupSource = fs.readFileSync(path.join(__dirname, '..', 's
 const canonicalDurationCogsMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025010000_canonical_service_duration_and_product_cogs.sql'), 'utf8');
 const bookingSyncMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025020000_booking_state_synchronization.sql'), 'utf8');
 const adminSnapshotResilienceSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261025030000_admin_snapshot_resilience.sql'), 'utf8');
+const paidProductStockMigrationSource = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261026000000_paid_product_stock_lifecycle.sql'), 'utf8');
 const demoSnapshotStart = demoProposalSource.search(/create(?:\s+or\s+replace)?\s+function public\.get_demo_admin_snapshot\(\)/i);
 const demoOrderStart = demoRpcSource.search(/create(?:\s+or\s+replace)?\s+function public\.create_demo_service_order\(p_order jsonb\)/i);
 const demoOrderEnd = demoRpcSource.search(/\nrevoke all on function public\.create_demo_service_order\(jsonb\)/i);
@@ -155,9 +157,11 @@ const reconciledRows = [
 ];
 const reconciledMetrics = calculateFinancialMetrics(reconciledRows);
 assert.equal(reconciledMetrics.totalRevenue, 115000);
+assert.equal(reconciledMetrics.cashCollected, 125000);
 assert.equal(reconciledMetrics.paidTransactionCount, reconciledRows.filter(isRevenueTransaction).length);
-assert.equal(isRevenueTransaction({ payment_status: 'PENDING', status: 'PAID', amount: '50' }), true);
-assert.equal(calculateFinancialMetrics([{ item_type: 'SERVICE', payment_status: 'PENDING', status: 'PAID', amount: '50000' }]).totalRevenue, 50000);
+assert.equal(isRevenueTransaction({ payment_status: 'PENDING', status: 'PAID', amount: '50' }), false);
+assert.equal(calculateFinancialMetrics([{ item_type: 'SERVICE', payment_status: 'PENDING', status: 'PAID', amount: '50000' }]).totalRevenue, 0);
+assert.equal(calculateFinancialMetrics([{ item_type: 'SERVICE', payment_status: 'PAID', amount: '50000' }]).totalRevenue, 50000);
 const metricsBeforeBooking = calculateFinancialMetrics(reconciledRows);
 const reactiveRows = [...reconciledRows, { item_type: 'SERVICE', payment_status: 'PAID', amount: '50000' }];
 const metricsAfterBooking = calculateFinancialMetrics(reactiveRows);
@@ -226,6 +230,26 @@ assert.equal(recognizedRevenueAmount({ item_type: 'PRODUCT', amount: 70000, ship
 assert.equal(shippingRevenueAmount({ item_type: 'PRODUCT', amount: 70000, shipping_fee: 10000 }), 10000);
 assert.equal(collectedAmount({ item_type: 'PRODUCT', amount: 70000, shipping_fee: 10000 }), 70000);
 assert.equal(recognizedRevenueAmount({ item_type: 'SERVICE', amount: 50000, shipping_fee: 0 }), 50000);
+assert.equal(calculateFinancialSummary([
+  { item_type: 'PRODUCT', payment_status: 'PAID', transaction_status: 'PENDING', amount: 70000, shipping_fee: 10000 },
+  { item_type: 'PRODUCT', payment_status: 'PENDING', status: 'PAID', amount: 80000, shipping_fee: 10000 }
+]).cashCollected, 70000);
+assert.match(paidProductStockMigrationSource, /create trigger transactions_paid_product_stock[\s\S]*after insert or update or delete on public\.transactions/);
+assert.match(paidProductStockMigrationSource, /create trigger transactions_pending_product_stock_guard[\s\S]*before insert or update on public\.transactions/);
+assert.match(paidProductStockMigrationSource, /available_stock < new\.quantity/);
+assert.match(paidProductStockMigrationSource, /sum\(transaction_row\.quantity\)[\s\S]*payment_status = 'PENDING'[\s\S]*available_stock := available_stock - pending_stock/);
+assert.match(paidProductStockMigrationSource, /new_consumed := new\.item_type = 'PRODUCT'[\s\S]*new\.payment_status = 'PAID'/);
+assert.match(paidProductStockMigrationSource, /stock = stock - new\.quantity[\s\S]*stock >= new\.quantity/);
+assert.match(paidProductStockMigrationSource, /stock = stock \+ old\.quantity/);
+assert.match(paidProductStockMigrationSource, /payment_status_value := upper\(coalesce\(p_transaction ->> 'payment_status', 'PENDING'\)\)/);
+assert.match(paidProductStockMigrationSource, /COURIER' and \(fulfillment_address_value is null or fulfillment_order_id_value is null\)/);
+assert.match(paidProductStockMigrationSource, /to_regclass\('private\.customer_capabilities'\)[\s\S]*legacy_capability_stock_to_restore/);
+assert.doesNotMatch(paidProductStockMigrationSource, /create\s+table/i);
+assert.match(appSource, /form\.querySelector\('#product-checkout-total'\)\.textContent = money\(subtotal \+ fee\)/);
+assert.doesNotMatch(productFormSource, /productFulfillmentDetails\(tx\)/);
+assert.match(appSource, /const shippingRow = transaction\.item_type === 'PRODUCT'[\s\S]*money\(shippingFee\)/);
+assert.match(appSource, /receipt-address[\s\S]*fulfillment_address/);
+assert.match(adminSaveSource, /const amount = item\.item_type === 'PRODUCT'[\s\S]*calculateProductAmount\(item\.price, quantity, shippingFee\)/);
 assert.match(wibScheduleMigrationSource, /delete from public\.transactions where item_id = 'prd-perfume';\s*delete from public\.services_products where id = 'prd-perfume' and item_type = 'PRODUCT';/);
 assert.match(legacyPerfumeCleanupSource, /delete from public\.transactions transaction_row[\s\S]*transaction_row\.item_id in \(select id from legacy_products\)/);
 assert.match(legacyPerfumeCleanupSource, /where transaction_row\.item_id = 'prd-perfume'/);
@@ -318,7 +342,7 @@ assert.match(appSource, /function normalizeAdminSnapshot\(snapshot = \{\}\)[\s\S
 assert.match(themeSource, /--navy-dark:\s*#091724/i);
 assert.match(themeSource, /--teal-accent:\s*#1db59b/i);
 assert.match(appSource, /group\.hidden = catalogFilter !== 'all'/);
-assert.match(indexSource, /app\.js\?v=20261025-time-financial/);
+assert.match(indexSource, /app\.js\?v=20261026-business-accounting-audit/);
 assert.match(indexSource, /polish\.css\?v=20261025-time-financial/);
 assert.match(appSource, /catalog-edit-button[^<]*type="button" data-edit-item/);
 assert.match(appSource, /function readStoredCart\(\)\s*\{\s*try\s*\{ return sanitizeCart\(JSON\.parse\(localStorage\.getItem\(CART_KEY\)/);
@@ -628,6 +652,13 @@ assert.throws(() => validateServicePaymentMethod('BANK_TRANSFER', 'BOOKING'), /P
 assert.equal(productShippingFee('PICKUP'), 0);
 assert.equal(productShippingFee('COURIER'), 10000);
 assert.equal(productShippingFee('COURIER', false), 0);
+const multiProductOrder = [
+  { id: 'product-a', fulfillment_method: 'COURIER', fulfillment_order_id: 'order-a', shipping_fee: 10000 },
+  { id: 'product-b', fulfillment_method: 'COURIER', fulfillment_order_id: 'order-a', shipping_fee: 0 }
+];
+assert.equal(adminProductShippingFee('COURIER', multiProductOrder[0], multiProductOrder), 10000);
+assert.equal(adminProductShippingFee('COURIER', multiProductOrder[1], multiProductOrder), 0);
+assert.equal(adminProductShippingFee('PICKUP', multiProductOrder[0], multiProductOrder), 0);
 assert.throws(() => productShippingFee('INVALID'), /Pilih metode pemenuhan/);
 assert.equal(calculateProductAmount(45000, 2, productShippingFee('PICKUP')), 90000);
 assert.equal(calculateProductAmount(45000, 2, productShippingFee('COURIER')), 100000);
@@ -891,7 +922,7 @@ assert.match(authorizationSource, /Staging order: baseline migrations\/seeds -> 
 assert.match(migrationSource, /Staging order from a reviewed reset baseline:[\s\S]*admin-role-authorization-proposal\.sql -> this proposal -> customer-capability-booking-migration\.sql/);
 assert.match(migrationSource, /optional fixture-only t-20-seed-reconciliation\.sql and booking-seed-payment-reconciliation\.sql/);
 assert.match(migrationSource, /Do not run business-flow-hardening\.sql[\s\S]*superseded pickup-rpc-hardening-proposal\.sql must never be run/);
-assert.match(readmeSource, /schema\.sql[\s\S]*rls-authenticated-access\.sql[\s\S]*self-service-bay-live-migration\.sql[\s\S]*business-flow-hardening\.sql[\s\S]*catalog-revision\.sql[\s\S]*admin-role-authorization-proposal\.sql[\s\S]*multi-addon-booking-integrity-proposal\.sql[\s\S]*customer-capability-booking-migration\.sql/);
+assert.match(readmeSource, /20261026000000_paid_product_stock_lifecycle\.sql[\s\S]*tidak menambah tabel atau kolom/);
 assert.match(pickupSource, /SUPERSEDED: do not execute this file/);
 assert.ok(pickupSource.indexOf("raise exception 'Superseded proposal") < pickupSource.indexOf('create or replace function public.record_service_transaction('));
 assert.match(pickupSource, /customer_id to the verified JWT/);

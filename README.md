@@ -106,7 +106,7 @@ npx supabase migration list
 npx supabase db push
 ```
 
-Tinjau migration list dan perubahan yang akan diterapkan sebelum `db push`. Migrasi terbaru berada di `supabase/migrations/` dan mencakup durasi/HPP, sinkronisasi waktu serta bay, ketahanan snapshot Admin, dan broadcast perubahan transaksi. Jangan menjalankan ulang `sql/schema.sql` atau file `*-proposal.sql` sebagai migrasi pada database yang sudah berisi data. Folder `sql/REFERENCE/` berisi snapshot HTML referensi, bukan halaman aplikasi.
+Tinjau migration list dan perubahan yang akan diterapkan sebelum `db push`. Migrasi terbaru berada di `supabase/migrations/` dan mencakup durasi/HPP, sinkronisasi waktu serta bay, ketahanan snapshot Admin, broadcast perubahan transaksi, dan sinkronisasi stok produk berdasarkan status pembayaran. Migrasi `20261026000000_paid_product_stock_lifecycle.sql` hanya memakai tabel yang sudah ada dan tidak menambah tabel atau kolom. Jangan menjalankan ulang `sql/schema.sql` atau file `*-proposal.sql` sebagai migrasi pada database yang sudah berisi data. Folder `sql/REFERENCE/` berisi snapshot HTML referensi, bukan halaman aplikasi.
 
 ## Pengujian
 

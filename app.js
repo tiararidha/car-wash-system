@@ -237,6 +237,14 @@ function productShippingFee(method, isFeeCarrier = true) {
   throw new Error('Pilih metode pemenuhan produk.');
 }
 const COURIER_FLAT_RATE = 10000;
+function adminProductShippingFee(method, transaction = null, transactions = []) {
+  if (method !== 'COURIER') return productShippingFee(method);
+  if (transaction?.fulfillment_method !== 'COURIER' || !transaction.fulfillment_order_id) return COURIER_FLAT_RATE;
+  const feeChargedElsewhere = safeRows(transactions).some(item => item.id !== transaction.id
+    && item.fulfillment_order_id === transaction.fulfillment_order_id
+    && Number(item.shipping_fee) > 0);
+  return Number(transaction.shipping_fee) > 0 || !feeChargedElsewhere ? COURIER_FLAT_RATE : 0;
+}
 function calculateProductAmount(unitPrice, quantity, shippingFee = 0) {
   if (!Number.isSafeInteger(Number(unitPrice)) || Number(unitPrice) < 0
     || !Number.isSafeInteger(Number(quantity)) || Number(quantity) < 1
@@ -259,8 +267,8 @@ function collectedAmount(transaction = {}) {
   return recognizedRevenueAmount(transaction) + shippingRevenueAmount(transaction);
   }
 function isPaidTransaction(transaction = {}) {
-  return [transaction.payment_status, transaction.status]
-    .some(status => String(status || '').toUpperCase() === 'PAID');
+  const paymentStatus = transaction.payment_status ?? transaction.status;
+  return String(paymentStatus || '').toUpperCase() === 'PAID';
 }
 function isRevenueTransaction(transaction = {}) {
   const transactionStatus = String(transaction.transaction_status || '').toUpperCase();
@@ -306,6 +314,7 @@ function calculateFinancialMetrics(transactions = []) {
   const summary = calculateFinancialSummary(transactions);
   return {
     totalRevenue: summary.grossRevenue,
+    cashCollected: summary.cashCollected,
     grossProfit: summary.grossProfit,
     paidTransactionCount: summary.paid.length,
     serviceRevenue: summary.serviceRevenue,
@@ -617,6 +626,7 @@ if (typeof window === 'undefined') {
     normalizeAdminSnapshot,
     validateServicePaymentMethod,
     productShippingFee,
+    adminProductShippingFee,
     calculateProductAmount,
     recognizedRevenueAmount,
     shippingRevenueAmount,
@@ -749,7 +759,7 @@ const SERVICES = [
   { id: 'svc-car', name: 'Professional Car Wash', type: 'CAR', category: 'REGULAR', price: 50000, duration: 50, description: 'Cuci busa menyeluruh, bilas tekanan tinggi, dan pengeringan rapi untuk mobil harian Anda.', image: PHOTOS.car },
   { id: 'svc-moto', name: 'Professional Motorcycle Wash', type: 'MOTOR', category: 'REGULAR', price: 20000, duration: 35, description: 'Pembersihan bodi, velg, sela mesin, dan bagian motor yang sulit dijangkau.', image: PHOTOS.motorcycle },
   { id: 'svc-self-car', name: 'Self-Service Car', type: 'CAR', category: 'SELF_SERVICE', price: 30000, duration: 30, description: 'Cuci mobil sendiri di bay khusus dengan foam dan semprotan bertekanan.', image: PHOTOS.selfCar },
-  { id: 'svc-self-moto', name: 'Self-Service Motorcycle', type: 'MOTOR', category: 'SELF_SERVICE', price: 10000, duration: 25, description: 'Cuci motor sendiri di bay khusus dengan peralatan yang siap digunakan.', image: PHOTOS.selfMotorcycle }
+  { id: 'svc-self-moto', name: 'Self-Service Motorcycle', type: 'MOTOR', category: 'SELF_SERVICE', price: 10000, duration: 20, description: 'Cuci motor sendiri di bay khusus dengan peralatan yang siap digunakan.', image: PHOTOS.selfMotorcycle }
 ];
 const ADDONS = [
   { id: 'addon-vacuum', name: 'Interior Vacuum', price: 20000, duration: 15, image: PHOTOS.addonVacuum },
@@ -1222,7 +1232,7 @@ function renderBayStatus() {
         : state === 'OCCUPIED' ? 'DIGUNAKAN' : 'STATUS BELUM TERSEDIA';
     const detail = state === 'AVAILABLE' ? 'Bay kosong · siap digunakan'
       : timeRange || 'Jadwal tidak tersedia';
-    return `<article class="bay-card bay-${state.toLowerCase()}"><div class="bay-card-top"><span>B-${String(number).padStart(2, '0')}</span>${statusBadge(state)}</div><div class="bay-card-media bay-visual"><img src="${PHOTOS.selfBay}" alt="Area cuci untuk bay B-${String(number).padStart(2, '0')}" loading="lazy"><span class="bay-number">${String(number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><div class="bay-status-copy"><strong>${label}</strong><span class="bay-time">${detail}</span></div></div></article>`;
+    return `<article class="bay-card bay-${state.toLowerCase()}"><div class="bay-card-top"><span>B-${String(number).padStart(2, '0')}</span>${statusBadge(state)}</div><div class="bay-card-media bay-visual"><img src="${PHOTOS.selfBay}" alt="Area cuci untuk bay B-${String(number).padStart(2, '0')}" loading="lazy"><span class="bay-number">${String(number).padStart(2, '0')}</span></div><div class="bay-card-bottom"><div class="bay-status-copy"><strong>${label}</strong><span class="bay-time" ${state === 'OCCUPIED' ? `data-bay-countdown="${number}"` : ''}>${detail}</span></div></div></article>`;
   }).join('');
   const homeBayGrid = document.querySelector('.home-bay-section .bay-grid');
   if (homeBayGrid) homeBayGrid.innerHTML = cards;
@@ -1360,7 +1370,7 @@ function renderAdminMetrics() {
     ['Order Hari Ini', String(todays.length).padStart(2, '0'), 'Layanan, sesi, dan produk', 'primary']
   ];
   document.querySelector('.metric-grid').innerHTML = metrics.map(([label, value, note, primary]) => `<article class="metric-card ${primary ? 'metric-primary' : ''}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join('');
-  const secondaryMetrics = `<div class="metric-secondary-grid"><div><span>Sesi Self-Service Hari Ini</span><strong>${String(selfService).padStart(2, '0')}</strong><small>Sesi lunas hari ini</small></div><div><span>Pendapatan Jasa · Tujuh Hari</span><strong>${money(serviceRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Pendapatan Produk · Tujuh Hari</span><strong>${money(productRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Laba Kotor · Tujuh Hari</span><strong>${money(weeklyMetrics.grossProfit)}</strong><small>Pendapatan kotor dikurangi HPP retail</small></div><div><span>Pelanggan</span><strong>${String(db.customers.length).padStart(2, '0')}</strong><small>Data pelanggan terdaftar</small></div></div>`;
+  const secondaryMetrics = `<div class="metric-secondary-grid"><div><span>Sesi Self-Service Hari Ini</span><strong>${String(selfService).padStart(2, '0')}</strong><small>Sesi lunas hari ini</small></div><div><span>Kas Terkumpul Hari Ini</span><strong>${money(todayMetrics.cashCollected)}</strong><small>Termasuk ongkir transaksi lunas</small></div><div><span>Pendapatan Jasa · Tujuh Hari</span><strong>${money(serviceRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Pendapatan Produk · Tujuh Hari</span><strong>${money(productRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Laba Kotor · Tujuh Hari</span><strong>${money(weeklyMetrics.grossProfit)}</strong><small>Pendapatan kotor dikurangi HPP retail</small></div><div><span>Kas Terkumpul · Tujuh Hari</span><strong>${money(weeklyMetrics.cashCollected)}</strong><small>Pendapatan dan ongkir transaksi lunas</small></div><div><span>Pelanggan</span><strong>${String(db.customers.length).padStart(2, '0')}</strong><small>Data pelanggan terdaftar</small></div></div>`;
   let secondaryGrid = document.querySelector('.metric-secondary-grid');
   if (!secondaryGrid) {
     document.querySelector('.metric-grid').insertAdjacentHTML('afterend', secondaryMetrics);
@@ -1539,7 +1549,14 @@ function refreshPublicBayLifecycles(now = Date.now()) {
     const duration = getServiceDuration(serviceName, bay.duration_minutes);
     const finish = start + duration * 60000;
     const status = now >= finish ? 'AVAILABLE' : now >= start ? 'OCCUPIED' : 'RESERVED';
-    if (status === bay.bay_status) return bay;
+    if (status === bay.bay_status) {
+      if (status === 'OCCUPIED') {
+        const remaining = Math.max(0, Math.ceil((finish - now) / 60000));
+        const countdown = document.querySelector(`[data-bay-countdown="${bay.bay_number}"]`);
+        if (countdown) countdown.textContent = `${formatServiceTimeRange(bay.booking_time, duration)} · ${remaining} menit tersisa`;
+      }
+      return bay;
+    }
     changed = true;
     return status === 'AVAILABLE'
       ? { ...bay, bay_status: status, vehicle_type: null, duration_minutes: 0, minutes_remaining: 0, booking_time: null }
@@ -1733,6 +1750,7 @@ function renderCartDialog(content) {
 function renderProductCheckout(content) {
   const productIds = Object.keys(cart);
   const fulfillment = readProductCheckoutState();
+  if (fulfillment.fulfillment_method === 'PICKUP') fulfillment.fulfillment_address = '';
   if (!fulfillment.shipping_fee_paid && !productIds.includes(fulfillment.fee_item_id)) fulfillment.fee_item_id = '';
   if (fulfillment.fulfillment_method === 'COURIER' && !fulfillment.shipping_fee_paid && !fulfillment.fee_item_id) fulfillment.fee_item_id = productIds[0] || '';
   saveProductCheckoutState(fulfillment);
@@ -1746,6 +1764,7 @@ function renderProductCheckout(content) {
   const updateFulfillment = () => {
     const method = form.elements.fulfillment_method.value;
     fulfillment.fulfillment_method = method;
+    if (method !== 'COURIER') form.elements.fulfillment_address.value = '';
     fulfillment.fulfillment_address = method === 'COURIER' ? form.elements.fulfillment_address.value.trim() : '';
     if (method === 'COURIER' && !fulfillment.shipping_fee_paid && !fulfillment.fee_item_id) fulfillment.fee_item_id = productIds[0] || '';
     if (method === 'PICKUP' && !fulfillment.shipping_fee_paid) fulfillment.fee_item_id = '';
@@ -1756,9 +1775,8 @@ function renderProductCheckout(content) {
     form.elements.fulfillment_address.disabled = method !== 'COURIER' || fulfillment.shipping_fee_paid;
     form.elements.fulfillment_address.required = method === 'COURIER' && !fulfillment.shipping_fee_paid;
     form.querySelector('#fulfillment-summary strong').textContent = fulfillmentLabel(method);
-      form.querySelector('#delivery-address-summary').hidden = method !== 'COURIER';
-      form.querySelector('#delivery-address-summary strong').textContent = fulfillment.fulfillment_address;
-      productFulfillmentDetails(tx)
+    form.querySelector('#delivery-address-summary').hidden = method !== 'COURIER';
+    form.querySelector('#delivery-address-summary strong').textContent = fulfillment.fulfillment_address;
     form.querySelector('#shipping-summary strong').textContent = money(fee);
     form.querySelector('#product-checkout-total').textContent = money(subtotal + fee);
   };
@@ -2053,7 +2071,8 @@ function renderFinancialPrintDocument() {
   const details = transactions.map(tx => {
     const customer = getCustomer(tx);
     const vehicle = getVehicle(tx);
-    return `<tr><td>${escapeHtml(tx.booking_date)} ${escapeHtml(tx.booking_time || '')}</td><td>${escapeHtml(tx.code)}</td><td>${escapeHtml(customer?.full_name || 'Pelanggan')}</td><td>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Produk')}</td><td>${escapeHtml(tx.item_name || 'Item')}</td><td class="print-number">${money(recognizedRevenueAmount(tx))}</td><td class="print-number">${money(shippingRevenueAmount(tx))}</td><td class="print-number">${money(collectedAmount(tx))}</td><td>${escapeHtml(statusLabel(tx.payment_status))}</td></tr>`;
+    const paidTransaction = isRevenueTransaction(tx);
+    return `<tr><td>${escapeHtml(tx.booking_date)} ${escapeHtml(tx.booking_time || '')}</td><td>${escapeHtml(tx.code)}</td><td>${escapeHtml(customer?.full_name || 'Pelanggan')}</td><td>${escapeHtml(vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Produk')}</td><td>${escapeHtml(tx.item_name || 'Item')}</td><td class="print-number">${paidTransaction ? money(recognizedRevenueAmount(tx)) : '—'}</td><td class="print-number">${paidTransaction ? money(shippingRevenueAmount(tx)) : '—'}</td><td class="print-number">${paidTransaction ? money(collectedAmount(tx)) : '—'}</td><td>${escapeHtml(statusLabel(tx.payment_status))}</td></tr>`;
   }).join('');
   return `<article id="financial-print-report" class="financial-print-report"><header class="print-report-header"><div class="print-brand"><span class="print-brand-mark">R</span><div><strong>Rinse Society</strong><span>Wash Studio · Semarang</span></div></div><div class="print-report-title"><h1>Laporan Keuangan</h1><p>Periode: Seluruh tanggal · ${transactions.length} transaksi aktif</p><p>Tanggal cetak: ${escapeHtml(printedAt)}</p><p>Admin: ${escapeHtml(adminUser?.email || 'Admin studio')}</p></div></header><section class="print-summary"><h2>Ringkasan Keuangan</h2><div class="print-summary-grid"><div><span>Total Penerimaan Lunas</span><strong>${money(totalCollected)}</strong></div><div><span>Pendapatan Jasa</span><strong>${money(revenue(professionalWash) + revenue(selfService))}</strong></div><div><span>Professional Wash</span><strong>${money(revenue(professionalWash))}</strong></div><div><span>Self-Service</span><strong>${money(revenue(selfService))}</strong></div><div><span>Pendapatan Produk</span><strong>${money(revenue(products))}</strong></div><div><span>Pendapatan Ongkir</span><strong>${money(shippingRevenue)}</strong></div><div><span>Total Transaksi Aktif</span><strong>${transactions.length}</strong></div></div></section><section class="print-detail"><h2>Rincian Transaksi</h2><table><thead><tr><th>Tanggal / Jam</th><th>ID Transaksi</th><th>Pelanggan</th><th>Plat / Model</th><th>Layanan / Produk</th><th>Pendapatan</th><th>Ongkir</th><th>Total</th><th>Status</th></tr></thead><tbody>${details || '<tr><td colspan="9">Tidak ada transaksi aktif pada periode laporan.</td></tr>'}</tbody></table></section><footer class="print-report-footer"><span>Rinse Society Wash Studio</span><span>Dokumen laporan keuangan internal</span></footer></article>`;
 }
@@ -2154,7 +2173,13 @@ function printTransactionReceipt(transaction) {
   const invoice = rows.map(item => item.code || item.id).filter(Boolean).join(' / ') || transaction.id;
   const bayNumber = transaction.item_type === 'SERVICE' && transaction.bay_number
     ? `Bay B-${String(transaction.bay_number).padStart(2, '0')}` : '-';
-  const receiptHtml = `<main class="receipt"><header class="receipt-header"><h1>RINSE SOCIETY</h1><p>Studio Car &amp; Motorcycle Wash</p></header><section class="receipt-meta"><div><span>Tanggal / Jam</span><strong>${escapeHtml(dateLabel)} WIB</strong></div><div><span>No. Invoice</span><strong>${escapeHtml(invoice)}</strong></div></section><section class="receipt-customer"><h2>Data Pelanggan</h2><div><span>Nama</span><strong>${escapeHtml(customer.full_name || 'Pelanggan')}</strong></div><div><span>No. WhatsApp</span><strong>${escapeHtml(transaction.customer_phone || customer.phone || '-')}</strong></div><div><span>Pelat Nomor</span><strong>${escapeHtml(vehicle?.plate || transaction.vehicle_plate || '-')}</strong></div><div><span>Bilik Cuci</span><strong>${escapeHtml(bayNumber)}</strong></div></section><section class="receipt-details"><h2>Rincian Belanja</h2>${itemRows}${shippingFee ? `<div class="receipt-item"><span><strong>Ongkos kirim</strong></span><strong>${money(shippingFee)}</strong></div>` : ''}</section><section class="receipt-totals"><div><span>Subtotal</span><strong>${money(subtotal)}</strong></div><div><span>Total Bayar</span><strong>${money(total)}</strong></div><div><span>Metode Pembayaran</span><strong>${escapeHtml(statusLabel(transaction.payment_method))}</strong></div></section><div class="receipt-paid">LUNAS / PAID</div><footer class="receipt-footer">Terima kasih atas kunjungan Anda di Rinse Society</footer></main>`;
+  const fulfillmentDetails = transaction.item_type === 'PRODUCT'
+    ? `<section class="receipt-fulfillment"><h2>Pemenuhan</h2><div><span>Metode</span><strong>${escapeHtml(fulfillmentLabel(transaction.fulfillment_method || 'PICKUP'))}</strong></div>${transaction.fulfillment_method === 'COURIER' ? `<div><span>Alamat</span><strong class="receipt-address">${escapeHtml(transaction.fulfillment_address || '-')}</strong></div>` : ''}</section>`
+    : '';
+  const shippingRow = transaction.item_type === 'PRODUCT'
+    ? `<div><span>Ongkos kirim</span><strong>${money(shippingFee)}</strong></div>`
+    : '';
+  const receiptHtml = `<main class="receipt"><header class="receipt-header"><h1>RINSE SOCIETY</h1><p>Studio Car &amp; Motorcycle Wash</p></header><section class="receipt-meta"><div><span>Tanggal / Jam</span><strong>${escapeHtml(dateLabel)} WIB</strong></div><div><span>No. Invoice</span><strong>${escapeHtml(invoice)}</strong></div></section><section class="receipt-customer"><h2>Data Pelanggan</h2><div><span>Nama</span><strong>${escapeHtml(customer.full_name || 'Pelanggan')}</strong></div><div><span>No. WhatsApp</span><strong>${escapeHtml(transaction.customer_phone || customer.phone || '-')}</strong></div><div><span>Pelat Nomor</span><strong>${escapeHtml(vehicle?.plate || transaction.vehicle_plate || '-')}</strong></div><div><span>Bilik Cuci</span><strong>${escapeHtml(bayNumber)}</strong></div></section>${fulfillmentDetails}<section class="receipt-details"><h2>Rincian Belanja</h2>${itemRows}</section><section class="receipt-totals"><div><span>Subtotal</span><strong>${money(subtotal)}</strong></div>${shippingRow}<div class="receipt-total"><span>Total Bayar</span><strong>${money(total)}</strong></div><div><span>Metode Pembayaran</span><strong>${escapeHtml(statusLabel(transaction.payment_method))}</strong></div></section><div class="receipt-paid">LUNAS / PAID</div><footer class="receipt-footer">Terima kasih atas kunjungan Anda di Rinse Society</footer></main>`;
   const popup = window.open('', '_blank', 'popup,width=420,height=760');
   if (!popup) {
     showToast('Pop-up diblokir browser. Izinkan pop-up untuk mencetak struk.', 'error');
@@ -2249,7 +2274,7 @@ function setupAdminTransactionForm(content) {
   quantityField.step = '1';
   quantityField.required = true;
   const editingTransaction = safeRows(db.transactions).find(tx => tx.id === form.elements.transaction_id.value);
-  quantityField.value = String(sanitizeQuantity(editingTransaction?.quantity));
+  quantityField.value = String(sanitizeQuantity(editingTransaction?.item_type === 'PRODUCT' ? editingTransaction.quantity : 1));
   form.elements.amount.value = String(Math.max(0, finiteNumber(form.elements.amount.value, finiteNumber(catalogItems.find(item => item.id === form.elements.item_id.value)?.price))));
   const paymentMethodField = form.elements.payment_method;
   const paymentStatusField = form.elements.payment_status;
@@ -2263,10 +2288,7 @@ function setupAdminTransactionForm(content) {
   fulfillmentFieldset.innerHTML = `<legend>Metode pemenuhan</legend><label><input type="radio" name="fulfillment_method" value="PICKUP" ${(editingTransaction?.fulfillment_method || 'PICKUP') === 'PICKUP' ? 'checked' : ''}><span>Ambil di Studio (Pick-up)</span></label><label><input type="radio" name="fulfillment_method" value="COURIER" ${editingTransaction?.fulfillment_method === 'COURIER' ? 'checked' : ''}><span>Pengiriman Online / Kurir</span></label>`;
   quantityLabel.before(fulfillmentFieldset);
   const fulfillmentTransaction = editingTransaction;
-  const adminShippingFee = method => method !== 'COURIER' ? 0
-    : fulfillmentTransaction?.fulfillment_method === 'COURIER'
-      ? Number(fulfillmentTransaction.shipping_fee) || 0
-      : COURIER_FLAT_RATE;
+  const adminShippingFee = method => adminProductShippingFee(method, fulfillmentTransaction, db.transactions);
   const deliveryNote = document.createElement('p');
   deliveryNote.textContent = 'Khusus pengiriman lokal (Maks. 10 km dari studio). Biaya ongkir flat Rp 10.000.';
   deliveryNote.hidden = fulfillmentTransaction?.fulfillment_method !== 'COURIER';
@@ -2301,10 +2323,15 @@ function setupAdminTransactionForm(content) {
     itemField.innerHTML = items.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${money(item.price)}</option>`).join('');
     if (items.some(item => item.id === previousItemId)) itemField.value = previousItemId;
     const item = items.find(row => row.id === itemField.value);
+    quantityLabel.hidden = type !== 'PRODUCT';
+    quantityField.disabled = type !== 'PRODUCT';
+    form.elements.amount.readOnly = type === 'PRODUCT';
+    if (type !== 'PRODUCT') quantityField.value = '1';
     if (item) {
       const fee = type === 'PRODUCT' ? adminShippingFee(form.elements.fulfillment_method.value) : 0;
       shippingSummary.querySelector('strong').textContent = money(fee);
-      if (updateAmount) form.elements.amount.value = String(calculateProductAmount(finiteNumber(item.price), sanitizeQuantity(quantityField.value), fee));
+      if (type === 'PRODUCT') form.elements.amount.value = String(calculateProductAmount(item.price, sanitizeQuantity(quantityField.value), fee));
+      else if (updateAmount) form.elements.amount.value = String(item.price);
     }
     if (vehicleFields) {
       vehicleFields.hidden = type !== 'SERVICE';
@@ -2318,6 +2345,8 @@ function setupAdminTransactionForm(content) {
     deliveryAddressLabel.hidden = type !== 'PRODUCT' || form.elements.fulfillment_method.value !== 'COURIER';
     deliveryAddressField.disabled = type !== 'PRODUCT' || form.elements.fulfillment_method.value !== 'COURIER';
     deliveryAddressField.required = type === 'PRODUCT' && form.elements.fulfillment_method.value === 'COURIER';
+    if (form.elements.fulfillment_method.value !== 'COURIER') deliveryAddressField.value = '';
+    deliveryAddressSummary.querySelector('strong').textContent = deliveryAddressField.value;
     deliveryAddressSummary.hidden = type !== 'PRODUCT' || form.elements.fulfillment_method.value !== 'COURIER';
     shippingSummary.hidden = type !== 'PRODUCT';
   };
@@ -2331,8 +2360,9 @@ function setupAdminTransactionForm(content) {
   });
   itemField.addEventListener('change', () => {
     const item = catalogItems.find(row => row.id === itemField.value);
-    if (item) form.elements.amount.value = String(calculateProductAmount(finiteNumber(item.price), sanitizeQuantity(quantityField.value),
-      typeField.value === 'PRODUCT' ? adminShippingFee(form.elements.fulfillment_method.value) : 0));
+    if (item) form.elements.amount.value = String(typeField.value === 'PRODUCT'
+      ? calculateProductAmount(item.price, sanitizeQuantity(quantityField.value), adminShippingFee(form.elements.fulfillment_method.value))
+      : item.price);
   });
   quantityField.addEventListener('change', () => {
     const item = catalogItems.find(row => row.id === itemField.value);
@@ -2340,21 +2370,32 @@ function setupAdminTransactionForm(content) {
     if (item) form.elements.amount.value = String(calculateProductAmount(finiteNumber(item.price), sanitizeQuantity(quantityField.value),
       typeField.value === 'PRODUCT' ? adminShippingFee(form.elements.fulfillment_method.value) : 0));
   });
-  updateItems();
+  updateItems(false);
 }
 async function saveAdminTransaction(form) {
   requireAdminAuthorization();
   if (!adminDataReady) throw new Error('Data dashboard belum siap.');
   const data = Object.fromEntries(new FormData(form));
-  const amount = finiteNumber(data.amount, NaN);
-  if (!Number.isSafeInteger(amount) || amount < 0) throw new Error('Nominal transaksi harus berupa angka bulat tidak negatif.');
-  const quantity = sanitizeQuantity(data.quantity);
   const item = safeRows(db?.services_products).map(normalizeCatalogRecord).find(row => row.id === data.item_id && row.item_type === data.item_type);
   if (!item) throw new Error('Layanan atau produk tidak ditemukan. Muat ulang katalog.');
+  const quantity = item.item_type === 'PRODUCT' ? sanitizeQuantity(data.quantity) : 1;
   const transaction = data.transaction_id ? safeRows(db?.transactions).find(tx => tx.id === data.transaction_id) : null;
   if (data.transaction_id && !transaction) throw new Error('Transaksi tidak ditemukan.');
   validateTransactionSchedule(data.booking_date, data.booking_time, item.item_type === 'SERVICE' ? Number(item.duration) || 0 : 0, new Date());
   if (!transaction) assertStudioOpenAt();
+  const fulfillmentMethod = item.item_type === 'PRODUCT'
+    ? data.fulfillment_method || transaction?.fulfillment_method || 'PICKUP'
+    : 'PICKUP';
+  const shippingFee = item.item_type === 'PRODUCT'
+    ? adminProductShippingFee(fulfillmentMethod, transaction, db.transactions)
+    : 0;
+  const amount = item.item_type === 'PRODUCT'
+    ? calculateProductAmount(item.price, quantity, shippingFee)
+    : finiteNumber(data.amount, NaN);
+  if (!Number.isSafeInteger(amount) || amount < 0
+    || (item.item_type === 'PRODUCT' && finiteNumber(data.amount, NaN) !== amount)) {
+    throw new Error('Nominal transaksi tidak sesuai dengan harga katalog, jumlah, dan ongkir.');
+  }
   const changes = {
     item_id: item.id,
     item_name: item.name,
@@ -2369,13 +2410,8 @@ async function saveAdminTransaction(form) {
     duration_minutes: Math.max(0, finiteNumber(item.duration))
   };
   if (item.item_type === 'PRODUCT') {
-    const fulfillmentMethod = data.fulfillment_method || transaction?.fulfillment_method || 'PICKUP';
-    const shippingFee = fulfillmentMethod === 'COURIER'
-      ? transaction?.fulfillment_method === 'COURIER' ? Number(transaction.shipping_fee) || 0 : COURIER_FLAT_RATE
-      : 0;
     const fulfillmentAddress = fulfillmentMethod === 'COURIER' ? String(data.fulfillment_address || '').trim() : '';
     if (fulfillmentMethod === 'COURIER' && !fulfillmentAddress) throw new Error('Masukkan alamat pengiriman.');
-    changes.amount = amount;
     changes.fulfillment_method = fulfillmentMethod;
     changes.fulfillment_address = fulfillmentAddress || null;
     changes.shipping_fee = shippingFee;
@@ -2387,6 +2423,7 @@ async function saveAdminTransaction(form) {
   if (transaction) {
     await patchRow('transactions', transaction.id, changes);
     Object.assign(transaction, changes);
+    if (item.item_type === 'PRODUCT') await refreshAdminProductStock(item.id);
     dispatchTransactionStateChange();
     return transaction;
   }
@@ -2420,14 +2457,17 @@ async function saveAdminTransaction(form) {
   };
   await insertRow('transactions', created);
   db.transactions.unshift(created);
+  if (item.item_type === 'PRODUCT') await refreshAdminProductStock(item.id);
   dispatchTransactionStateChange();
   return created;
 }
 async function deleteAdminTransaction(transactionId) {
   requireAdminAuthorization();
-  if (!db.transactions.some(tx => tx.id === transactionId)) throw new Error('Transaksi tidak ditemukan.');
+  const transaction = db.transactions.find(tx => tx.id === transactionId);
+  if (!transaction) throw new Error('Transaksi tidak ditemukan.');
   if (isSupabaseConfigured()) await deleteRow('transactions', transactionId);
   db.transactions = removeTransactionFromState(db.transactions, transactionId);
+  if (transaction.item_type === 'PRODUCT') await refreshAdminProductStock(transaction.item_id);
   dispatchTransactionStateChange();
 }
 function renderAdminCustomers() {
@@ -2881,6 +2921,16 @@ async function loadAdminData() {
     adminDataError = error.message;
     console.error('[Supabase admin data] Load failed:', error.message);
     throw error;
+  }
+}
+async function refreshAdminProductStock(productId) {
+  try {
+    const rows = await supabaseRequest('services_products', 'GET', null,
+      `?select=id,stock&id=eq.${encodeURIComponent(productId)}`);
+    const product = db.services_products.find(item => item.id === productId);
+    if (product && rows?.[0]) product.stock = Math.max(0, finiteNumber(rows[0].stock));
+  } catch (error) {
+    console.warn('[Product stock] Refresh failed:', error.message);
   }
 }
 async function bootstrapSupabase() {

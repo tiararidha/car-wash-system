@@ -41,6 +41,7 @@ body {
 .receipt-meta,
 .receipt-customer,
 .receipt-details,
+.receipt-fulfillment,
 .receipt-totals {
   padding: 10px 0;
   border-bottom: 1px dashed #777;
@@ -63,6 +64,7 @@ body {
 
 .receipt-meta strong,
 .receipt-customer strong,
+.receipt-fulfillment strong,
 .receipt-totals strong {
   overflow-wrap: anywhere;
   text-align: right;
@@ -101,7 +103,7 @@ body {
   color: #444;
 }
 
-.receipt-totals div:nth-child(2) {
+.receipt-totals .receipt-total {
   margin-top: 7px;
   font-size: 15px;
   font-weight: 700;
@@ -129,4 +131,8 @@ body {
     padding: 12px;
     box-shadow: 0 2px 18px #0002;
   }
+}
+
+.receipt-fulfillment .receipt-address {
+  max-width: 48mm;
 }
