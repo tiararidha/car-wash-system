@@ -11,8 +11,8 @@ Live site: [Rinse Society Wash Studio](https://tiararidha.github.io/car-wash-sys
 - Hero interaktif dengan CTA untuk memesan layanan atau membuka katalog.
 - Kartu Universal Live Bay B-01 sampai B-04 memakai foto studio, overlay nomor, badge status, dan waktu layanan.
 - Status bay dimuat dari Supabase dan diperbarui melalui Realtime; Self-Service menggunakan jadwal dan durasi layanan untuk menentukan status.
-- Form booking Professional Wash dan Self-Service memvalidasi nama, nomor telepon, plat, layanan, serta metode pembayaran. Waktu dan alokasi bay dihitung otomatis.
-- Katalog layanan dan produk menggunakan harga, durasi, stok, dan gambar dari Supabase. Checkout produk mendukung pick-up atau kurir lokal dengan ongkir sesuai kebijakan studio.
+- Form booking Professional Wash dan Self-Service memvalidasi nama, nomor telepon, plat, layanan, serta pembayaran 100% cashless melalui QRIS, E-Wallet, atau Kartu. Waktu dan alokasi bay dihitung otomatis.
+- Katalog layanan dan produk menggunakan harga, durasi, stok, dan gambar dari Supabase. Checkout retail mendukung pick-up tanpa biaya kirim atau kurir lokal dengan ongkir flat Rp 10.000 per pesanan.
 
 
 ### Dashboard Admin
@@ -33,11 +33,11 @@ Live site: [Rinse Society Wash Studio](https://tiararidha.github.io/car-wash-sys
 
 ```text
 Pendapatan kotor = jasa cuci lunas + retail lunas
-Kas terkumpul = pendapatan kotor + ongkir
+Penerimaan non-tunai = pendapatan kotor + ongkir
 Laba kotor = pendapatan kotor - HPP retail tercatat
 ```
 
-Ongkir disajikan terpisah dari pendapatan kotor. Nominal dikonversi aman sebelum dijumlahkan. KPI transaksi lunas dan jumlah baris lunas memakai predicate status yang sama.
+Ongkir disajikan terpisah dari pendapatan kotor. Nominal dikonversi aman sebelum dijumlahkan. KPI transaksi lunas dan jumlah baris lunas memakai predicate status yang sama. Seluruh transaksi baru menggunakan kanal cashless; data historis berlabel CASH ditampilkan sebagai QRIS.
 
 Setelah mutasi transaksi lokal, dispatcher event memperbarui tab yang sedang terbuka. Supabase Realtime menyebarkan perubahan antar-sesi; polling berkala menjadi fallback. Pemeriksaan lifecycle layanan berjalan otomatis berdasarkan `start_time`/`finished_at` atau booking time dan durasi katalog.
 

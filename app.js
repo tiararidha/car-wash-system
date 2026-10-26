@@ -85,22 +85,31 @@ function assertServiceScheduleAvailable(durationMinutes, now = new Date()) {
 }
 function mergePersistedTransaction(transaction, savedTransaction) {
   if (savedTransaction && typeof savedTransaction === 'object') Object.assign(transaction, savedTransaction);
+  transaction.payment_method = normalizePaymentMethod(transaction.payment_method);
   return transaction;
 }
 function removeTransactionFromState(transactions = [], transactionId) {
   return transactions.filter(transaction => transaction.id !== transactionId);
 }
+function normalizePaymentMethod(value = 'QRIS') {
+  const method = String(value || 'QRIS').toUpperCase();
+  return ['QRIS', 'E_WALLET', 'CARD'].includes(method) ? method : 'QRIS';
+}
+function validatePaymentMethod(value) {
+  const method = String(value || '').toUpperCase();
+  if (!['QRIS', 'E_WALLET', 'CARD'].includes(method)) throw new Error('Pilih metode pembayaran non-tunai.');
+  return method;
+}
 function validateServicePaymentMethod(paymentMethod, transactionType) {
-  if (!['CASH', 'QRIS', 'E_WALLET', 'CARD'].includes(paymentMethod)) throw new Error('Pilih metode pembayaran.');
-  if (transactionType === 'BOOKING' && paymentMethod === 'CASH') throw new Error('Self-Service wajib menggunakan metode bayar digital.');
-  return paymentMethod;
+  if (!['WALK_IN', 'BOOKING'].includes(transactionType)) throw new Error('Jenis transaksi layanan tidak valid.');
+  return validatePaymentMethod(paymentMethod);
 }
 function sanitizeQuantity(value) {
   return Math.max(1, parseInt(value, 10) || 1);
 }
 function paymentStatusForMethod(paymentMethod, selectedStatus = 'PENDING') {
   if (selectedStatus === 'REFUNDED') return 'REFUNDED';
-  return ['QRIS', 'E_WALLET', 'TRANSFER', 'CARD'].includes(String(paymentMethod || '').toUpperCase()) ? 'PAID' : selectedStatus;
+  return ['QRIS', 'E_WALLET', 'CARD'].includes(normalizePaymentMethod(paymentMethod)) ? 'PAID' : selectedStatus;
 }
 function safeRows(rows) {
   return Array.isArray(rows) ? rows.filter(row => row && typeof row === 'object') : [];
@@ -162,6 +171,7 @@ function normalizeAdminSnapshot(snapshot = {}) {
       ...transaction,
       item_type: itemType,
       item_name: itemName,
+      payment_method: normalizePaymentMethod(transaction.payment_method),
       amount: finiteNumber(transaction.amount),
       quantity: sanitizeQuantity(transaction.quantity),
       duration_minutes: serviceDuration,
@@ -611,6 +621,8 @@ if (typeof window === 'undefined') {
     normalizePhone,
     toSupabasePhone,
     getServiceDuration,
+    normalizePaymentMethod,
+    validatePaymentMethod,
     calculateFinancialSummary,
     formatServiceTimeRange,
     formatTransactionTime,
@@ -939,6 +951,7 @@ function getCustomer(tx) {
 }
 function normalizeTransactionRecord(tx = {}) {
   const normalized = tx && typeof tx === 'object' ? { ...tx } : {};
+  normalized.payment_method = normalizePaymentMethod(normalized.payment_method);
   normalized.amount = finiteNumber(normalized.amount);
   normalized.quantity = sanitizeQuantity(normalized.quantity);
   normalized.duration_minutes = normalized.item_type === 'SERVICE'
@@ -986,13 +999,14 @@ function getOperationalQueueTransactions(records = [], queueDate = getJakartaDat
   return filterQueueTransactionsForDate(getOperationalTransactions(records), queueDate);
 }
 function statusLabel(value) {
-  return ({ AVAILABLE: 'Tersedia', OCCUPIED: 'Digunakan', RESERVED: 'Dipesan', PAID: 'Lunas', PENDING: 'Belum Dibayar', FAILED: 'Gagal', REFUNDED: 'Pengembalian Dana', NONE: 'Tidak ada', COMPLETED: 'Selesai', BOOKED: 'Terkonfirmasi', ACTIVE: 'Sedang Berlangsung', CANCELLED: 'Dibatalkan', EXPIRED: 'Hangus', WAITING: 'Menunggu', WASHING: 'Dicuci', FINISHING: 'Tahap Akhir', CASH: 'Tunai', QRIS: 'QRIS', E_WALLET: 'Dompet digital', CARD: 'Kartu' })[String(value || '').toUpperCase()] || String(value || '').replaceAll('_', ' ');
+  const label = ({ AVAILABLE: 'Tersedia', OCCUPIED: 'Digunakan', RESERVED: 'Dipesan', PAID: 'Lunas', PENDING: 'Belum Dibayar', FAILED: 'Gagal', REFUNDED: 'Pengembalian Dana', NONE: 'Tidak ada', COMPLETED: 'Selesai', BOOKED: 'Terkonfirmasi', ACTIVE: 'Sedang Berlangsung', CANCELLED: 'Dibatalkan', EXPIRED: 'Hangus', WAITING: 'Menunggu', WASHING: 'Dicuci', FINISHING: 'Tahap Akhir', QRIS: 'QRIS', E_WALLET: 'Dompet digital', CARD: 'Kartu' })[String(value || '').toUpperCase()];
+  return label || (String(value || '').toUpperCase() === 'CASH' ? 'QRIS' : String(value || '').replaceAll('_', ' '));
 }
 function fulfillmentLabel(method) {
   return method === 'COURIER' ? 'Pengiriman Online / Kurir' : 'Ambil di Studio (Pick-up)';
 }
 function productFulfillmentDetails(transaction) {
-  return `<small>Pemenuhan: ${escapeHtml(fulfillmentLabel(transaction.fulfillment_method))}</small>${transaction.fulfillment_method === 'COURIER' ? `<small>Alamat Pengiriman: ${escapeHtml(transaction.fulfillment_address || '')}</small>` : ''}<small>Ongkir: ${money(transaction.shipping_fee || 0)}</small>`;
+  return `<small>Pemenuhan: ${escapeHtml(fulfillmentLabel(transaction.fulfillment_method))}</small>${transaction.fulfillment_method === 'COURIER' ? `<small>Alamat Pengiriman: ${escapeHtml(transaction.fulfillment_address || '')}</small><small>Ongkir: ${money(transaction.shipping_fee || 0)}</small>` : ''}`;
 }
 function transactionStatusLabel(transaction) {
   return statusLabel(normalizeTransactionStatusForDisplay(transaction));
@@ -1370,7 +1384,7 @@ function renderAdminMetrics() {
     ['Order Hari Ini', String(todays.length).padStart(2, '0'), 'Layanan, sesi, dan produk', 'primary']
   ];
   document.querySelector('.metric-grid').innerHTML = metrics.map(([label, value, note, primary]) => `<article class="metric-card ${primary ? 'metric-primary' : ''}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join('');
-  const secondaryMetrics = `<div class="metric-secondary-grid"><div><span>Sesi Self-Service Hari Ini</span><strong>${String(selfService).padStart(2, '0')}</strong><small>Sesi lunas hari ini</small></div><div><span>Kas Terkumpul Hari Ini</span><strong>${money(todayMetrics.cashCollected)}</strong><small>Termasuk ongkir transaksi lunas</small></div><div><span>Pendapatan Jasa · Tujuh Hari</span><strong>${money(serviceRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Pendapatan Produk · Tujuh Hari</span><strong>${money(productRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Laba Kotor · Tujuh Hari</span><strong>${money(weeklyMetrics.grossProfit)}</strong><small>Pendapatan kotor dikurangi HPP retail</small></div><div><span>Kas Terkumpul · Tujuh Hari</span><strong>${money(weeklyMetrics.cashCollected)}</strong><small>Pendapatan dan ongkir transaksi lunas</small></div><div><span>Pelanggan</span><strong>${String(db.customers.length).padStart(2, '0')}</strong><small>Data pelanggan terdaftar</small></div></div>`;
+  const secondaryMetrics = `<div class="metric-secondary-grid"><div><span>Sesi Self-Service Hari Ini</span><strong>${String(selfService).padStart(2, '0')}</strong><small>Sesi lunas hari ini</small></div><div><span>Penerimaan Digital Hari Ini</span><strong>${money(todayMetrics.cashCollected)}</strong><small>Termasuk ongkir transaksi lunas</small></div><div><span>Pendapatan Jasa · Tujuh Hari</span><strong>${money(serviceRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Pendapatan Produk · Tujuh Hari</span><strong>${money(productRevenue)}</strong><small>Transaksi lunas dalam tujuh hari</small></div><div><span>Laba Kotor · Tujuh Hari</span><strong>${money(weeklyMetrics.grossProfit)}</strong><small>Pendapatan kotor dikurangi HPP retail</small></div><div><span>Penerimaan Digital · Tujuh Hari</span><strong>${money(weeklyMetrics.cashCollected)}</strong><small>Pendapatan dan ongkir transaksi lunas</small></div><div><span>Pelanggan</span><strong>${String(db.customers.length).padStart(2, '0')}</strong><small>Data pelanggan terdaftar</small></div></div>`;
   let secondaryGrid = document.querySelector('.metric-secondary-grid');
   if (!secondaryGrid) {
     document.querySelector('.metric-grid').insertAdjacentHTML('afterend', secondaryMetrics);
@@ -1723,10 +1737,9 @@ function renderTransactionForm(content, selectedService) {
     if (!selected) return;
     form.elements.duration.value = selected.duration;
     content.querySelector('#flow-total').textContent = money(selected.price);
-    const methods = selected.category === 'SELF_SERVICE'
-      ? [['QRIS', 'QRIS'], ['E_WALLET', 'Dompet digital'], ['CARD', 'Kartu']]
-      : [['CASH', 'Bayar di tempat'], ['QRIS', 'QRIS'], ['E_WALLET', 'Dompet digital'], ['CARD', 'Kartu']];
+    const methods = [['QRIS', 'QRIS'], ['E_WALLET', 'Dompet digital'], ['CARD', 'Kartu']];
     paymentField.innerHTML = methods.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+    paymentField.value = 'QRIS';
     paymentNote.textContent = selected.category === 'SELF_SERVICE'
       ? 'Bay dan waktu dipilih otomatis; pembayaran simulasi dicatat lunas saat order tersimpan.'
       : 'Order walk-in; pembayaran simulasi dicatat lunas saat order tersimpan.';
@@ -1761,6 +1774,9 @@ function renderProductCheckout(content) {
   content.innerHTML = `<p class="eyebrow">PEMBAYARAN PRODUK</p><h2>Perawatan pilihan<br><em>segera di tangan Anda.</em></h2><form id="product-checkout-form" class="dialog-form"><input type="hidden" name="request_ids" value="${escapeHtml(JSON.stringify(requestIds))}"><label>Nama lengkap<input name="name" required placeholder="Nama lengkap"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label><fieldset id="product-fulfillment-options" class="payment-options fulfillment-options"><legend>Metode pemenuhan</legend><label><input type="radio" name="fulfillment_method" value="PICKUP" ${fulfillment.fulfillment_method === 'PICKUP' ? 'checked' : ''} ${fulfillment.shipping_fee_paid ? 'disabled' : ''}><span>Ambil di Studio (Pick-up)</span></label><label><input type="radio" name="fulfillment_method" value="COURIER" ${fulfillment.fulfillment_method === 'COURIER' ? 'checked' : ''} ${fulfillment.shipping_fee_paid ? 'disabled' : ''}><span>Pengiriman Online / Kurir</span></label><p id="courier-note" ${fulfillment.fulfillment_method !== 'COURIER' ? 'hidden' : ''}>Khusus pengiriman lokal (Maks. 10 km dari studio). Biaya ongkir flat Rp 10.000.</p><label id="delivery-address-label" ${fulfillment.fulfillment_method !== 'COURIER' ? 'hidden' : ''}>Alamat Pengiriman<textarea name="fulfillment_address" rows="2" maxlength="500" ${fulfillment.fulfillment_method !== 'COURIER' || fulfillment.shipping_fee_paid ? 'disabled' : 'required'}>${escapeHtml(fulfillment.fulfillment_address)}</textarea></label></fieldset><div id="fulfillment-summary" class="dialog-total"><span>Metode pemenuhan</span><strong>${fulfillmentLabel(fulfillment.fulfillment_method)}</strong></div><div id="shipping-summary" class="dialog-total"><span>Ongkir</span><strong>${money(shippingFee)}</strong></div><fieldset class="payment-options"><legend>Metode pembayaran</legend>${['CASH', 'QRIS', 'E_WALLET', 'CARD'].map((method, index) => `<label><input type="radio" name="payment" value="${method}" ${index === 0 ? 'checked' : ''}><span>${method === 'E_WALLET' ? 'E-Wallet' : method}</span></label>`).join('')}</fieldset><div class="dialog-total"><span>Total pembayaran</span><strong id="product-checkout-total">${money(total)}</strong></div><button class="button button-dark button-full" type="submit">Bayar sekarang <span>↗</span></button><small>Pembayaran disimulasikan dan dicatat lunas setelah pesanan tersimpan.</small></form>`;
     content.innerHTML = `<p class="eyebrow">PEMBAYARAN PRODUK</p><h2>Perawatan pilihan<br><em>segera di tangan Anda.</em></h2><form id="product-checkout-form" class="dialog-form"><input type="hidden" name="request_ids" value="${escapeHtml(JSON.stringify(requestIds))}">${fulfillment.shipping_fee_paid ? `<input type="hidden" name="fulfillment_method" value="${fulfillment.fulfillment_method}">` : ''}<label>Nama lengkap<input name="name" required placeholder="Nama lengkap"></label><label>Nomor HP<input name="phone" required type="tel" placeholder="08…"></label><fieldset id="product-fulfillment-options" class="payment-options fulfillment-options"><legend>Metode pemenuhan</legend><label><input type="radio" name="fulfillment_method" value="PICKUP" ${fulfillment.fulfillment_method === 'PICKUP' ? 'checked' : ''} ${fulfillment.shipping_fee_paid ? 'disabled' : ''}><span>Ambil di Studio (Pick-up)</span></label><label><input type="radio" name="fulfillment_method" value="COURIER" ${fulfillment.fulfillment_method === 'COURIER' ? 'checked' : ''} ${fulfillment.shipping_fee_paid ? 'disabled' : ''}><span>Pengiriman Online / Kurir</span></label><p id="courier-note" ${fulfillment.fulfillment_method !== 'COURIER' ? 'hidden' : ''}>Khusus pengiriman lokal (Maks. 10 km dari studio). Biaya ongkir flat Rp 10.000.</p><label id="delivery-address-label" ${fulfillment.fulfillment_method !== 'COURIER' ? 'hidden' : ''}>Alamat Pengiriman<textarea name="fulfillment_address" rows="2" maxlength="500" ${fulfillment.fulfillment_method !== 'COURIER' || fulfillment.shipping_fee_paid ? 'disabled' : 'required'}>${escapeHtml(fulfillment.fulfillment_address)}</textarea></label></fieldset><div id="fulfillment-summary" class="dialog-total"><span>Metode pemenuhan</span><strong>${fulfillmentLabel(fulfillment.fulfillment_method)}</strong></div><div id="delivery-address-summary" class="dialog-total" ${fulfillment.fulfillment_method !== 'COURIER' ? 'hidden' : ''}><span>Alamat Pengiriman</span><strong>${escapeHtml(fulfillment.fulfillment_address)}</strong></div><div id="shipping-summary" class="dialog-total"><span>Ongkir</span><strong>${money(shippingFee)}</strong></div><fieldset class="payment-options"><legend>Metode pembayaran</legend>${['CASH', 'QRIS', 'E_WALLET', 'CARD'].map((method, index) => `<label><input type="radio" name="payment" value="${method}" ${index === 0 ? 'checked' : ''}><span>${method === 'E_WALLET' ? 'E-Wallet' : method}</span></label>`).join('')}</fieldset><div class="dialog-total"><span>Total pembayaran</span><strong id="product-checkout-total">${money(total)}</strong></div><button class="button button-dark button-full" type="submit">Bayar sekarang <span>↗</span></button><small>Pembayaran disimulasikan dan dicatat lunas setelah pesanan tersimpan.</small></form>`;
   const form = content.querySelector('#product-checkout-form');
+  form.querySelector('input[name="payment"][value="CASH"]')?.closest('label')?.remove();
+  const defaultPayment = form.querySelector('input[name="payment"][value="QRIS"]');
+  if (defaultPayment) defaultPayment.checked = true;
   const updateFulfillment = () => {
     const method = form.elements.fulfillment_method.value;
     fulfillment.fulfillment_method = method;
@@ -1772,6 +1788,12 @@ function renderProductCheckout(content) {
     const fee = productShippingFee(method, method === 'COURIER' && !fulfillment.shipping_fee_paid && !!fulfillment.fee_item_id);
     form.querySelector('#courier-note').hidden = method !== 'COURIER';
     form.querySelector('#delivery-address-label').hidden = method !== 'COURIER';
+    form.querySelector('#delivery-address-summary').hidden = method !== 'COURIER';
+    form.querySelector('#shipping-summary').hidden = method !== 'COURIER';
+    form.querySelector('#courier-note').style.display = method === 'COURIER' ? '' : 'none';
+    form.querySelector('#delivery-address-label').style.display = method === 'COURIER' ? '' : 'none';
+    form.querySelector('#delivery-address-summary').style.display = method === 'COURIER' ? '' : 'none';
+    form.querySelector('#shipping-summary').style.display = method === 'COURIER' ? '' : 'none';
     form.elements.fulfillment_address.disabled = method !== 'COURIER' || fulfillment.shipping_fee_paid;
     form.elements.fulfillment_address.required = method === 'COURIER' && !fulfillment.shipping_fee_paid;
     form.querySelector('#fulfillment-summary strong').textContent = fulfillmentLabel(method);
@@ -1786,6 +1808,7 @@ function renderProductCheckout(content) {
     form.querySelector('#delivery-address-summary strong').textContent = fulfillment.fulfillment_address;
     saveProductCheckoutState(fulfillment);
   });
+  updateFulfillment();
   simplifyUiSymbols(content);
 }
 function makeCode() { return `RS-${getJakartaDateString().slice(2).replaceAll('-', '')}-${Math.floor(1000 + Math.random() * 9000)}`; }
@@ -1956,6 +1979,7 @@ async function submitProducts(form) {
   const phone = String(data.get('phone') || '').trim();
   if (customerName.length < 2) throw new Error('Masukkan nama lengkap.');
   const normalizedPhone = toSupabasePhone(phone);
+  const paymentMethod = validatePaymentMethod(String(data.get('payment') || ''));
   const fulfillmentMethod = String(data.get('fulfillment_method') || '');
   if (!['PICKUP', 'COURIER'].includes(fulfillmentMethod)) throw new Error('Pilih metode pemenuhan produk.');
   const fulfillment = readProductCheckoutState();
@@ -1996,7 +2020,7 @@ async function submitProducts(form) {
         id: crypto.randomUUID(), code: makeCode(), customer_id: customer?.id || null,
         customer_name: customerName, customer_phone: normalizedPhone, vehicle_id: null,
         item_id: id, item_type: 'PRODUCT', item_name: product.name, quantity,
-        amount: calculateProductAmount(product.price, quantity, shippingFee), payment_method: data.get('payment'),
+        amount: calculateProductAmount(product.price, quantity, shippingFee), payment_method: paymentMethod,
         fulfillment_method: fulfillmentMethod,
         fulfillment_address: fulfillmentAddress || null,
         shipping_fee: shippingFee,
@@ -2121,9 +2145,10 @@ function renderAdminTransactionList(records, title, eyebrow) {
     const customer = getCustomer(tx);
     const vehicle = getVehicle(tx);
     const transactionTime = formatTransactionTime(tx);
-    const canConfirmCash = tx.payment_status === 'PENDING' && tx.transaction_status === 'PENDING'
-      && tx.payment_method === 'CASH' && ['WALK_IN', 'SHOP'].includes(tx.transaction_type);
-    const paymentAction = canConfirmCash ? `<button class="payment-mark-paid" type="button" data-payment-paid="${escapeHtml(tx.id)}">Tandai Lunas</button>` : '';
+    const canConfirmPayment = tx.payment_status === 'PENDING' && tx.transaction_status === 'PENDING'
+      && ['QRIS', 'E_WALLET', 'CARD'].includes(normalizePaymentMethod(tx.payment_method))
+      && ['WALK_IN', 'SHOP'].includes(tx.transaction_type);
+    const paymentAction = canConfirmPayment ? `<button class="payment-mark-paid" type="button" data-payment-paid="${escapeHtml(tx.id)}">Konfirmasi Pembayaran</button>` : '';
     const refundAction = tx.refund_status === 'PENDING' ? `<button class="payment-mark-paid" type="button" data-refund-complete="${escapeHtml(tx.id)}">Catat Pengembalian Dana</button>` : '';
     const refundStatus = tx.refund_status === 'PENDING' ? '<small>Pengembalian Dana: menunggu proses manual</small>' : tx.refund_status === 'COMPLETED' ? '<small>Pengembalian Dana: selesai</small>' : '';
     const pickupAddress = tx.item_type === 'PRODUCT'
@@ -2176,7 +2201,7 @@ function printTransactionReceipt(transaction) {
   const fulfillmentDetails = transaction.item_type === 'PRODUCT'
     ? `<section class="receipt-fulfillment"><h2>Pemenuhan</h2><div><span>Metode</span><strong>${escapeHtml(fulfillmentLabel(transaction.fulfillment_method || 'PICKUP'))}</strong></div>${transaction.fulfillment_method === 'COURIER' ? `<div><span>Alamat</span><strong class="receipt-address">${escapeHtml(transaction.fulfillment_address || '-')}</strong></div>` : ''}</section>`
     : '';
-  const shippingRow = transaction.item_type === 'PRODUCT'
+  const shippingRow = transaction.item_type === 'PRODUCT' && transaction.fulfillment_method === 'COURIER'
     ? `<div><span>Ongkos kirim</span><strong>${money(shippingFee)}</strong></div>`
     : '';
   const receiptHtml = `<main class="receipt"><header class="receipt-header"><h1>RINSE SOCIETY</h1><p>Studio Car &amp; Motorcycle Wash</p></header><section class="receipt-meta"><div><span>Tanggal / Jam</span><strong>${escapeHtml(dateLabel)} WIB</strong></div><div><span>No. Invoice</span><strong>${escapeHtml(invoice)}</strong></div></section><section class="receipt-customer"><h2>Data Pelanggan</h2><div><span>Nama</span><strong>${escapeHtml(customer.full_name || 'Pelanggan')}</strong></div><div><span>No. WhatsApp</span><strong>${escapeHtml(transaction.customer_phone || customer.phone || '-')}</strong></div><div><span>Pelat Nomor</span><strong>${escapeHtml(vehicle?.plate || transaction.vehicle_plate || '-')}</strong></div><div><span>Bilik Cuci</span><strong>${escapeHtml(bayNumber)}</strong></div></section>${fulfillmentDetails}<section class="receipt-details"><h2>Rincian Belanja</h2>${itemRows}</section><section class="receipt-totals"><div><span>Subtotal</span><strong>${money(subtotal)}</strong></div>${shippingRow}<div class="receipt-total"><span>Total Bayar</span><strong>${money(total)}</strong></div><div><span>Metode Pembayaran</span><strong>${escapeHtml(statusLabel(transaction.payment_method))}</strong></div></section><div class="receipt-paid">LUNAS / PAID</div><footer class="receipt-footer">Terima kasih atas kunjungan Anda di Rinse Society</footer></main>`;
@@ -2277,6 +2302,10 @@ function setupAdminTransactionForm(content) {
   quantityField.value = String(sanitizeQuantity(editingTransaction?.item_type === 'PRODUCT' ? editingTransaction.quantity : 1));
   form.elements.amount.value = String(Math.max(0, finiteNumber(form.elements.amount.value, finiteNumber(catalogItems.find(item => item.id === form.elements.item_id.value)?.price))));
   const paymentMethodField = form.elements.payment_method;
+  paymentMethodField.querySelectorAll('option').forEach(option => {
+    if (!['QRIS', 'E_WALLET', 'CARD'].includes(option.value)) option.remove();
+  });
+  paymentMethodField.value = normalizePaymentMethod(paymentMethodField.value);
   const paymentStatusField = form.elements.payment_status;
   if (paymentMethodField && paymentStatusField) {
     paymentStatusField.value = paymentStatusForMethod(paymentMethodField.value, paymentStatusField.value);
@@ -2349,6 +2378,11 @@ function setupAdminTransactionForm(content) {
     deliveryAddressSummary.querySelector('strong').textContent = deliveryAddressField.value;
     deliveryAddressSummary.hidden = type !== 'PRODUCT' || form.elements.fulfillment_method.value !== 'COURIER';
     shippingSummary.hidden = type !== 'PRODUCT';
+    const showCourierDetails = type === 'PRODUCT' && form.elements.fulfillment_method.value === 'COURIER';
+    deliveryNote.style.display = showCourierDetails ? '' : 'none';
+    deliveryAddressLabel.style.display = showCourierDetails ? '' : 'none';
+    deliveryAddressSummary.style.display = showCourierDetails ? '' : 'none';
+    shippingSummary.style.display = showCourierDetails ? '' : 'none';
   };
   typeField.addEventListener('change', () => updateItems(true));
   fulfillmentFieldset.addEventListener('change', () => updateItems(true));
@@ -2379,6 +2413,7 @@ async function saveAdminTransaction(form) {
   const item = safeRows(db?.services_products).map(normalizeCatalogRecord).find(row => row.id === data.item_id && row.item_type === data.item_type);
   if (!item) throw new Error('Layanan atau produk tidak ditemukan. Muat ulang katalog.');
   const quantity = item.item_type === 'PRODUCT' ? sanitizeQuantity(data.quantity) : 1;
+  const paymentMethod = validatePaymentMethod(data.payment_method);
   const transaction = data.transaction_id ? safeRows(db?.transactions).find(tx => tx.id === data.transaction_id) : null;
   if (data.transaction_id && !transaction) throw new Error('Transaksi tidak ditemukan.');
   validateTransactionSchedule(data.booking_date, data.booking_time, item.item_type === 'SERVICE' ? Number(item.duration) || 0 : 0, new Date());
@@ -2401,10 +2436,10 @@ async function saveAdminTransaction(form) {
     item_name: item.name,
     quantity,
     amount,
-    payment_method: data.payment_method,
-    payment_status: paymentStatusForMethod(data.payment_method, data.payment_status),
+    payment_method: paymentMethod,
+    payment_status: paymentStatusForMethod(paymentMethod, data.payment_status),
     transaction_status: data.transaction_status,
-    refund_status: paymentStatusForMethod(data.payment_method, data.payment_status) === 'REFUNDED' ? 'COMPLETED' : 'NONE',
+    refund_status: paymentStatusForMethod(paymentMethod, data.payment_status) === 'REFUNDED' ? 'COMPLETED' : 'NONE',
     booking_date: data.booking_date,
     booking_time: data.booking_time,
     duration_minutes: Math.max(0, finiteNumber(item.duration))
@@ -2541,7 +2576,7 @@ function renderReportDetails() {
     { label: 'Jasa', amount: serviceRevenue },
     { label: 'Produk', amount: productRevenue }
   ];
-  const paymentMix = ['CASH', 'QRIS', 'E_WALLET', 'CARD'].map(method => {
+  const paymentMix = ['QRIS', 'E_WALLET', 'CARD'].map(method => {
     const rows = paid.filter(tx => tx.payment_method === method);
     return { label: statusLabel(method), amount: rows.reduce((sum, tx) => sum + collectedAmount(tx), 0), count: rows.length };
   });

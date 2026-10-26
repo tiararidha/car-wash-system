@@ -25,6 +25,8 @@ const {
   filterQueueTransactionsForDate,
   resolveCustomerIdentity,
   validateServicePaymentMethod,
+  normalizePaymentMethod,
+  validatePaymentMethod,
   sanitizeQuantity,
   paymentStatusForMethod,
   productShippingFee,
@@ -191,7 +193,11 @@ assert.equal(paymentStatusForMethod('QRIS', 'PENDING'), 'PAID');
 assert.equal(paymentStatusForMethod('TRANSFER', 'PENDING'), 'PAID');
 assert.equal(paymentStatusForMethod('E_WALLET', 'PENDING'), 'PAID');
 assert.equal(paymentStatusForMethod('CARD', 'PENDING'), 'PAID');
-assert.equal(paymentStatusForMethod('CASH', 'PENDING'), 'PENDING');
+assert.equal(normalizePaymentMethod('CASH'), 'QRIS');
+assert.equal(normalizePaymentMethod('TRANSFER'), 'QRIS');
+assert.equal(normalizePaymentMethod('UNKNOWN'), 'QRIS');
+assert.equal(paymentStatusForMethod('CASH', 'PENDING'), 'PAID');
+assert.throws(() => validatePaymentMethod('CASH'), /non-tunai/);
 assert.equal(paymentStatusForMethod('CARD', 'REFUNDED'), 'REFUNDED');
 assert.throws(() => requireCustomerCapabilityToken(undefined), /tidak tersedia/);
 assert.throws(() => requireCustomerCapabilityToken('invalid-token'), /tidak valid/);
@@ -298,11 +304,12 @@ const normalizedAdminFixture = normalizeAdminSnapshot({
   vehicles: [{ id: 'vehicle-a', plate: 'H 1234 AB', type: 'CAR' }],
   services_products: [],
   transactions: [
-    { id: 'tx-a', customer_id: 'customer-a', customer_name: null, notes: 'Rendi', vehicle_id: 'vehicle-a', vehicle_plate: null, item_id: 'svc-car', item_type: 'SERVICE', transaction_type: 'WALK_IN', item_name: null, amount: null, created_at: '2026-10-25T08:00:00Z' },
+    { id: 'tx-a', customer_id: 'customer-a', customer_name: null, notes: 'Rendi', vehicle_id: 'vehicle-a', vehicle_plate: null, item_id: 'svc-car', item_type: 'SERVICE', transaction_type: 'WALK_IN', item_name: null, amount: null, payment_method: 'CASH', created_at: '2026-10-25T08:00:00Z' },
     { id: 'tx-b', customer_id: null, vehicle_id: null, item_id: 'legacy-product', item_type: 'PRODUCT', transaction_type: 'SHOP', amount: null }
   ]
 });
 assert.equal(normalizedAdminFixture.transactions[0].customer_name, 'Rendi');
+assert.equal(normalizedAdminFixture.transactions[0].payment_method, 'QRIS');
 assert.equal(normalizedAdminFixture.transactions[0].vehicle_plate, 'H 1234 AB');
 assert.equal(normalizedAdminFixture.transactions[0].amount, 0);
 assert.equal(normalizedAdminFixture.transactions[0].duration_minutes, 50);
@@ -342,7 +349,7 @@ assert.match(appSource, /function normalizeAdminSnapshot\(snapshot = \{\}\)[\s\S
 assert.match(themeSource, /--navy-dark:\s*#091724/i);
 assert.match(themeSource, /--teal-accent:\s*#1db59b/i);
 assert.match(appSource, /group\.hidden = catalogFilter !== 'all'/);
-assert.match(indexSource, /app\.js\?v=20261026-business-accounting-audit/);
+assert.match(indexSource, /app\.js\?v=20261026-cashless-fulfillment/);
 assert.match(indexSource, /polish\.css\?v=20261025-time-financial/);
 assert.match(appSource, /catalog-edit-button[^<]*type="button" data-edit-item/);
 assert.match(appSource, /function readStoredCart\(\)\s*\{\s*try\s*\{ return sanitizeCart\(JSON\.parse\(localStorage\.getItem\(CART_KEY\)/);
@@ -646,8 +653,8 @@ for (const method of ['QRIS', 'E_WALLET', 'CARD']) {
   assert.equal(validateServicePaymentMethod(method, 'BOOKING'), method);
   assert.equal(validateServicePaymentMethod(method, 'WALK_IN'), method);
 }
-assert.equal(validateServicePaymentMethod('CASH', 'WALK_IN'), 'CASH');
-assert.throws(() => validateServicePaymentMethod('CASH', 'BOOKING'), /Self-Service/);
+assert.throws(() => validateServicePaymentMethod('CASH', 'WALK_IN'), /non-tunai/);
+assert.throws(() => validateServicePaymentMethod('CASH', 'BOOKING'), /non-tunai/);
 assert.throws(() => validateServicePaymentMethod('BANK_TRANSFER', 'BOOKING'), /Pilih metode pembayaran/);
 assert.equal(productShippingFee('PICKUP'), 0);
 assert.equal(productShippingFee('COURIER'), 10000);
@@ -716,12 +723,12 @@ assert.equal(isValidServiceOrderResponse({ ...validWalkInResponse, transaction_t
 const validProductResponse = {
   id: 'a1e096b2-ee77-410b-8a68-e7a68057d9f3', code: 'RS-261012-3950ADC5', customer_id: 'customer-id',
   vehicle_id: null, item_id: 'prd-shampoo', item_type: 'PRODUCT', transaction_type: 'SHOP',
-  payment_method: 'CASH', quantity: 2, amount: 90000, payment_status: 'PAID',
+  payment_method: 'QRIS', quantity: 2, amount: 90000, payment_status: 'PAID',
   transaction_status: 'PENDING', refund_status: 'NONE', queue_status: 'WAITING', fulfillment_method: 'PICKUP',
   fulfillment_address: null, shipping_fee: 0, fulfillment_order_id: null,
   duration_minutes: 0, bay_number: null, booking_date: '2026-10-12', booking_time: '10:11:00'
 };
-const validProductExpectation = { item_id: 'prd-shampoo', quantity: 2, payment_method: 'CASH', fulfillment_method: 'PICKUP', fulfillment_address: null, shipping_fee: 0, fulfillment_order_id: null, amount: 90000 };
+const validProductExpectation = { item_id: 'prd-shampoo', quantity: 2, payment_method: 'QRIS', fulfillment_method: 'PICKUP', fulfillment_address: null, shipping_fee: 0, fulfillment_order_id: null, amount: 90000 };
 assert.equal(isValidDemoProductOrderResponse(validProductResponse, validProductExpectation), true);
 assert.equal(isValidDemoProductOrderResponse({ ...validProductResponse, amount: 1 }, validProductExpectation), false);
 assert.equal(isValidDemoProductOrderResponse({ ...validProductResponse, fulfillment_method: 'COURIER' }, validProductExpectation), false);
@@ -883,8 +890,8 @@ assert.match(appSource, /user\.app_metadata\?\.rinse_role !== 'admin'/);
 assert.match(appSource, /removeUnauthorizedAdminMutations\(app\)/);
 assert.doesNotMatch(appSource, /admin-readonly-notice/);
 assert.match(indexSource, /id="admin-shortcut" aria-label="Login Admin">Login Admin/);
-assert.match(appSource, />Tandai Lunas<\/button>/);
-assert.match(appSource, /tx\.payment_status === 'PENDING' && tx\.transaction_status === 'PENDING'[\s\S]*tx\.payment_method === 'CASH'/);
+assert.match(appSource, />Konfirmasi Pembayaran<\/button>/);
+assert.match(appSource, /const canConfirmPayment = tx\.payment_status === 'PENDING'[\s\S]*\['QRIS', 'E_WALLET', 'CARD'\]/);
 assert.match(appSource, /rpcRequest\('confirm_transaction_payment'[\s\S]*await loadAdminData\(\);\s*dispatchTransactionStateChange\(\)/);
 assert.match(appSource, /await signInAdmin\([\s\S]*await openAdmin\(\)/);
 assert.doesNotMatch(appSource, /renderAdminDemo|demoAdminOrders|data-demo-order-status/);
@@ -900,6 +907,11 @@ assert.match(productSubmitSource, /statusBadge\(saved\.payment_status\)/);
 assert.match(productSubmitSource, /statusBadge\(transactionStatusLabel\(saved\)\)/);
 assert.match(productFormSource, /getProductRequestId\(id\)/);
 assert.match(productFormSource, /name="request_ids" value="\$\{escapeHtml\(JSON\.stringify\(requestIds\)\)\}"/);
+assert.match(productFormSource, /input\[name="payment"\]\[value="QRIS"\]/);
+assert.match(productFormSource, /defaultPayment\.checked = true/);
+assert.match(productFormSource, /#shipping-summary'\)\.style\.display = method === 'COURIER' \? '' : 'none'/);
+assert.match(productFormSource, /#delivery-address-summary'\)\.style\.display = method === 'COURIER' \? '' : 'none'/);
+assert.match(indexSource, /app\.js\?v=20261026-cashless-fulfillment/);
 assert.match(authorizationSource, /revoke all on function public\.lookup_customer_by_phone\(text\) from public, anon/);
 assert.match(appSource, /statusBadge\(tx\.payment_status\)/);
 assert.match(migrationSource, /where id = p_transaction ->> 'vehicle_id' and customer_id = customer\.id/);
@@ -923,6 +935,9 @@ assert.match(migrationSource, /Staging order from a reviewed reset baseline:[\s\
 assert.match(migrationSource, /optional fixture-only t-20-seed-reconciliation\.sql and booking-seed-payment-reconciliation\.sql/);
 assert.match(migrationSource, /Do not run business-flow-hardening\.sql[\s\S]*superseded pickup-rpc-hardening-proposal\.sql must never be run/);
 assert.match(readmeSource, /20261026000000_paid_product_stock_lifecycle\.sql[\s\S]*tidak menambah tabel atau kolom/);
+assert.match(readmeSource, /100% cashless[\s\S]*QRIS, E-Wallet, atau Kartu/);
+assert.match(readmeSource, /pick-up tanpa biaya kirim atau kurir lokal dengan ongkir flat Rp 10\.000/);
+assert.match(readmeSource, /Penerimaan non-tunai = pendapatan kotor \+ ongkir/);
 assert.match(pickupSource, /SUPERSEDED: do not execute this file/);
 assert.ok(pickupSource.indexOf("raise exception 'Superseded proposal") < pickupSource.indexOf('create or replace function public.record_service_transaction('));
 assert.match(pickupSource, /customer_id to the verified JWT/);
