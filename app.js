@@ -91,6 +91,13 @@ function mergePersistedTransaction(transaction, savedTransaction) {
 function removeTransactionFromState(transactions = [], transactionId) {
   return transactions.filter(transaction => transaction.id !== transactionId);
 }
+function rememberReceiptTransaction(transaction) {
+  if (!transaction?.id) return;
+  recentReceiptTransactions.set(transaction.id, transaction);
+  if (recentReceiptTransactions.size > 40) {
+    recentReceiptTransactions.delete(recentReceiptTransactions.keys().next().value);
+  }
+}
 function normalizePaymentMethod(value = 'QRIS') {
   const method = String(value || 'QRIS').toUpperCase();
   return ['QRIS', 'E_WALLET', 'CARD'].includes(method) ? method : 'QRIS';
@@ -788,6 +795,7 @@ const PRODUCT_CHECKOUT_KEY = 'rinse-product-checkout';
 const CUSTOMER_CAPABILITIES_KEY = 'rinse-customer-capabilities';
 const EMPTY_DB = { customers: [], vehicles: [], services_products: [], transactions: [] };
 let db = structuredClone(EMPTY_DB);
+const recentReceiptTransactions = new Map();
 let page = 'home';
 migrateProductStorage(localStorage);
 function readStoredCart() {
@@ -1929,6 +1937,7 @@ async function persistTransaction(tx, ownerToken = null, requestId = null) {
     mergePersistedTransaction(tx, result);
   }
   db.transactions.unshift(tx);
+  rememberReceiptTransaction(tx);
   dispatchTransactionStateChange();
   return tx;
 }
@@ -1969,7 +1978,20 @@ async function submitService(form) {
 }
 function showConfirmation(tx) {
   const isSelfServiceSession = tx.transaction_type === 'BOOKING';
-  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">${isSelfServiceSession ? 'SESI SELF-SERVICE TERCATAT' : 'TRANSAKSI TERCATAT'}</p><h2>${isSelfServiceSession ? 'Sesi Self-Service dikonfirmasi.' : 'Pembayaran berhasil.'}</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama order Anda.</p><div class="pass-card"><div><span>KODE ORDER</span><strong>${escapeHtml(tx.code)}</strong><small>${escapeHtml(tx.item_name)} · ${tx.booking_date} · ${escapeHtml(formatTransactionTime(tx))}</small></div><img class="fake-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=144x144&data=${encodeURIComponent(tx.code)}" alt="Kode order ${escapeHtml(tx.code)}"></div><div class="confirmation-details"><span>${money(tx.amount)}</span><span class="payment-status payment-status-paid">LUNAS (SIMULASI)</span>${statusBadge(tx.payment_method)}</div><button class="button button-dark button-full" data-action="new-service-order">Buat pesanan baru</button></div>`;
+  rememberReceiptTransaction(tx);
+  document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">${isSelfServiceSession ? 'SESI SELF-SERVICE TERCATAT' : 'TRANSAKSI TERCATAT'}</p><h2>${isSelfServiceSession ? 'Sesi Self-Service dikonfirmasi.' : 'Pembayaran berhasil.'}</h2><p class="dialog-intro">Pembayaran digital berhasil dan pesanan Anda tercatat.</p><div class="confirmation-summary"><div><span>Nomor Referensi</span><strong>${escapeHtml(tx.code)}</strong></div><div><span>${isSelfServiceSession ? 'Paket Layanan' : 'Layanan'}</span><strong>${escapeHtml(tx.item_name)}</strong><small>${escapeHtml(tx.booking_date || '')} · ${escapeHtml(formatTransactionTime(tx))}</small></div><div class="confirmation-summary-total"><span>Total Pembayaran</span><strong>${money(tx.amount)}</strong></div><div><span>Metode Pembayaran</span><strong>${escapeHtml(statusLabel(tx.payment_method))} · LUNAS</strong></div></div><div class="pass-card"><div><span>KODE ORDER</span><strong>${escapeHtml(tx.code)}</strong></div><img class="fake-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=144x144&data=${encodeURIComponent(tx.code)}" alt="Kode order ${escapeHtml(tx.code)}"></div><button class="button button-dark button-full" data-print-success-receipt="${escapeHtml(tx.id)}">Cetak Struk Digital (PDF)</button><button class="button button-quiet button-full" data-action="new-service-order">Buat pesanan baru</button></div>`;
+}
+function renderProductSuccessRows(transactions = []) {
+  return transactions.map(transaction => `<article class="product-success-card"><div><span>Nomor Referensi</span><strong>${escapeHtml(transaction.code)}</strong></div><div><span>Produk</span><strong>${escapeHtml(transaction.item_name)}</strong><small>Kuantitas ${sanitizeQuantity(transaction.quantity)}</small></div><div><span>Metode Pemenuhan</span><strong>${escapeHtml(fulfillmentLabel(transaction.fulfillment_method))}</strong></div>${transaction.fulfillment_method === 'COURIER' ? `<div><span>Alamat Pengiriman</span><strong>${escapeHtml(transaction.fulfillment_address || '-')}</strong></div><div><span>Ongkir</span><strong>${money(transaction.shipping_fee)}</strong></div>` : ''}</article>`).join('');
+}
+function showProductSuccess(transactions = [], partial = false) {
+  const rows = safeRows(transactions);
+  const first = rows[0];
+  if (!first) return;
+  rows.forEach(rememberReceiptTransaction);
+  const total = rows.reduce((sum, transaction) => sum + finiteNumber(transaction.amount), 0);
+  const dialogContent = document.getElementById('dialog-content');
+  dialogContent.innerHTML = `<div class="confirmation"><div class="confirmation-check">${partial ? '!' : '✓'}</div><p class="eyebrow">${partial ? 'PESANAN SEBAGIAN TERCATAT' : 'PESANAN TERCATAT'}</p><h2>${partial ? 'Pesanan yang berhasil diproses.' : 'Pembayaran berhasil.'}</h2><p class="dialog-intro">${partial ? 'Produk yang belum diproses tetap berada di keranjang.' : 'Pembayaran digital berhasil dan pesanan produk Anda tercatat.'}</p><div class="product-order-results">${renderProductSuccessRows(rows)}</div><div class="confirmation-summary"><div class="confirmation-summary-total"><span>Total Pembayaran</span><strong>${money(total)}</strong></div><div><span>Metode Pembayaran</span><strong>${escapeHtml(statusLabel(first.payment_method))}</strong></div><div><span>Status Pembayaran</span><strong>LUNAS</strong></div></div><button class="button button-dark button-full" data-print-success-receipt="${escapeHtml(first.id)}">Cetak Struk Digital (PDF)</button><button class="button button-quiet button-full" data-action="close-dialog">${partial ? 'Tutup' : 'Kembali ke studio'}</button></div>`;
 }
 async function submitProducts(form) {
   const transactionNow = new Date();
@@ -2045,8 +2067,8 @@ async function submitProducts(form) {
       localStorage.setItem(CART_KEY, JSON.stringify(cart));
       try { await loadPublicData(); } catch (_) {}
       document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">!</div><p class="eyebrow">PESANAN SEBAGIAN TERCATAT</p><h2>Produk yang belum diproses<br><em>tetap di keranjang.</em></h2><p class="dialog-intro">Sebagian produk berhasil dipesan. Periksa keranjang sebelum mencoba lagi.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span><span>${fulfillmentLabel(saved.fulfillment_method)}</span><span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Tutup</button></div>`;
-        document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">!</div><p class="eyebrow">PESANAN SEBAGIAN TERCATAT</p><h2>Produk yang belum diproses<br><em>tetap di keranjang.</em></h2><p class="dialog-intro">Sebagian produk berhasil dipesan. Periksa keranjang sebelum mencoba lagi.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span>${productFulfillmentDetails(saved)}<span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Tutup</button></div>`;
-      render();
+        showProductSuccess(completedTransactions, true);
+        render();
       return;
     }
   }
@@ -2057,7 +2079,7 @@ async function submitProducts(form) {
   try { await loadPublicData(); }
   catch (_) { showToast('Pesanan tersimpan, tetapi katalog belum dapat diperbarui.', 'error'); }
   document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">PESANAN TERCATAT</p><h2>Pembayaran berhasil.</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama pesanan produk.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span><span>${fulfillmentLabel(saved.fulfillment_method)}</span><span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Kembali ke studio <span>↗</span></button></div>`;
-    document.getElementById('dialog-content').innerHTML = `<div class="confirmation"><div class="confirmation-check">✓</div><p class="eyebrow">PESANAN TERCATAT</p><h2>Pembayaran berhasil.</h2><p class="dialog-intro">Pembayaran simulasi telah disimpan sebagai LUNAS bersama pesanan produk.</p><div class="product-order-results">${completedTransactions.map(saved => `<article><strong>${escapeHtml(saved.code)}</strong><span>${escapeHtml(saved.item_name)} · ${saved.quantity} item · ${money(saved.amount)}</span>${productFulfillmentDetails(saved)}<span>${statusBadge(saved.payment_status)} ${statusBadge(transactionStatusLabel(saved))}</span></article>`).join('')}</div><button class="button button-dark button-full" data-action="close-dialog">Kembali ke studio <span>↗</span></button></div>`;
+    showProductSuccess(completedTransactions);
   render();
 }
 function renderReportsLegacy() {
@@ -2165,7 +2187,9 @@ function renderAdminTransactionList(records, title, eyebrow) {
 }
 function receiptTransactions(transaction) {
   if (transaction.item_type !== 'PRODUCT' || !transaction.fulfillment_order_id) return [transaction];
-  return safeRows(db.transactions)
+  const transactions = new Map([...recentReceiptTransactions.values(), ...safeRows(db.transactions)]
+    .filter(item => item?.id).map(item => [item.id, item]));
+  return [...transactions.values()]
     .filter(item => item.item_type === 'PRODUCT'
       && item.fulfillment_order_id === transaction.fulfillment_order_id
       && isPaidTransaction(item))
@@ -3094,6 +3118,17 @@ document.addEventListener('click', async event => {
   if (packageButton) {
     const selectedPackage = db.services_products.find(item => isSelfServiceItem(item) && item.type === packageButton.dataset.selfServiceType);
     openDialog('self-service', selectedPackage?.id);
+    return;
+  }
+  const successReceiptButton = event.target.closest('[data-print-success-receipt]');
+  if (successReceiptButton) {
+    const transaction = recentReceiptTransactions.get(successReceiptButton.dataset.printSuccessReceipt)
+      || db.transactions.find(item => item.id === successReceiptButton.dataset.printSuccessReceipt);
+    if (!transaction || !isPaidTransaction(transaction)) {
+      showToast('Struk hanya tersedia untuk transaksi yang sudah lunas.', 'error');
+      return;
+    }
+    printTransactionReceipt(normalizeOperationalTransaction(transaction));
     return;
   }
   const receiptButton = event.target.closest('[data-print-receipt]');

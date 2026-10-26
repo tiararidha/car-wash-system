@@ -2071,6 +2071,70 @@ main {
   gap: 18px;
 }
 
+.confirmation-summary,
+.product-order-results {
+  display: grid;
+  gap: 10px;
+}
+
+.confirmation-summary {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.confirmation-summary > div,
+.product-success-card > div {
+  display: grid;
+  grid-template-columns: minmax(112px, 0.8fr) minmax(0, 1.2fr);
+  gap: 6px 12px;
+  align-items: start;
+  padding: 12px 14px;
+}
+
+.confirmation-summary > div + div {
+  border-top: 1px solid var(--border);
+}
+
+.confirmation-summary span,
+.product-success-card span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.confirmation-summary strong,
+.product-success-card strong,
+.product-success-card small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.confirmation-summary small,
+.product-success-card small {
+  grid-column: 2;
+}
+
+.confirmation-summary .confirmation-summary-total {
+  background: var(--surface-soft, #f4f7f6);
+  font-weight: 700;
+}
+
+.product-success-card {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.product-success-card > div + div {
+  border-top: 1px solid var(--border);
+}
+
 .confirmation-check {
   width: 58px;
   height: 58px;

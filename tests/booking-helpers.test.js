@@ -53,6 +53,7 @@ const {
 
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const receiptSource = fs.readFileSync(path.join(__dirname, '..', 'receipt.css'), 'utf8');
 const polishSource = fs.readFileSync(path.join(__dirname, '..', 'polish.css'), 'utf8');
 const themeSource = fs.readFileSync(path.join(__dirname, '..', 'theme.css'), 'utf8');
 const migrationSource = fs.readFileSync(path.join(__dirname, '..', 'sql', 'multi-addon-booking-integrity-proposal.sql'), 'utf8');
@@ -255,6 +256,12 @@ assert.match(appSource, /form\.querySelector\('#product-checkout-total'\)\.textC
 assert.doesNotMatch(productFormSource, /productFulfillmentDetails\(tx\)/);
 assert.match(appSource, /const shippingRow = transaction\.item_type === 'PRODUCT'[\s\S]*money\(shippingFee\)/);
 assert.match(appSource, /receipt-address[\s\S]*fulfillment_address/);
+assert.match(appSource, /function showConfirmation\(tx\)[\s\S]*data-print-success-receipt="\$\{escapeHtml\(tx\.id\)\}"/);
+assert.match(appSource, /function showProductSuccess\([\s\S]*data-print-success-receipt="\$\{escapeHtml\(first\.id\)\}"/);
+assert.match(appSource, /closest\('\[data-print-success-receipt\]'\)[\s\S]*printTransactionReceipt\(normalizeOperationalTransaction\(transaction\)\)/);
+assert.match(appSource, /function receiptTransactions\(transaction\)[\s\S]*recentReceiptTransactions\.values\(\)[\s\S]*fulfillment_order_id/);
+assert.match(receiptSource, /size:\s*80mm auto/);
+assert.match(themeSource, /\.confirmation-summary[\s\S]*overflow-wrap:\s*anywhere/);
 assert.match(adminSaveSource, /const amount = item\.item_type === 'PRODUCT'[\s\S]*calculateProductAmount\(item\.price, quantity, shippingFee\)/);
 assert.match(wibScheduleMigrationSource, /delete from public\.transactions where item_id = 'prd-perfume';\s*delete from public\.services_products where id = 'prd-perfume' and item_type = 'PRODUCT';/);
 assert.match(legacyPerfumeCleanupSource, /delete from public\.transactions transaction_row[\s\S]*transaction_row\.item_id in \(select id from legacy_products\)/);
