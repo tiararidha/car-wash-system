@@ -1,3 +1,5 @@
+const recentReceiptTransactions = new Map();
+
 function normalizePhone(value = '') {
   const digits = String(value || '').replace(/\D+/g, '');
   if (digits.startsWith('0')) return `62${digits.slice(1)}`;
@@ -795,7 +797,6 @@ const PRODUCT_CHECKOUT_KEY = 'rinse-product-checkout';
 const CUSTOMER_CAPABILITIES_KEY = 'rinse-customer-capabilities';
 const EMPTY_DB = { customers: [], vehicles: [], services_products: [], transactions: [] };
 let db = structuredClone(EMPTY_DB);
-const recentReceiptTransactions = new Map();
 let page = 'home';
 migrateProductStorage(localStorage);
 function readStoredCart() {
